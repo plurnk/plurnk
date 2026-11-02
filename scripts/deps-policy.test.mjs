@@ -31,28 +31,30 @@ test("{§cli-conformance} deps:check passes on the committed repository state (#
 
 test("{§cli-conformance} deps:check rejects a caret range or version mismatch on @earendil-works/pi-tui and @agentclientprotocol/sdk (#232)", async () => {
     const { policy, manifest, lockfile } = await loadRepoInputs();
+    const piTuiResolved = policy.watched.find((w) => w.name === "@earendil-works/pi-tui").resolved;
+    const acpResolved = policy.watched.find((w) => w.name === "@agentclientprotocol/sdk").resolved;
 
     const caretPiTui = structuredClone(manifest);
-    caretPiTui.dependencies["@earendil-works/pi-tui"] = "^1.5.0";
+    caretPiTui.dependencies["@earendil-works/pi-tui"] = `^${piTuiResolved}`;
     const v1 = evaluateDepsPolicy({ policy, manifest: caretPiTui, lockfile, piTuiHasNativePrebuilds: true });
     assert.ok(
-        v1.some((msg) => msg.includes("@earendil-works/pi-tui requires exact pin '1.4.0', found '^1.5.0'")),
+        v1.some((msg) => msg.includes(`@earendil-works/pi-tui requires exact pin '${piTuiResolved}', found '^${piTuiResolved}'`)),
         `Expected exact-pin violation, got: ${JSON.stringify(v1)}`,
     );
 
     const exactAcp = structuredClone(manifest);
-    exactAcp.dependencies["@agentclientprotocol/sdk"] = "2.2.0";
+    exactAcp.dependencies["@agentclientprotocol/sdk"] = acpResolved;
     const v2 = evaluateDepsPolicy({ policy, manifest: exactAcp, lockfile, piTuiHasNativePrebuilds: true });
     assert.ok(
-        v2.some((msg) => msg.includes("@agentclientprotocol/sdk requires caret range '^2.2.0', found '2.2.0'")),
+        v2.some((msg) => msg.includes(`@agentclientprotocol/sdk requires caret range '^${acpResolved}', found '${acpResolved}'`)),
         `Expected caret-range violation, got: ${JSON.stringify(v2)}`,
     );
 
     const driftedLock = structuredClone(lockfile);
-    driftedLock.packages["node_modules/@agentclientprotocol/sdk"].version = "2.3.0";
+    driftedLock.packages["node_modules/@agentclientprotocol/sdk"].version = "99.0.0";
     const v3 = evaluateDepsPolicy({ policy, manifest, lockfile: driftedLock, piTuiHasNativePrebuilds: true });
     assert.ok(
-        v3.some((msg) => msg.includes("node_modules/@agentclientprotocol/sdk resolves to '2.3.0', expected '2.2.0'")),
+        v3.some((msg) => msg.includes(`node_modules/@agentclientprotocol/sdk resolves to '99.0.0', expected '${acpResolved}'`)),
         `Expected lockfile resolution violation, got: ${JSON.stringify(v3)}`,
     );
 });
@@ -109,6 +111,8 @@ test("{§cli-conformance} deps:drift enforces the verification age budget, regis
     assert.equal(ageViolations.length, 2);
     assert.ok(ageViolations[0].includes("budget: 14d"));
 
+    const piTuiResolved = policy.watched.find((w) => w.name === "@earendil-works/pi-tui").resolved;
+    const acpResolved = policy.watched.find((w) => w.name === "@agentclientprotocol/sdk").resolved;
     const driftResult = evaluateRegistryDrift({
         policy: {
             ...policy,
@@ -118,22 +122,22 @@ test("{§cli-conformance} deps:drift enforces the verification age budget, regis
             },
         },
         latestByPackage: {
-            "@earendil-works/pi-tui": "1.5.0",
-            "@agentclientprotocol/sdk": "2.2.0",
+            "@earendil-works/pi-tui": "99.0.0",
+            "@agentclientprotocol/sdk": acpResolved,
         },
         outdatedReport: {
-            "@agentclientprotocol/sdk": { current: "2.2.0", latest: "2.3.0" },
+            "@agentclientprotocol/sdk": { current: acpResolved, latest: "99.0.0" },
             "open": { current: "11.0.4", latest: "11.1.0" },
         },
     });
     assert.equal(driftResult.excused.length, 1);
     assert.equal(driftResult.excused[0].name, "open");
     assert.ok(
-        driftResult.violations.some((msg) => msg.includes("@earendil-works/pi-tui: resolved 1.4.0")),
+        driftResult.violations.some((msg) => msg.includes(`@earendil-works/pi-tui: resolved ${piTuiResolved}`)),
         `Expected watched latest violation, got: ${JSON.stringify(driftResult.violations)}`,
     );
     assert.ok(
-        driftResult.violations.some((msg) => msg.includes("@agentclientprotocol/sdk: 2.2.0 → 2.3.0 [ownerVeto")),
+        driftResult.violations.some((msg) => msg.includes(`@agentclientprotocol/sdk: ${acpResolved} → 99.0.0 [ownerVeto`)),
         `Expected ownerVeto violation, got: ${JSON.stringify(driftResult.violations)}`,
     );
 });

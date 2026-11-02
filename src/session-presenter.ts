@@ -1329,7 +1329,7 @@ export class SessionPresenter {
 
             const authoredBody = extractRawString(rawInput?.body);
             let noteBody: string | null = null;
-            if (opName === "NOTE") {
+            if (opName === "NOTE" || opName === "TODO") {
                 if (authoredBody !== null) {
                     noteBody = authoredBody;
                 } else if (receiptLines.length > 0) {
@@ -1339,12 +1339,12 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, KILL, undelivered SEND, and harness NOTEs)
+            // Authored request bodies (EDIT, WORK, FORK, KILL, undelivered SEND, and harness NOTEs/TODOs)
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             const contentLines: string[] = [];
-            if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
+            if ((opName === "NOTE" || opName === "TODO") && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
             } else if (
                 !isRuntimeExec &&

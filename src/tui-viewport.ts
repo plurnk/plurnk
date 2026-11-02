@@ -226,7 +226,7 @@ export const runTuiViewport = async (
 
     const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
         if (surface === null) return;
-        if (frame.op === "NOTE" && frame.origin === "model") {
+        if ((frame.op === "NOTE" || frame.op === "TODO") && frame.origin === "model") {
             const rendered = renderNoteBlock({
                 glyph: frame.glyph,
                 aside: frame.aside,

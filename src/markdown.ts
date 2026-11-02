@@ -218,7 +218,7 @@ export const renderOperationBlock = (opts: {
     const bodyText = (opts.contentLines ?? []).join("\n");
     const bodyPreview = previewLines(
         bodyText,
-        op === "NOTE" ? Number.MAX_SAFE_INTEGER : limit,
+        op === "NOTE" || op === "TODO" ? Number.MAX_SAFE_INTEGER : limit,
         cols,
         opts.coordinate,
         op,

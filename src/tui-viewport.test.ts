@@ -1367,6 +1367,59 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     },
                 },
             });
+            // Turn 2 also emits a KILL with a distillation body (17/2/6) and its synthesized NOTE (17/2/7) (#244)
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "17/2/6",
+                    name: "KILL",
+                    title: "KILL (log:///17/1/*/{READ,sh}) — retire turn 1 transcripts",
+                    status: "completed",
+                    locations: [{ path: "log:///17/1/*/{READ,sh}" }],
+                    rawInput: {
+                        target: { raw: "log:///17/1/*/{READ,sh}" },
+                        aside: "retire turn 1 transcripts",
+                        body: "DISTILLED_KILL_NOTE_BODY",
+                    },
+                    _meta: {
+                        plurnk: {
+                            id: 24581,
+                            coordinate: "17/2/6",
+                            op: "KILL",
+                            origin: "model",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "17/2/7",
+                    name: "NOTE",
+                    title: "NOTE",
+                    status: "completed",
+                    rawInput: {
+                        aside: null,
+                        target: null,
+                        body: "DISTILLED_KILL_NOTE_BODY",
+                    },
+                    _meta: {
+                        plurnk: {
+                            id: 24582,
+                            coordinate: "17/2/7",
+                            op: "NOTE",
+                            origin: "model",
+                            status: 200,
+                            attrs: {
+                                distilled: "log:///17/1/*/{READ,sh}",
+                            },
+                        },
+                    },
+                },
+            });
             // Turn 7 emits 🐹 reply at 17/7/1 and concludes with status 200
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
@@ -1496,11 +1549,24 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
         const promptWrites = termWrites.slice(writesBeforePrompt).join("");
         const shPos = promptWrites.lastIndexOf("turn1_sh_aside");
         const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
+        const killPos = promptWrites.lastIndexOf("retire turn 1 transcripts");
+        const distilledBodyPos = promptWrites.lastIndexOf("    DISTILLED_KILL_NOTE_BODY");
         const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
         assert.ok(shPos >= 0, "17/1/5 sh single-line receipt must be rendered");
         assert.equal(promptWrites.includes("echo turn1_sh"), false, "sh script body must not be previewed");
         assert.ok(notePos > shPos, "17/1/5 sh receipt must appear above Turn 2 NOTE (17/2/1)");
-        assert.ok(hamsterPos > notePos, "Turn 7 🐹 reply must appear below Turn 1 sh and Turn 2 NOTE");
+        assert.ok(killPos > notePos, "17/2/6 KILL row must appear after 17/2/1 NOTE");
+        assert.ok(
+            distilledBodyPos > killPos,
+            "KILL distillation body must render indented 4 columns beneath the 🗑️ row",
+        );
+        assert.equal(
+            promptWrites.includes("\n🗒️\nDISTILLED_KILL_NOTE_BODY") ||
+                promptWrites.includes("\n🗒️  \nDISTILLED_KILL_NOTE_BODY"),
+            false,
+            "synthesized NOTE with attrs.distilled must not render a standalone 🗒️ block",
+        );
+        assert.ok(hamsterPos > distilledBodyPos, "Turn 7 🐹 reply must appear below Turn 1 sh, Turn 2 NOTE, and KILL");
         assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);
 
         inputCallback!("\x04");

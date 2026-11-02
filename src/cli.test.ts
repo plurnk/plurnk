@@ -677,6 +677,23 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         terminalId: "term:7",
         output: { data: Buffer.from("hydrated-out\n", "utf8").toString("base64") },
     });
+    replaySess.applyUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/2",
+        name: "NOTE",
+        title: "NOTE",
+        status: "completed",
+        rawInput: { aside: null, body: "distilled summary" },
+        _meta: {
+            plurnk: {
+                id: 8,
+                op: "NOTE",
+                origin: "model",
+                status: 200,
+                attrs: { distilled: "log:///1/1/1/sh" },
+            },
+        },
+    });
     const extracted = extractChronologicalHistory(replaySess);
     assert.equal(extracted.length, 1);
     assert.equal(extracted[0]?.kind, "tool_call");

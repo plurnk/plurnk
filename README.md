@@ -181,7 +181,7 @@ agent has bulk operations over its own context, not just over your code.
 
 ## Extend and configure
 
-Plurnk uses **ACP** for clients, **MCP** for external tools, and **Agent Skills**
+Plurnk uses **ACPv2** for clients, **MCP** for external tools, and **Agent Skills**
 for reusable instructions. Tools and skills can be discovered, added, and enabled
 per workspace without restarting the daemon: `/mcp discover <query>` searches the
 MCP Registry, and `/mcp add <alias> <command|url> [args...]` declares a workspace

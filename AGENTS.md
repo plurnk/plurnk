@@ -5,13 +5,24 @@ unavailable.
 
 This repository owns the open-source PLURNK terminal client. Preserve the
 client boundary: it consumes `plurnk-service` through the public ACP v2
-contract and does not absorb daemon or provider responsibilities.
+contract (`@agentclientprotocol/sdk/experimental/v2/unstable`) and does not
+absorb daemon or provider responsibilities.
 
 **ACPv2 is the Schelling point.** Our prerogative is not to maintain a translation layer between
 PLURNK and ACPv2, but to become an ACPv2 agent paradigmatically — aggressively simplifying until the
 only things that aren't ACPv2 are either essential to PLURNK's virtual machine or orthogonal to the
-protocol. When ACPv2 names or shapes a concept, it drives a maximal rename across the service and
-client so the codebase reads as if that was always our name and model for it.
+protocol (`../plurnk-service/ARCHITECTURE.md` § Standards and substrate). When ACPv2 names or shapes a
+concept, it drives a maximal rename across the service and client so the codebase reads as if that was
+always our name and model for it. `_plurnk/action` is a shrinking residual bridge for VM and workspace
+operations ACPv2 cannot yet express, never a permanent bespoke dialect.
+
+**Implementation substrates (`What we build with`).** The client builds on `@agentclientprotocol/sdk`
+(ACP v2 JSON-RPC framing, Streamable HTTP and WebSocket client streams, and protocol types) and
+`@earendil-works/pi-tui` (main-screen terminal viewport diffing, scrollback preservation, multiline
+editing, selection widgets, and GFM/table/LaTeX layout). Delegate undifferentiated transport and
+terminal heavy lifting to these substrates instead of hand-rolling plumbing, and keep their internals
+behind their owning boundaries (`src/acp-client.ts`, `src/acp-session.ts`, `src/tui-surface.ts`,
+`src/markdown.ts`).
 
 **A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
 one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
@@ -57,14 +68,8 @@ an already-installed candidate graph. Keep the backend dependency optional.
 `deps-policy.json` is the committed freshness ledger for rapid-cadence upstream
 dependencies (`{§cli-conformance}`):
 
-- `@earendil-works/pi-tui` is pinned **exact** (`1.4.0`): it owns the entire
-  terminal rendering and input surface, ships roughly 5 minor versions every 3
-  weeks without a changelog, and carries native prebuilds. Every minor upgrade
-  is an intentional, test-verified bump in `package.json`, `package-lock.json`,
-  and `deps-policy.json`.
-- `@agentclientprotocol/sdk` uses a **caret** range (`^2.2.0`) paired with an
-  exact `resolved`/`verifiedLatest` entry in `deps-policy.json` and compile-time
-  + lint-time surface exhaustiveness over `@agentclientprotocol/sdk/experimental/v2/unstable`.
+- `@earendil-works/pi-tui` (the terminal UI implementation substrate owning viewport diffing, scrollback rendering, multiline editing, and Markdown/table/math projection) is pinned **exact** (`requirement: "exact"` in `deps-policy.json`): it ships roughly 5 minor versions every 3 weeks without a changelog and carries native prebuilds. Every minor upgrade is an intentional, test-verified bump in `package.json`, `package-lock.json`, and `deps-policy.json`.
+- `@agentclientprotocol/sdk` (the ACPv2 protocol and transport substrate) uses a **caret** range (`requirement: "caret"` in `deps-policy.json`) paired with an exact `resolved`/`verifiedLatest` entry in `deps-policy.json` and compile-time + lint-time surface exhaustiveness over `@agentclientprotocol/sdk/experimental/v2/unstable`.
 - `npm run deps:check` runs hermetically inside `npm test` (`test:lint`) with no
   network access. `npm run deps:drift` runs in `.githooks/pre-push` and
   `release:gate`, enforcing the 14-day `verifiedAt` age budget and live npm

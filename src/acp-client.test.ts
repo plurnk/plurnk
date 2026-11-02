@@ -18,7 +18,7 @@ import {
     AcpClient,
     classifyPreFlightDisconnect,
 } from "./acp-client.ts";
-import { AcpSession, type AcpMessageItem } from "./acp-session.ts";
+import { AcpSession, type AcpMessageItem, type AcpPlanState } from "./acp-session.ts";
 import { runCliConfig } from "./cli-subcommands.ts";
 import Credential from "./credential.ts";
 
@@ -504,6 +504,44 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     assert.equal(replies.length, 1);
     assert.equal(replies[0]?.id, "1/1/2");
     assert.equal(replies[0]?.text, "Edited reply");
+
+    // Plan updates and removals key by planId, supporting items, markdown, and file variants
+    session.applyUpdate({
+        sessionUpdate: "plan_update",
+        plan: { type: "markdown", planId: "mem:///plan", content: "# Memory Plan" },
+    });
+    session.applyUpdate({
+        sessionUpdate: "plan_update",
+        plan: { type: "file", planId: "file:///workspace/plan.md", uri: "file:///workspace/plan.md" },
+    });
+    const plansBeforeRemove = session.items.filter((i): i is AcpPlanState => i.kind === "plan");
+    assert.equal(plansBeforeRemove.length, 2);
+    session.applyUpdate({
+        sessionUpdate: "plan_removed",
+        planId: "mem:///plan",
+    });
+    const plansAfterRemove = session.items.filter((i): i is AcpPlanState => i.kind === "plan");
+    assert.equal(plansAfterRemove.length, 1);
+    assert.deepEqual(plansAfterRemove[0]?.plan, {
+        type: "file",
+        planId: "file:///workspace/plan.md",
+        uri: "file:///workspace/plan.md",
+    });
+
+    // SubagentUpdate patches capabilities, cwd, and additionalDirectories
+    session.applyUpdate({
+        sessionUpdate: "subagent_update",
+        sessionId: "1#worker",
+        title: "worker",
+        capabilities: { cancel: {} },
+        state: { state: "running" },
+        cwd: "/workspace/child",
+        additionalDirectories: ["/workspace/shared"],
+    });
+    const sub = session.subagents.get("1#worker");
+    assert.deepEqual(sub?.capabilities, { cancel: {} });
+    assert.equal(sub?.cwd, "/workspace/child");
+    assert.deepEqual(sub?.additionalDirectories, ["/workspace/shared"]);
 });
 
 test("{§cli-subcommands}: runCliConfig rejects unknown session config option ids with exitCode 64 and points daemon config queries to plurnk-service config", async () => {

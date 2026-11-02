@@ -20,6 +20,7 @@ import {
     type InitializeResponse,
     type ListProvidersResponse,
     type ListSessionsResponse,
+    type LogoutAuthResponse,
     type NewSessionRequest,
     type NewSessionResponse,
     type PromptResponse,
@@ -929,6 +930,10 @@ export class AcpClient {
 
     async authStatus(): Promise<AuthStatusResponse> {
         return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.auth.status, {}));
+    }
+
+    async logout(): Promise<LogoutAuthResponse | void> {
+        return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.auth.logout, {}));
     }
 
     async forkSession(sessionId: string, cwd: string): Promise<ForkSessionResponse> {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { renderOperationBlock } from "./markdown.ts";
+import { renderOperationBlock, renderPlanLines } from "./markdown.ts";
 import {
     abbreviatedCount,
     addDecimal,
@@ -15,12 +15,12 @@ import {
     formatModelRoute,
     formatUsdSpend,
     lifecycleGlyphFor,
-    normalizeNoteHeading,
     operationGlyphFor,
     receiptCountFor,
     SessionPresenter,
     spanLength,
 } from "./session-presenter.ts";
+import { TailText } from "./tui-surface.ts";
 
 test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionPresenter formatting helpers, disconnection state, and frame projection", () => {
     assert.equal(formatDuration(50), "50ms");
@@ -43,8 +43,7 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
     assert.equal(formatModelRoute("fast", null, null), "fast");
     assert.equal(formatModelRoute("none", "medium", "default"), "none");
 
-    assert.deepEqual(normalizeNoteHeading("NOTE", "FACT: summary"), { glyph: "📊", aside: "summary" });
-    assert.deepEqual(normalizeNoteHeading("NOTE", "plan"), { glyph: "🚧", aside: null });
+    assert.equal(operationGlyphFor("NOTE"), "🗒️");
     assert.equal(operationGlyphFor("COPY"), "🖨️");
     assert.equal(lifecycleGlyphFor("requires_action"), "💤");
 
@@ -807,29 +806,24 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.match(parkedStateFrames[0].status.formattedStatusLine, /updates in (?:14|15)s/u);
     }
 
-    // Canonical NOTE tags (fact, idea, plan) map to 📊, 💡, 🚧 with aside: null and no residual text ({§cli-rendering}).
-    for (const [tag, expectedGlyph] of [
-        ["fact", "📊"],
-        ["idea", "💡"],
-        ["plan", "🚧"],
-    ] as const) {
-        const noteFrames = presenter.apply({
-            sessionUpdate: "tool_call_update",
-            toolCallId: `6/2/note-${tag}`,
-            name: "NOTE",
-            title: `NOTE — ${tag}`,
-            status: "completed",
-            rawInput: { aside: tag, body: `Body for ${tag}` },
-            _meta: { plurnk: { op: "NOTE", status: 200, attrs: { aside: tag } } },
-        });
-        assert.equal(noteFrames[0]?.kind, "tool_call");
-        if (noteFrames[0]?.kind === "tool_call") {
-            assert.equal(noteFrames[0].glyph, expectedGlyph);
-            assert.equal(noteFrames[0].aside, null);
-            assert.equal(noteFrames[0].noteBody, `Body for ${tag}`);
-        }
+    // Model NOTE rows render with 🗒️ and preserve asides ({§cli-rendering}).
+    const noteFrames = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/2/note-1",
+        name: "NOTE",
+        title: "NOTE — observation",
+        status: "completed",
+        rawInput: { aside: "observation", body: "Body for note" },
+        _meta: { plurnk: { op: "NOTE", status: 200, attrs: { aside: "observation" } } },
+    });
+    assert.equal(noteFrames[0]?.kind, "tool_call");
+    if (noteFrames[0]?.kind === "tool_call") {
+        assert.equal(noteFrames[0].glyph, "🗒️");
+        assert.equal(noteFrames[0].aside, "observation");
+        assert.equal(noteFrames[0].noteBody, "Body for note");
     }
 
+    // TODO tool_call_update rows are suppressed from the waterfall; plan_update projects ☐ / 🗹 items above activity ({§cli-rendering}, {§cli-session-status}).
     const todoFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/todo-1",
@@ -839,12 +833,48 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         rawInput: { aside: null, body: "- Step 1\n- Step 2" },
         _meta: { plurnk: { op: "TODO", status: 200 } },
     });
-    assert.equal(todoFrames[0]?.kind, "tool_call");
-    if (todoFrames[0]?.kind === "tool_call") {
-        assert.equal(todoFrames[0].glyph, "🚧");
-        assert.equal(todoFrames[0].op, "TODO");
-        assert.equal(todoFrames[0].noteBody, "- Step 1\n- Step 2");
-    }
+    assert.equal(todoFrames.length, 0);
+
+    const planFrames = presenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Step 1", priority: "medium", status: "completed" },
+                { content: "Step 2", priority: "medium", status: "pending" },
+            ],
+        },
+    });
+    assert.equal(planFrames[0]?.kind, "plan_update");
+    assert.deepEqual(presenter.planEntries, [
+        { content: "Step 1", status: "completed" },
+        { content: "Step 2", status: "pending" },
+    ]);
+    const renderedPlan = stripVTControlCharacters(renderPlanLines(presenter.planEntries, 80));
+    assert.equal(renderedPlan, "🗹 Step 1\n☐ Step 2");
+
+    const tail = new TailText(() => 3);
+    tail.setReserved(true);
+    tail.setText("💭 Thinking...");
+    tail.setPlan(renderPlanLines(presenter.planEntries, 80));
+    tail.setActivity("⚙️  sh (stream://1) 2s");
+    const liveLines = tail.render(80).map((l) => stripVTControlCharacters(l));
+    assert.deepEqual(liveLines, [
+        "💭 Thinking...",
+        "",
+        "",
+        "🗹 Step 1",
+        "☐ Step 2",
+        "⚙️  sh (stream://1) 2s",
+    ]);
+
+    const removedFrames = presenter.apply({
+        sessionUpdate: "plan_removed",
+        planId: "plan",
+    });
+    assert.equal(removedFrames[0]?.kind, "plan_update");
+    assert.deepEqual(presenter.planEntries, []);
 
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).

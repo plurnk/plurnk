@@ -479,9 +479,9 @@ const createMockAcpServer = async () => {
                     update: {
                         sessionUpdate: "tool_call_update",
                         toolCallId: "tc-note",
-                        title: "NOTE — plan",
+                        title: "NOTE",
                         status: "completed",
-                        rawInput: { aside: "plan", body: "Check waterfall spacing." },
+                        rawInput: { aside: null, body: "Check waterfall spacing." },
                         _meta: { plurnk: { id: 3, turnId: 1, op: "NOTE", origin: "model", status: 200, coordinate: "1/1/3" } },
                     },
                 });
@@ -1050,7 +1050,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
             assert.ok(readIdx >= 0 && findIdx >= 0, `Expected READ and FIND rows on screen:\n${screenLines.join("\n")}`);
             assert.equal(findIdx, readIdx + 1, "Consecutive READ and FIND rows must have zero blank lines between them");
             assert.ok(!screenLines.some((l) => l.includes('[{"path":"workspace:///notes/**"}]')), "FIND result body must not be shown");
-            assert.ok(screenLines.some((l) => l === "🚧"), `Model plan NOTE must render glyph without category word:\n${screenLines.join("\n")}`);
+            assert.ok(screenLines.some((l) => l === "🗒️"), `Model NOTE must render 🗒️ glyph:\n${screenLines.join("\n")}`);
             assert.ok(screenLines.some((l) => l.startsWith("⚙️  brave (brave_web_search)")), `Runtime execution row must render with two spaces after gear:\n${screenLines.join("\n")}`);
             assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in TUI");
             assert.ok(!screenLines.some((l) => l.includes("Sana'a result 1")), "Concluded execution output must not preview in TUI");

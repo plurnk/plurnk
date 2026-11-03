@@ -4,6 +4,7 @@
 
 import {
     ContentBlock,
+    PlanUpdateContent,
     SessionConfigOption,
     SessionUpdate,
     ToolCallContent,
@@ -76,7 +77,6 @@ import {
     formatUsdSpend,
     lifecycleGlyphFor,
     NO_PREVIEW_VERBS,
-    normalizeNoteHeading,
     normalizeWorkerKey,
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
@@ -100,7 +100,6 @@ export {
     formatUsdSpend,
     lifecycleGlyphFor,
     NO_PREVIEW_VERBS,
-    normalizeNoteHeading,
     normalizeWorkerKey,
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
@@ -108,6 +107,11 @@ export {
     spanLength,
     WORKER_OPS,
 };
+
+export interface PlanEntryItem {
+    readonly content: string;
+    readonly status: string;
+}
 
 export interface ActiveLiveEntry {
     readonly key: string;
@@ -170,6 +174,10 @@ export type PresentationFrame =
       }
     | {
           readonly kind: "reasoning_retired";
+      }
+    | {
+          readonly kind: "plan_update";
+          readonly entries: readonly PlanEntryItem[];
       }
     | {
           readonly kind: "tool_call";
@@ -314,6 +322,7 @@ export class SessionPresenter {
     doing: SessionDoing | null = null;
     preparation: WorkspacePreparationState | null = null;
     activity: SearchActivityState | null = null;
+    planEntries: PlanEntryItem[] = [];
     disconnected = false;
     lastLoopStatus: number | null = null;
     lastStatusLine = "";
@@ -420,6 +429,7 @@ export class SessionPresenter {
         this.#concludedStreams.clear();
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
+        this.planEntries = [];
     }
 
     isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
@@ -436,6 +446,7 @@ export class SessionPresenter {
         this.#loopConcluded = false;
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
+        this.planEntries = [];
     }
 
     #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
@@ -480,6 +491,7 @@ export class SessionPresenter {
         this.doing = null;
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
+        this.planEntries = [];
         return this.buildStatusBar();
     }
 
@@ -570,6 +582,7 @@ export class SessionPresenter {
                 (this.loopId !== null || this.loopSeq !== null)
             ) {
                 this.#loopConcluded = true;
+                this.planEntries = [];
             }
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
@@ -1051,6 +1064,29 @@ export class SessionPresenter {
             return frames;
         }
 
+        if (SessionUpdate.isPlanUpdate(update)) {
+            if (PlanUpdateContent.isItems(update.plan)) {
+                this.planEntries = update.plan.entries.map((entry) => ({
+                    content: entry.content,
+                    status: entry.status,
+                }));
+            }
+            frames.push({
+                kind: "plan_update",
+                entries: [...this.planEntries],
+            });
+            return frames;
+        }
+
+        if (SessionUpdate.isPlanRemoved(update)) {
+            this.planEntries = [];
+            frames.push({
+                kind: "plan_update",
+                entries: [],
+            });
+            return frames;
+        }
+
         if (SessionUpdate.isToolCallUpdate(update)) {
             const incomingMetaPlurnk = (
                 update._meta as
@@ -1149,7 +1185,7 @@ export class SessionPresenter {
                 extractTitleTarget(effectiveTitle);
 
             // Suppress internal _plurnk emission announcements, entry materializations,
-            // and synthesized KILL distillation NOTEs ({§cli-rendering}).
+            // synthesized KILL distillation NOTEs, and TODO waterfall rows ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "READ" &&
@@ -1170,6 +1206,12 @@ export class SessionPresenter {
                 typeof metaPlurnk.attrs?.distilled === "string" &&
                 metaPlurnk.attrs.distilled.trim().length > 0
             ) {
+                return frames;
+            }
+            if (opName === "TODO") {
+                this.#pendingToolCalls.delete(update.toolCallId);
+                this.#renderedToolCalls.add(update.toolCallId);
+                this.#retireReasoning(frames);
                 return frames;
             }
 
@@ -1308,7 +1350,8 @@ export class SessionPresenter {
                       : typeof metaPlurnk.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
                         ? metaPlurnk.attrs.aside.trim()
                         : extractTitleAside(effectiveTitle);
-            const { glyph, aside } = normalizeNoteHeading(opName, rawAside);
+            const glyph = operationGlyphFor(opName);
+            const aside = rawAside;
             const scope = extractScopeToken(rawInput?.lineMarker);
             const destination =
                 opName === "COPY" || opName === "MOVE"
@@ -1329,7 +1372,7 @@ export class SessionPresenter {
 
             const authoredBody = extractRawString(rawInput?.body);
             let noteBody: string | null = null;
-            if (opName === "NOTE" || opName === "TODO") {
+            if (opName === "NOTE") {
                 if (authoredBody !== null) {
                     noteBody = authoredBody;
                 } else if (receiptLines.length > 0) {
@@ -1339,12 +1382,12 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, KILL, undelivered SEND, and harness NOTEs/TODOs)
+            // Authored request bodies (EDIT, WORK, FORK, KILL, undelivered SEND, and harness NOTEs)
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             const contentLines: string[] = [];
-            if ((opName === "NOTE" || opName === "TODO") && origin !== "model" && noteBody !== null && noteBody.length > 0) {
+            if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
             } else if (
                 !isRuntimeExec &&
@@ -1886,6 +1929,7 @@ export class SessionPresenter {
                 this.#lastStreamTarget = "";
                 this.doing = null;
                 this.activity = null;
+                this.planEntries = [];
                 this.waitUntil = null;
                 this.inboxCount = 0;
                 const termMeta = (

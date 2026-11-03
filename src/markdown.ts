@@ -7,7 +7,7 @@ import { renderMermaidASCII } from "beautiful-mermaid";
 import stringWidth from "string-width";
 import { ModelText, paint } from "./color.ts";
 import { formatActiveOperationLead, formatDuration } from "./presenter-formatters.ts";
-import type { ActiveLiveEntry } from "./session-presenter.ts";
+import type { ActiveLiveEntry, PlanEntryItem } from "./session-presenter.ts";
 
 export const markdownTheme: MarkdownTheme = {
     heading: (text) => paint(text, "bold"),
@@ -91,7 +91,7 @@ export const renderModelReply = (
     return body.length > 0 ? `${lead}\n${body}` : lead;
 };
 
-// {§cli-rendering} — Full dimmed Markdown rendering for NOTE / FACT / IDEA / PLAN.
+// {§cli-rendering} — Full dimmed Markdown rendering for NOTE.
 export const renderNoteBlock = (opts: {
     readonly glyph: string;
     readonly aside?: string | null;
@@ -302,6 +302,24 @@ export const renderLoopSummary = (opts: {
                 ? "⏸️ paused at turn limit"
                 : "❌ failed";
     return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
+};
+
+// {§cli-rendering}, {§cli-session-status} — Harness-rendered loop plan list directly above the activity strip.
+export const renderPlanLines = (
+    entries: readonly PlanEntryItem[],
+    columns: number = 80,
+): string => {
+    if (entries.length === 0) return "";
+    const maxItemCols = Math.max(20, columns - 3);
+    const lines: string[] = [];
+    for (const entry of entries) {
+        const clean = ModelText.plain(entry.content).replace(/\s+/gu, " ").trim();
+        if (clean.length === 0) continue;
+        const box = paint(entry.status === "completed" ? "🗹" : "☐", "note");
+        const label = paint(truncateToColumns(clean, maxItemCols), "dim");
+        lines.push(`${box} ${label}`);
+    }
+    return lines.join("\n");
 };
 
 // {§cli-rendering}, {§cli-session-status} — Single-line active streams and workers strip above the composer.

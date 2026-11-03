@@ -127,9 +127,6 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.equal(operationGlyphFor("EDIT"), "📝");
     assert.equal(operationGlyphFor("FIND"), "🔎");
     assert.equal(operationGlyphFor("NOTE"), "🗒️");
-    assert.equal(operationGlyphFor("NOTE", "fact"), "📊");
-    assert.equal(operationGlyphFor("NOTE", "IDEA"), "💡");
-    assert.equal(operationGlyphFor("NOTE", "plan"), "🚧");
     assert.equal(operationGlyphFor("WORK"), "🐜");
     assert.equal(operationGlyphFor("FORK"), "🔱");
     assert.equal(operationGlyphFor("WAIT"), "⏳");
@@ -186,21 +183,21 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.deepEqual(t1[1].contentLines, []);
     }
 
-    // NOTE category asides (plan/idea/fact/note) use category glyph and consume the category word ({§cli-rendering})
-    const notePlan = presenter.apply({
+    // Model NOTE uses 🗒️ glyph and preserves any aside ({§cli-rendering})
+    const noteRow = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/2",
-        title: "NOTE — plan",
+        title: "NOTE — working memory",
         status: "completed",
-        rawInput: { aside: "plan", body: "Evaluate and react to the Open Message." },
+        rawInput: { aside: "working memory", body: "Evaluate and react to the Open Message." },
         _meta: { plurnk: { op: "NOTE" } },
     });
-    assert.equal(notePlan[0]?.kind, "tool_call");
-    if (notePlan[0]?.kind === "tool_call") {
-        assert.equal(notePlan[0].glyph, "🚧");
-        assert.equal(notePlan[0].origin, "model");
-        assert.equal(notePlan[0].aside, null);
-        assert.equal(notePlan[0].noteBody, "Evaluate and react to the Open Message.");
+    assert.equal(noteRow[0]?.kind, "tool_call");
+    if (noteRow[0]?.kind === "tool_call") {
+        assert.equal(noteRow[0].glyph, "🗒️");
+        assert.equal(noteRow[0].origin, "model");
+        assert.equal(noteRow[0].aside, "working memory");
+        assert.equal(noteRow[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
     // Harness NOTE (_plurnk origin) sets contentLines and renders all lines indented 4 spaces ({§cli-rendering})

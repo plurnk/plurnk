@@ -259,6 +259,7 @@ export interface SessionPresenterOptions {
     readonly model?: string;
     readonly yolo?: boolean;
     readonly maxReasoningLines?: number;
+    readonly planCompletedTurns?: number;
     readonly initialMeta?: MetaRecord;
     readonly initialConfigOptions?: readonly SessionConfigOptionType[];
 }
@@ -328,8 +329,11 @@ export class SessionPresenter {
     lastStatusLine = "";
 
     readonly maxReasoningLines: number;
+    readonly planCompletedTurns: number;
     #reasoningBuffer = "";
     #reasoningLines: string[] = [];
+    #rawPlanEntries: PlanEntryItem[] = [];
+    readonly #completedPlanTurnByItem = new Map<string, number>();
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
     #turnBaseInputTokens = 0;
@@ -354,6 +358,13 @@ export class SessionPresenter {
         this.model = options.model ?? "default";
         this.yolo = options.yolo ?? true;
         this.maxReasoningLines = options.maxReasoningLines ?? 3;
+        const envPlanCompletedTurns =
+            process.env.PLURNK_CLIENT_PLAN_COMPLETED_TURNS !== undefined
+                ? Number.parseInt(process.env.PLURNK_CLIENT_PLAN_COMPLETED_TURNS, 10)
+                : Number.NaN;
+        this.planCompletedTurns =
+            options.planCompletedTurns ??
+            (Number.isInteger(envPlanCompletedTurns) ? envPlanCompletedTurns : -1);
 
         if (options.initialConfigOptions) {
             this.#applyConfigOptions(options.initialConfigOptions);
@@ -429,7 +440,7 @@ export class SessionPresenter {
         this.#concludedStreams.clear();
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
-        this.planEntries = [];
+        this.#clearPlanState();
     }
 
     isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
@@ -440,16 +451,53 @@ export class SessionPresenter {
         return false;
     }
 
+    #clearPlanState(): void {
+        this.#rawPlanEntries = [];
+        this.#completedPlanTurnByItem.clear();
+        this.planEntries = [];
+    }
+
+    #refreshPlanEntries(currentTurn = Math.max(1, this.turns)): boolean {
+        const nextEntries = this.#rawPlanEntries.filter((entry) => {
+            if (entry.status !== "completed") return true;
+            if (this.planCompletedTurns < 0) return true;
+            const completedTurn = this.#completedPlanTurnByItem.get(entry.content) ?? currentTurn;
+            return currentTurn - completedTurn <= this.planCompletedTurns;
+        });
+        const changed =
+            nextEntries.length !== this.planEntries.length ||
+            nextEntries.some(
+                (entry, idx) =>
+                    entry.content !== this.planEntries[idx]?.content ||
+                    entry.status !== this.planEntries[idx]?.status,
+            );
+        if (changed) {
+            this.planEntries = nextEntries;
+        }
+        return changed;
+    }
+
+    #retireCompletedPlanItems(frames?: PresentationFrame[]): void {
+        if (this.#rawPlanEntries.length === 0) return;
+        const changed = this.#refreshPlanEntries(Math.max(1, this.turns));
+        if (changed && frames !== undefined) {
+            frames.push({
+                kind: "plan_update",
+                entries: [...this.planEntries],
+            });
+        }
+    }
+
     #resetLoopTurns(): void {
         this.turns = 0;
         this.#awaitingTurnCount = 0;
         this.#loopConcluded = false;
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
-        this.planEntries = [];
+        this.#clearPlanState();
     }
 
-    #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
+    #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown, frames?: PresentationFrame[]): void {
         if (typeof loopSeq === "number") {
             if (this.loopSeq !== null && this.loopSeq !== loopSeq) {
                 this.#resetLoopTurns();
@@ -466,6 +514,7 @@ export class SessionPresenter {
             }
             this.turns = Math.max(this.turns, turnSeq);
             this.#promoteSurvivingStreams(this.turns);
+            this.#retireCompletedPlanItems(frames);
         }
     }
 
@@ -491,11 +540,11 @@ export class SessionPresenter {
         this.doing = null;
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
-        this.planEntries = [];
+        this.#clearPlanState();
         return this.buildStatusBar();
     }
 
-    ingestMeta(meta: MetaRecord | undefined): void {
+    ingestMeta(meta: MetaRecord | undefined, frames?: PresentationFrame[]): void {
         if (!meta) return;
         const plurnk = meta.plurnk as Record<string, unknown> | undefined;
         if (!plurnk) return;
@@ -527,7 +576,7 @@ export class SessionPresenter {
         if (typeof plurnk.sessionName === "string" && plurnk.sessionName.length > 0) {
             this.sessionName = plurnk.sessionName;
         }
-        this.#syncLoopAndTurn(plurnk.loopSeq, plurnk.turn);
+        this.#syncLoopAndTurn(plurnk.loopSeq, plurnk.turn, frames);
 
         const status = plurnk.status as Record<string, unknown> | undefined;
         if (status) {
@@ -573,6 +622,7 @@ export class SessionPresenter {
             }
             if (typeof status.packetCount === "number" && status.packetCount > 0) {
                 this.turns = Math.max(this.turns, status.packetCount);
+                this.#retireCompletedPlanItems(frames);
             }
             if (
                 (status.lifecycle === "idle" ||
@@ -582,7 +632,7 @@ export class SessionPresenter {
                 (this.loopId !== null || this.loopSeq !== null)
             ) {
                 this.#loopConcluded = true;
-                this.planEntries = [];
+                this.#clearPlanState();
             }
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
@@ -1027,14 +1077,14 @@ export class SessionPresenter {
         const frames: PresentationFrame[] = [];
 
         if (SessionUpdate.isConfigOptionUpdate(update)) {
-            this.ingestMeta(update._meta as MetaRecord | undefined);
+            this.ingestMeta(update._meta as MetaRecord | undefined, frames);
             this.#applyConfigOptions(update.configOptions, true);
             this.#flushPendingHistoryLost(frames);
             return frames;
         }
 
         if (SessionUpdate.isUsageUpdate(update)) {
-            this.ingestMeta(update._meta as MetaRecord | undefined);
+            this.ingestMeta(update._meta as MetaRecord | undefined, frames);
             if (this.contextTokens === null && this.curationWeight === 0) {
                 this.curationWeight = update.used;
             }
@@ -1046,6 +1096,22 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isAgentThoughtChunk(update) || SessionUpdate.isAgentThought(update)) {
+            const thoughtPlurnk = (
+                update._meta as
+                    | {
+                          plurnk?: {
+                              loopSeq?: number;
+                              turnSeq?: number;
+                              turn?: number;
+                          };
+                      }
+                    | undefined
+            )?.plurnk;
+            this.#syncLoopAndTurn(
+                thoughtPlurnk?.loopSeq,
+                typeof thoughtPlurnk?.turnSeq === "number" ? thoughtPlurnk.turnSeq : thoughtPlurnk?.turn,
+                frames,
+            );
             const deltaText = SessionUpdate.isAgentThoughtChunk(update)
                 ? contentBlockToText(update.content)
                 : (update.content ?? []).map(contentBlockToText).join("");
@@ -1065,11 +1131,46 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isPlanUpdate(update)) {
+            const incomingPlurnk = (
+                update._meta as
+                    | {
+                          plurnk?: {
+                              loopSeq?: number;
+                              turnSeq?: number;
+                              turn?: number;
+                          };
+                      }
+                    | undefined
+            )?.plurnk;
+            const incomingTurn =
+                typeof incomingPlurnk?.turnSeq === "number"
+                    ? incomingPlurnk.turnSeq
+                    : typeof incomingPlurnk?.turn === "number"
+                      ? incomingPlurnk.turn
+                      : undefined;
+            this.#syncLoopAndTurn(incomingPlurnk?.loopSeq, incomingTurn);
+            const eventTurn =
+                typeof incomingTurn === "number" && incomingTurn > 0
+                    ? incomingTurn
+                    : Math.max(1, this.turns);
+            const currentTurn = Math.max(1, this.turns, eventTurn);
             if (PlanUpdateContent.isItems(update.plan)) {
-                this.planEntries = update.plan.entries.map((entry) => ({
+                this.#rawPlanEntries = update.plan.entries.map((entry) => ({
                     content: entry.content,
                     status: entry.status,
                 }));
+                const nextCompleted = new Map<string, number>();
+                for (const entry of this.#rawPlanEntries) {
+                    if (entry.status === "completed") {
+                        const existingTurn = this.#completedPlanTurnByItem.get(entry.content);
+                        nextCompleted.set(entry.content, existingTurn ?? eventTurn);
+                    }
+                }
+                this.#completedPlanTurnByItem.clear();
+                for (const [k, v] of nextCompleted) {
+                    this.#completedPlanTurnByItem.set(k, v);
+                }
+                this.#refreshPlanEntries(currentTurn);
             }
             frames.push({
                 kind: "plan_update",
@@ -1079,7 +1180,7 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isPlanRemoved(update)) {
-            this.planEntries = [];
+            this.#clearPlanState();
             frames.push({
                 kind: "plan_update",
                 entries: [],
@@ -1134,7 +1235,7 @@ export class SessionPresenter {
                     distilled?: string;
                 };
             };
-            this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq);
+            this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq, frames);
             const incomingRawInput =
                 update.rawInput && typeof update.rawInput === "object"
                     ? (update.rawInput as Record<string, unknown>)
@@ -1643,7 +1744,7 @@ export class SessionPresenter {
                       }
                     | undefined
             )?.plurnk;
-            this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq);
+            this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq, frames);
             this.#loopConcluded = false;
             const text = SessionUpdate.isAgentMessageChunk(update)
                 ? contentBlockToText(update.content)
@@ -1672,7 +1773,7 @@ export class SessionPresenter {
             // Route workspace state/preparation, engine turn progress, loop status, and search progress
             // to the right of the status line instead of the waterfall ({§cli-session-status}, {§cli-rendering}).
             if (update.title === "workspace:state" || update.title === "workspace:preparation") {
-                this.ingestMeta(update._meta as MetaRecord | undefined);
+                this.ingestMeta(update._meta as MetaRecord | undefined, frames);
                 this.#flushPendingHistoryLost(frames);
                 frames.push({
                     kind: "status_update",
@@ -1698,6 +1799,7 @@ export class SessionPresenter {
                     this.#awaitingTurnCount += 1;
                     this.turns = Math.max(this.turns, this.#awaitingTurnCount);
                     this.#promoteSurvivingStreams(this.turns, true);
+                    this.#retireCompletedPlanItems(frames);
                     this.lifecycle = "running";
                     this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
                     frames.push({
@@ -1795,8 +1897,10 @@ export class SessionPresenter {
                 }
                 if (typeof rawNotice.packetCount === "number" && rawNotice.packetCount > 0) {
                     this.turns = Math.max(this.turns, rawNotice.packetCount);
+                    this.#retireCompletedPlanItems(frames);
                 } else if (rawNotice.status === 102 && this.turns === 0) {
                     this.turns = 1;
+                    this.#retireCompletedPlanItems(frames);
                 }
                 if (rawNotice.status === 202) {
                     this.#retireReasoning(frames);
@@ -1883,7 +1987,7 @@ export class SessionPresenter {
             const priorBaseInputTokens = this.#turnBaseInputTokens;
             const priorBaseOutputTokens = this.#turnBaseOutputTokens;
             const priorBaseCostUsd = this.#turnBaseCostUsd;
-            this.ingestMeta(update._meta as MetaRecord | undefined);
+            this.ingestMeta(update._meta as MetaRecord | undefined, frames);
             const metaLifecycle = (
                 update._meta as { plurnk?: { status?: { lifecycle?: unknown } } } | undefined
             )?.plurnk?.status?.lifecycle;
@@ -1929,7 +2033,7 @@ export class SessionPresenter {
                 this.#lastStreamTarget = "";
                 this.doing = null;
                 this.activity = null;
-                this.planEntries = [];
+                this.#clearPlanState();
                 this.waitUntil = null;
                 this.inboxCount = 0;
                 const termMeta = (

@@ -876,6 +876,101 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(removedFrames[0]?.kind, "plan_update");
     assert.deepEqual(presenter.planEntries, []);
 
+    // Completed plan items remain visible for planCompletedTurns (default 3) turns and retire once
+    // currentTurn - completedTurn > 3; -1 retains all completed items ({§cli-rendering}, {§cli-session-status}).
+    const agingPresenter = new SessionPresenter({
+        workspaceName: "ws",
+        sessionName: "main",
+        model: "fast",
+    });
+    assert.equal(agingPresenter.planCompletedTurns, 3);
+    agingPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Step A", priority: "medium", status: "completed" },
+                { content: "Step B", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
+    });
+    assert.deepEqual(agingPresenter.planEntries, [
+        { content: "Step A", status: "completed" },
+        { content: "Step B", status: "pending" },
+    ]);
+
+    // Turn 4 (4 - 1 === 3 <= 3): Step A is still retained; Step B becomes completed at turn 4.
+    agingPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Step A", priority: "medium", status: "completed" },
+                { content: "Step B", priority: "medium", status: "completed" },
+                { content: "Step C", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 4 } },
+    });
+    assert.deepEqual(agingPresenter.planEntries, [
+        { content: "Step A", status: "completed" },
+        { content: "Step B", status: "completed" },
+        { content: "Step C", status: "pending" },
+    ]);
+
+    // Turn 5 advances via tool_call_update without a new plan_update (5 - 1 === 4 > 3):
+    // Step A retires automatically and emits a plan_update frame, while Step B (5 - 4 === 1 <= 3) stays.
+    const turn5Frames = agingPresenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/5/1",
+        name: "READ",
+        title: "READ (src/index.ts)",
+        status: "completed",
+        rawInput: { target: { raw: "src/index.ts" } },
+        _meta: { plurnk: { id: 501, op: "READ", origin: "model", status: 200, loopSeq: 1, turnSeq: 5 } },
+    });
+    assert.equal(turn5Frames[0]?.kind, "plan_update");
+    assert.deepEqual(agingPresenter.planEntries, [
+        { content: "Step B", status: "completed" },
+        { content: "Step C", status: "pending" },
+    ]);
+
+    // With planCompletedTurns: -1, completed items never retire by age during the loop.
+    const retainAllPresenter = new SessionPresenter({
+        workspaceName: "ws",
+        sessionName: "main",
+        model: "fast",
+        planCompletedTurns: -1,
+    });
+    retainAllPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [{ content: "Step A", priority: "medium", status: "completed" }],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
+    });
+    retainAllPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Step A", priority: "medium", status: "completed" },
+                { content: "Step B", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 10 } },
+    });
+    assert.deepEqual(retainAllPresenter.planEntries, [
+        { content: "Step A", status: "completed" },
+        { content: "Step B", status: "pending" },
+    ]);
+
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).
     const freshPresenter = new SessionPresenter({

@@ -93,6 +93,9 @@ export const runTuiViewport = async (
         sessionName: options.sessionId ?? options.tuiSession ?? "user",
         model: options.model ?? "default",
         yolo: options.yolo,
+        ...(options.planCompletedTurns !== undefined
+            ? { planCompletedTurns: options.planCompletedTurns }
+            : {}),
     });
 
     let initialPromptPrinted = false;

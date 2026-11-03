@@ -115,6 +115,7 @@ export interface CliCommonOptions {
     readonly statusStream: boolean;
     readonly shareFolder?: string;
     readonly previewLines: number;
+    readonly planCompletedTurns?: number;
     readonly historyEntries: number;
     readonly mermaidTimeoutMs: number;
     readonly color: string;

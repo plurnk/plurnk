@@ -462,24 +462,38 @@ export class AcpSession {
             term.outputText += Buffer.from(update.data, "base64").toString("utf8");
         } else if (SessionUpdate.isPlanUpdate(update)) {
             this.#activeStreamMessage = null;
-            const existing = this.items.find(
-                (item): item is AcpPlanState => item.kind === "plan" && item.plan.planId === update.plan.planId,
-            );
-            if (existing !== undefined) {
-                existing.plan = update.plan;
-                existing.meta = patchMeta(existing.meta, update._meta);
-            } else {
-                this.items.push({
-                    kind: "plan",
-                    plan: update.plan,
-                    meta: patchMeta(undefined, update._meta),
-                });
+            const updatePlurnk = (update._meta?.plurnk ?? undefined) as
+                | { loopSeq?: unknown; turnSeq?: unknown }
+                | undefined;
+            const loopSeq = typeof updatePlurnk?.loopSeq === "number" ? updatePlurnk.loopSeq : undefined;
+            const turnSeq = typeof updatePlurnk?.turnSeq === "number" ? updatePlurnk.turnSeq : undefined;
+            const existingIdx = this.items.findIndex((item): item is AcpPlanState => {
+                if (item.kind !== "plan" || item.plan.planId !== update.plan.planId) {
+                    return false;
+                }
+                const itemPlurnk = (item.meta?.plurnk ?? undefined) as
+                    | { loopSeq?: unknown; turnSeq?: unknown }
+                    | undefined;
+                const itemLoopSeq = typeof itemPlurnk?.loopSeq === "number" ? itemPlurnk.loopSeq : undefined;
+                const itemTurnSeq = typeof itemPlurnk?.turnSeq === "number" ? itemPlurnk.turnSeq : undefined;
+                return itemLoopSeq === loopSeq && itemTurnSeq === turnSeq;
+            });
+            const priorMeta = existingIdx >= 0 ? (this.items[existingIdx] as AcpPlanState).meta : undefined;
+            if (existingIdx >= 0) {
+                this.items.splice(existingIdx, 1);
             }
+            this.items.push({
+                kind: "plan",
+                plan: update.plan,
+                meta: patchMeta(priorMeta, update._meta),
+            });
         } else if (SessionUpdate.isPlanRemoved(update)) {
-            const idx = this.items.findIndex(
-                (item) => item.kind === "plan" && item.plan.planId === update.planId,
-            );
-            if (idx >= 0) this.items.splice(idx, 1);
+            for (let i = this.items.length - 1; i >= 0; i--) {
+                const item = this.items[i]!;
+                if (item.kind === "plan" && item.plan.planId === update.planId) {
+                    this.items.splice(i, 1);
+                }
+            }
         } else if (SessionUpdate.isSubagentUpdate(update)) {
             let sub = this.subagents.get(update.sessionId);
             if (sub === undefined) {

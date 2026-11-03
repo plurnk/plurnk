@@ -1325,6 +1325,27 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     },
                 },
             });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "plan_update",
+                    plan: {
+                        type: "items",
+                        planId: "plan",
+                        entries: [
+                            { content: "Survey the environment.", priority: "medium", status: "completed" },
+                            { content: "Resolve all Open Work.", priority: "medium", status: "pending" },
+                        ],
+                    },
+                    _meta: {
+                        plurnk: {
+                            id: 24573,
+                            loopSeq: 17,
+                            turnSeq: 1,
+                        },
+                    },
+                },
+            });
             // Turn 2: NOTE at 17/2/1 finishes while 17/1/5 is still running
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
@@ -1367,7 +1388,29 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     },
                 },
             });
-            // Turn 2 also emits a KILL with a distillation body (17/2/6) and its synthesized NOTE (17/2/7) (#244)
+            // Turn 2 also emits a plan_update at 17/2/2 and a KILL with a distillation body (17/2/6) and its synthesized NOTE (17/2/7) (#244)
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "plan_update",
+                    plan: {
+                        type: "items",
+                        planId: "plan",
+                        entries: [
+                            { content: "Survey the environment.", priority: "medium", status: "completed" },
+                            { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
+                            { content: "Implement xcp2.", priority: "medium", status: "pending" },
+                        ],
+                    },
+                    _meta: {
+                        plurnk: {
+                            id: 24580,
+                            loopSeq: 17,
+                            turnSeq: 2,
+                        },
+                    },
+                },
+            });
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -1548,13 +1591,19 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
 
         const promptWrites = termWrites.slice(writesBeforePrompt).join("");
         const shPos = promptWrites.lastIndexOf("turn1_sh_aside");
+        const turn1PlanClosedPos = promptWrites.lastIndexOf("🗹 Survey the environment.");
+        const turn1PlanOpenPos = promptWrites.lastIndexOf("☐ Resolve all Open Work.");
         const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
         const killPos = promptWrites.lastIndexOf("retire turn 1 transcripts");
         const distilledBodyPos = promptWrites.lastIndexOf("    DISTILLED_KILL_NOTE_BODY");
+        const turn2PlanClosedPos = promptWrites.lastIndexOf("🗹 Resolve all Open Work.");
+        const turn2PlanOpenPos = promptWrites.lastIndexOf("☐ Implement xcp2.");
         const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
         assert.ok(shPos >= 0, "17/1/5 sh single-line receipt must be rendered");
         assert.equal(promptWrites.includes("echo turn1_sh"), false, "sh script body must not be previewed");
-        assert.ok(notePos > shPos, "17/1/5 sh receipt must appear above Turn 2 NOTE (17/2/1)");
+        assert.ok(turn1PlanClosedPos > shPos, "Turn 1 plan diff must appear at the end of Turn 1 after 17/1/5 sh");
+        assert.ok(turn1PlanOpenPos > turn1PlanClosedPos, "Turn 1 plan diff renders ☐ after 🗹");
+        assert.ok(notePos > turn1PlanOpenPos, "Turn 1 plan diff must appear before Turn 2 NOTE (17/2/1)");
         assert.ok(killPos > notePos, "17/2/6 KILL row must appear after 17/2/1 NOTE");
         assert.ok(
             distilledBodyPos > killPos,
@@ -1566,7 +1615,12 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
             false,
             "synthesized NOTE with attrs.distilled must not render a standalone 🗒️ block",
         );
-        assert.ok(hamsterPos > distilledBodyPos, "Turn 7 🐹 reply must appear below Turn 1 sh, Turn 2 NOTE, and KILL");
+        assert.ok(
+            turn2PlanClosedPos > distilledBodyPos,
+            "Turn 2 plan diff (emitted at 17/2/2) must sit at the end of Turn 2 after 17/2/6 KILL",
+        );
+        assert.ok(turn2PlanOpenPos > turn2PlanClosedPos, "Turn 2 plan diff renders ☐ Implement xcp2.");
+        assert.ok(hamsterPos > turn2PlanOpenPos, "Turn 7 🐹 reply must appear below Turn 2 plan diff");
         assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);
 
         inputCallback!("\x04");

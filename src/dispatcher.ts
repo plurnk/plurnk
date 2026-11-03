@@ -60,7 +60,6 @@ export const CLIENT_OPTIONS = {
     timeout: { type: "string" },
     "files-items": { type: "string" },
     "preview-lines": { type: "string" },
-    "plan-completed-turns": { type: "string" },
     "history-entries": { type: "string" },
     "mermaid-timeout-ms": { type: "string" },
     color: { type: "string" },
@@ -206,9 +205,6 @@ options:
       --preview-lines <n> lines of each operation body and execution output shown
                           beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
-      --plan-completed-turns <n> turns a completed plan item (🗹) remains visible in the
-                          live plan list before retiring (-1 retains all). Overrides
-                          PLURNK_CLIENT_PLAN_COMPLETED_TURNS.
       --history-entries <n> recent entries restored when the TUI opens or switches a
                           workspace or session; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
@@ -618,12 +614,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             : env.PLURNK_CLIENT_PREVIEW_LINES,
         10,
     );
-    const planCompletedTurns = Number.parseInt(
-        typeof parsed.values["plan-completed-turns"] === "string"
-            ? parsed.values["plan-completed-turns"]
-            : env.PLURNK_CLIENT_PLAN_COMPLETED_TURNS,
-        10,
-    );
     const historyEntries = Number.parseInt(
         typeof parsed.values["history-entries"] === "string"
             ? parsed.values["history-entries"]
@@ -673,7 +663,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         statusStream,
         ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
         previewLines,
-        ...(Number.isInteger(planCompletedTurns) ? { planCompletedTurns } : {}),
         historyEntries,
         mermaidTimeoutMs,
         color,

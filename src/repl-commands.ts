@@ -142,7 +142,7 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
                 return true;
             }
             if (item.kind === "plan") {
-                return targetSession.state !== "idle";
+                return true;
             }
             return false;
         })

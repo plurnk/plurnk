@@ -823,7 +823,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(noteFrames[0].noteBody, "Body for note");
     }
 
-    // TODO tool_call_update rows are suppressed from the waterfall; plan_update projects ☐ / 🗹 items above activity ({§cli-rendering}, {§cli-session-status}).
+    // TODO tool_call_update rows are suppressed from the waterfall; plan_update projects the per-turn diff
+    // (newly closed 🗹 + newly opened ☐ items) at the end of the turn in the waterfall ({§cli-rendering}, {§cli-session-status}).
     const todoFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/todo-1",
@@ -845,8 +846,12 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                 { content: "Step 2", priority: "medium", status: "pending" },
             ],
         },
+        _meta: { plurnk: { loopSeq: 6, turnSeq: 2 } },
     });
     assert.equal(planFrames[0]?.kind, "plan_update");
+    if (planFrames[0]?.kind === "plan_update") {
+        assert.equal(planFrames[0].toolCallId, `6/2/${String(Number.MAX_SAFE_INTEGER)}`);
+    }
     assert.deepEqual(presenter.planEntries, [
         { content: "Step 1", status: "completed" },
         { content: "Step 2", status: "pending" },
@@ -854,18 +859,16 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     const renderedPlan = stripVTControlCharacters(renderPlanLines(presenter.planEntries, 80));
     assert.equal(renderedPlan, "🗹 Step 1\n☐ Step 2");
 
+    // #live reserves strictly 3 reasoning lines + 1 activity line ({§cli-rendering}, {§cli-session-status}).
     const tail = new TailText(() => 3);
     tail.setReserved(true);
     tail.setText("💭 Thinking...");
-    tail.setPlan(renderPlanLines(presenter.planEntries, 80));
     tail.setActivity("⚙️  sh (stream://1) 2s");
     const liveLines = tail.render(80).map((l) => stripVTControlCharacters(l));
     assert.deepEqual(liveLines, [
         "💭 Thinking...",
         "",
         "",
-        "🗹 Step 1",
-        "☐ Step 2",
         "⚙️  sh (stream://1) 2s",
     ]);
 
@@ -874,102 +877,128 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         planId: "plan",
     });
     assert.equal(removedFrames[0]?.kind, "plan_update");
+    if (removedFrames[0]?.kind === "plan_update") {
+        assert.equal(removedFrames[0].toolCallId, `6/2/${String(Number.MAX_SAFE_INTEGER)}`);
+        assert.deepEqual(removedFrames[0].entries, []);
+    }
     assert.deepEqual(presenter.planEntries, []);
 
-    // Completed plan items remain visible for planCompletedTurns (default 3) turns and retire once
-    // currentTurn - completedTurn > 3; -1 retains all completed items ({§cli-rendering}, {§cli-session-status}).
-    const agingPresenter = new SessionPresenter({
+    // Per-turn diff across turns: only newly completed (🗹) and newly added (☐) items are emitted for each turn;
+    // previously completed items and unchanged pending items are never reprinted ({§cli-rendering}, {§cli-session-status}).
+    const diffPresenter = new SessionPresenter({
         workspaceName: "ws",
         sessionName: "main",
         model: "fast",
     });
-    assert.equal(agingPresenter.planCompletedTurns, 3);
-    agingPresenter.apply({
+    // Turn 1 (e.g. initialization turn with opening and closing TODO):
+    diffPresenter.apply({
         sessionUpdate: "plan_update",
         plan: {
             type: "items",
             planId: "plan",
             entries: [
-                { content: "Step A", priority: "medium", status: "completed" },
-                { content: "Step B", priority: "medium", status: "pending" },
+                { content: "Survey the environment.", priority: "medium", status: "pending" },
+                { content: "Resolve all Open Work.", priority: "medium", status: "pending" },
             ],
         },
         _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
     });
-    assert.deepEqual(agingPresenter.planEntries, [
-        { content: "Step A", status: "completed" },
-        { content: "Step B", status: "pending" },
-    ]);
-
-    // Turn 4 (4 - 1 === 3 <= 3): Step A is still retained; Step B becomes completed at turn 4.
-    agingPresenter.apply({
+    const t1Final = diffPresenter.apply({
         sessionUpdate: "plan_update",
         plan: {
             type: "items",
             planId: "plan",
             entries: [
+                { content: "Survey the environment.", priority: "medium", status: "completed" },
+                { content: "Resolve all Open Work.", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
+    });
+    assert.equal(t1Final[0]?.kind, "plan_update");
+    if (t1Final[0]?.kind === "plan_update") {
+        assert.equal(t1Final[0].toolCallId, `1/1/${String(Number.MAX_SAFE_INTEGER)}`);
+        assert.deepEqual(t1Final[0].entries, [
+            { content: "Survey the environment.", status: "completed" },
+            { content: "Resolve all Open Work.", status: "pending" },
+        ]);
+    }
+
+    // Turn 2: model replaces TODO with Step A and Step B -> "Resolve all Open Work." is newly completed,
+    // "Survey the environment." was already completed in Turn 1 (not reprinted), Step A & Step B are newly opened.
+    const t2Frames = diffPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Survey the environment.", priority: "medium", status: "completed" },
+                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
+                { content: "Step A", priority: "medium", status: "pending" },
+                { content: "Step B", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 2 } },
+    });
+    assert.equal(t2Frames[0]?.kind, "plan_update");
+    if (t2Frames[0]?.kind === "plan_update") {
+        assert.equal(t2Frames[0].toolCallId, `1/2/${String(Number.MAX_SAFE_INTEGER)}`);
+        assert.deepEqual(t2Frames[0].entries, [
+            { content: "Resolve all Open Work.", status: "completed" },
+            { content: "Step A", status: "pending" },
+            { content: "Step B", status: "pending" },
+        ]);
+    }
+
+    // Turn 3: Step A is completed, Step B remains pending (unchanged -> not reprinted), Step C is newly opened.
+    const t3Frames = diffPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Survey the environment.", priority: "medium", status: "completed" },
+                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
+                { content: "Step A", priority: "medium", status: "completed" },
+                { content: "Step B", priority: "medium", status: "pending" },
+                { content: "Step C", priority: "medium", status: "pending" },
+            ],
+        },
+        _meta: { plurnk: { loopSeq: 1, turnSeq: 3 } },
+    });
+    assert.equal(t3Frames[0]?.kind, "plan_update");
+    if (t3Frames[0]?.kind === "plan_update") {
+        assert.equal(t3Frames[0].toolCallId, `1/3/${String(Number.MAX_SAFE_INTEGER)}`);
+        assert.deepEqual(t3Frames[0].entries, [
+            { content: "Step A", status: "completed" },
+            { content: "Step C", status: "pending" },
+        ]);
+    }
+
+    // Turn 4: All items completed before DONE -> only Step B and Step C are newly completed.
+    const t4Frames = diffPresenter.apply({
+        sessionUpdate: "plan_update",
+        plan: {
+            type: "items",
+            planId: "plan",
+            entries: [
+                { content: "Survey the environment.", priority: "medium", status: "completed" },
+                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
                 { content: "Step A", priority: "medium", status: "completed" },
                 { content: "Step B", priority: "medium", status: "completed" },
-                { content: "Step C", priority: "medium", status: "pending" },
+                { content: "Step C", priority: "medium", status: "completed" },
             ],
         },
         _meta: { plurnk: { loopSeq: 1, turnSeq: 4 } },
     });
-    assert.deepEqual(agingPresenter.planEntries, [
-        { content: "Step A", status: "completed" },
-        { content: "Step B", status: "completed" },
-        { content: "Step C", status: "pending" },
-    ]);
-
-    // Turn 5 advances via tool_call_update without a new plan_update (5 - 1 === 4 > 3):
-    // Step A retires automatically and emits a plan_update frame, while Step B (5 - 4 === 1 <= 3) stays.
-    const turn5Frames = agingPresenter.apply({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "1/5/1",
-        name: "READ",
-        title: "READ (src/index.ts)",
-        status: "completed",
-        rawInput: { target: { raw: "src/index.ts" } },
-        _meta: { plurnk: { id: 501, op: "READ", origin: "model", status: 200, loopSeq: 1, turnSeq: 5 } },
-    });
-    assert.equal(turn5Frames[0]?.kind, "plan_update");
-    assert.deepEqual(agingPresenter.planEntries, [
-        { content: "Step B", status: "completed" },
-        { content: "Step C", status: "pending" },
-    ]);
-
-    // With planCompletedTurns: -1, completed items never retire by age during the loop.
-    const retainAllPresenter = new SessionPresenter({
-        workspaceName: "ws",
-        sessionName: "main",
-        model: "fast",
-        planCompletedTurns: -1,
-    });
-    retainAllPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [{ content: "Step A", priority: "medium", status: "completed" }],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
-    });
-    retainAllPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Step A", priority: "medium", status: "completed" },
-                { content: "Step B", priority: "medium", status: "pending" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 10 } },
-    });
-    assert.deepEqual(retainAllPresenter.planEntries, [
-        { content: "Step A", status: "completed" },
-        { content: "Step B", status: "pending" },
-    ]);
+    assert.equal(t4Frames[0]?.kind, "plan_update");
+    if (t4Frames[0]?.kind === "plan_update") {
+        assert.equal(t4Frames[0].toolCallId, `1/4/${String(Number.MAX_SAFE_INTEGER)}`);
+        assert.deepEqual(t4Frames[0].entries, [
+            { content: "Step B", status: "completed" },
+            { content: "Step C", status: "completed" },
+        ]);
+    }
 
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).

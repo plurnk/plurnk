@@ -136,7 +136,13 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
                 ) {
                     return false;
                 }
+                if (op === "TODO") {
+                    return false;
+                }
                 return true;
+            }
+            if (item.kind === "plan") {
+                return targetSession.state !== "idle";
             }
             return false;
         })

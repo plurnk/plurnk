@@ -569,12 +569,12 @@
         "evidence": ["src/session-presenter.ts — live base64 terminal_output streaming"]
       },
       "isPlanUpdate": {
-        "posture": "ignored",
-        "evidence": ["src/session-presenter.ts — plans project as NOTE (plan) tool_call_update rows"]
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — loop-scoped plan_update projection to #live above activity (☐ pending, 🗹 completed)"]
       },
       "isPlanRemoved": {
-        "posture": "ignored",
-        "evidence": ["src/session-presenter.ts — plans project as NOTE (plan) tool_call_update rows"]
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — clears #live plan list when loop TODO rows are retired"]
       },
       "isAvailableCommandsUpdate": {
         "posture": "ignored",

@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import * as readline from "node:readline";
 import { PassThrough } from "node:stream";
 import type {
+    PlanUpdateContent,
     SessionUpdate,
     ToolCallContent,
     ToolCallLocation,
@@ -33,6 +34,7 @@ import TuiSurface, {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
+    renderPlanLines,
     renderReasoning,
     renderSubmittedInput,
     windowTitle,
@@ -190,6 +192,8 @@ export const runTuiViewport = async (
             presenter.lifecycle === "parked" ||
             presenter.lifecycle === "requires_action";
         surface.setLoopActive(isLoopActive);
+        const planText = isLoopActive ? renderPlanLines(presenter.planEntries, surface.columns) : "";
+        surface.setLivePlan(planText.length > 0 ? planText : null);
         const activeLine = renderActiveLiveLine(presenter.activeLiveEntries, surface.columns);
         surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
         const loopNum = presenter.loopSeq ?? 1;
@@ -226,7 +230,7 @@ export const runTuiViewport = async (
 
     const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
         if (surface === null) return;
-        if ((frame.op === "NOTE" || frame.op === "TODO") && frame.origin === "model") {
+        if (frame.op === "NOTE" && frame.origin === "model") {
             const rendered = renderNoteBlock({
                 glyph: frame.glyph,
                 aside: frame.aside,
@@ -770,6 +774,14 @@ export const runTuiViewport = async (
                         aside: plurnkMeta?.attrs?.aside ?? null,
                     }),
                 );
+            } else if (rec.kind === "plan" && rec.plan && typeof rec.plan === "object") {
+                presenter.apply({
+                    sessionUpdate: "plan_update",
+                    plan: rec.plan as PlanUpdateContent,
+                    ...(rec.meta !== undefined && typeof rec.meta === "object" && rec.meta !== null
+                        ? { _meta: rec.meta as Record<string, unknown> }
+                        : {}),
+                });
             }
         }
         } finally {
@@ -993,7 +1005,9 @@ export const runTuiViewport = async (
                 surface !== null &&
                 event.sessionUpdate === "tool_call_update" &&
                 typeof event.toolCallId === "string" &&
-                (event.status === "pending" || event.status === "in_progress")
+                (event.status === "pending" || event.status === "in_progress") &&
+                event.name !== "TODO" &&
+                (event._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op !== "TODO"
             ) {
                 surface.reserveToolCall(event.toolCallId);
             }
@@ -1014,6 +1028,11 @@ export const runTuiViewport = async (
             for (const frame of frames) {
                 switch (frame.kind) {
                     case "reasoning_tail":
+                        break;
+                    case "plan_update":
+                        if (surface !== null) {
+                            updateSurfaceStatus();
+                        }
                         break;
                     case "subagent":
                         if (surface !== null) {

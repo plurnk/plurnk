@@ -54,6 +54,7 @@ import {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
+    renderPlanLines,
     renderReasoning,
 } from "./markdown.ts";
 
@@ -83,6 +84,7 @@ export {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
+    renderPlanLines,
     renderReasoning,
     renderSubmittedInput,
     resumeCommand,
@@ -189,9 +191,10 @@ class TranscriptSlot implements Component {
     }
 }
 
-// Live reasoning ticker (at most 3 rolling lines) plus 1 active streams/workers strip above the composer ({§cli-markdown-projection}, {§cli-rendering}).
+// Live reasoning ticker (at most 3 rolling lines), harness-rendered loop plan list, plus 1 active streams/workers strip above the composer ({§cli-markdown-projection}, {§cli-rendering}).
 export class TailText implements Component {
     #text = "";
+    #plan = "";
     #activity = "";
     #reserved = false;
     readonly #maxLines: () => number;
@@ -204,6 +207,10 @@ export class TailText implements Component {
         return this.#text.length > 0;
     }
 
+    get hasPlan(): boolean {
+        return this.#plan.length > 0;
+    }
+
     get hasActivity(): boolean {
         return this.#activity.length > 0;
     }
@@ -214,6 +221,10 @@ export class TailText implements Component {
 
     setText(text: string): void {
         this.#text = text;
+    }
+
+    setPlan(plan: string): void {
+        this.#plan = plan;
     }
 
     setActivity(activity: string): void {
@@ -235,6 +246,14 @@ export class TailText implements Component {
             const tailRaw = rawLines.length <= max ? rawLines : rawLines.slice(rawLines.length - max);
             reasoningLines = tailRaw.map((line) => truncateToWidth(line, safeWidth, "…"));
         }
+        let planLines: string[] = [];
+        if (this.#plan.length > 0) {
+            planLines = this.#plan
+                .replace(/\t/gu, "   ")
+                .split("\n")
+                .filter((line) => line.length > 0)
+                .map((line) => truncateToWidth(line, safeWidth, "…"));
+        }
         let activityLine = "";
         if (this.#activity.length > 0) {
             const singleActivity = this.#activity.replace(/\t/gu, "   ").split("\n", 1)[0] ?? "";
@@ -245,9 +264,9 @@ export class TailText implements Component {
                 ...reasoningLines,
                 ...Array.from({ length: Math.max(0, max - reasoningLines.length) }, () => ""),
             ];
-            return [...paddedReasoning, activityLine];
+            return [...paddedReasoning, ...planLines, activityLine];
         }
-        const out: string[] = [...reasoningLines];
+        const out: string[] = [...reasoningLines, ...planLines];
         if (activityLine.length > 0) {
             out.push(activityLine);
         }
@@ -614,6 +633,11 @@ export default class TuiSurface {
 
     setLive(text: string | null): void {
         this.#live.setText(text ?? "");
+        this.#tui.requestRender();
+    }
+
+    setLivePlan(text: string | null): void {
+        this.#live.setPlan(text ?? "");
         this.#tui.requestRender();
     }
 

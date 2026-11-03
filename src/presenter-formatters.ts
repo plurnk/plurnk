@@ -20,18 +20,9 @@ export const OPERATION_GLYPH_MAP: Readonly<Record<string, string>> = {
     FAIL: "⛔",
     ERROR: "⛔",
     INFO: "📌",
-    FACT: "📊",
-    IDEA: "💡",
-    PLAN: "🚧",
 };
 
-export const operationGlyphFor = (op: string | undefined, aside?: string | null): string => {
-    if (op === "NOTE" && typeof aside === "string") {
-        const clean = aside.trim().toUpperCase();
-        if (clean === "FACT" || clean === "IDEA" || clean === "PLAN" || clean === "NOTE") {
-            return OPERATION_GLYPH_MAP[clean]!;
-        }
-    }
+export const operationGlyphFor = (op: string | undefined): string => {
     if (typeof op === "string" && op in OPERATION_GLYPH_MAP) {
         return OPERATION_GLYPH_MAP[op]!;
     }
@@ -39,25 +30,6 @@ export const operationGlyphFor = (op: string | undefined, aside?: string | null)
         return `⚙️  ${op}`;
     }
     return "⚙️";
-};
-
-export const normalizeNoteHeading = (
-    op: string,
-    rawAside: string | null,
-): { readonly glyph: string; readonly aside: string | null } => {
-    if (op === "NOTE" && typeof rawAside === "string") {
-        const trimmed = rawAside.trim();
-        const upper = trimmed.toUpperCase();
-        if (upper === "FACT" || upper === "IDEA" || upper === "PLAN" || upper === "NOTE") {
-            return { glyph: OPERATION_GLYPH_MAP[upper]!, aside: null };
-        }
-        const prefixed = trimmed.match(/^(FACT|IDEA|PLAN|NOTE)\s*[:—-]\s*(.+)$/iu);
-        if (prefixed?.[1] && prefixed[2]) {
-            const cat = prefixed[1].toUpperCase();
-            return { glyph: OPERATION_GLYPH_MAP[cat] ?? "🗒️", aside: prefixed[2].trim() };
-        }
-    }
-    return { glyph: operationGlyphFor(op, rawAside), aside: rawAside };
 };
 
 export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number): string => {

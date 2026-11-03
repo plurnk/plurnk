@@ -191,10 +191,9 @@ class TranscriptSlot implements Component {
     }
 }
 
-// Live reasoning ticker (at most 3 rolling lines), harness-rendered loop plan list, plus 1 active streams/workers strip above the composer ({§cli-markdown-projection}, {§cli-rendering}).
+// Live reasoning ticker (at most 3 rolling lines) plus 1 active streams/workers strip above the composer ({§cli-markdown-projection}, {§cli-rendering}).
 export class TailText implements Component {
     #text = "";
-    #plan = "";
     #activity = "";
     #reserved = false;
     readonly #maxLines: () => number;
@@ -207,10 +206,6 @@ export class TailText implements Component {
         return this.#text.length > 0;
     }
 
-    get hasPlan(): boolean {
-        return this.#plan.length > 0;
-    }
-
     get hasActivity(): boolean {
         return this.#activity.length > 0;
     }
@@ -221,10 +216,6 @@ export class TailText implements Component {
 
     setText(text: string): void {
         this.#text = text;
-    }
-
-    setPlan(plan: string): void {
-        this.#plan = plan;
     }
 
     setActivity(activity: string): void {
@@ -246,14 +237,6 @@ export class TailText implements Component {
             const tailRaw = rawLines.length <= max ? rawLines : rawLines.slice(rawLines.length - max);
             reasoningLines = tailRaw.map((line) => truncateToWidth(line, safeWidth, "…"));
         }
-        let planLines: string[] = [];
-        if (this.#plan.length > 0) {
-            planLines = this.#plan
-                .replace(/\t/gu, "   ")
-                .split("\n")
-                .filter((line) => line.length > 0)
-                .map((line) => truncateToWidth(line, safeWidth, "…"));
-        }
         let activityLine = "";
         if (this.#activity.length > 0) {
             const singleActivity = this.#activity.replace(/\t/gu, "   ").split("\n", 1)[0] ?? "";
@@ -264,9 +247,9 @@ export class TailText implements Component {
                 ...reasoningLines,
                 ...Array.from({ length: Math.max(0, max - reasoningLines.length) }, () => ""),
             ];
-            return [...paddedReasoning, ...planLines, activityLine];
+            return [...paddedReasoning, activityLine];
         }
-        const out: string[] = [...reasoningLines, ...planLines];
+        const out: string[] = [...reasoningLines];
         if (activityLine.length > 0) {
             out.push(activityLine);
         }
@@ -495,10 +478,17 @@ export default class TuiSurface {
         }
         if (this.#turnResponses.length > 0) {
             const firstResponseCoord = this.#turnResponses[0]?.coordinate ?? null;
+            const sameTurnEndSlot =
+                slot.coordinate !== null &&
+                firstResponseCoord !== null &&
+                slot.coordinate[0] === firstResponseCoord[0] &&
+                slot.coordinate[1] === firstResponseCoord[1] &&
+                slot.coordinate[2] === Number.MAX_SAFE_INTEGER;
             if (
-                slot.coordinate === null ||
-                firstResponseCoord === null ||
-                compareCoordinates(slot.coordinate, firstResponseCoord) >= 0
+                !sameTurnEndSlot &&
+                (slot.coordinate === null ||
+                    firstResponseCoord === null ||
+                    compareCoordinates(slot.coordinate, firstResponseCoord) >= 0)
             ) {
                 this.archiveTurn();
             }
@@ -525,6 +515,9 @@ export default class TuiSurface {
             }
             this.#status.invalidate();
             this.#tui.requestRender();
+            return;
+        }
+        if (text.replace(/\n$/u, "").length === 0) {
             return;
         }
         const slot = new TranscriptSlot(
@@ -633,11 +626,6 @@ export default class TuiSurface {
 
     setLive(text: string | null): void {
         this.#live.setText(text ?? "");
-        this.#tui.requestRender();
-    }
-
-    setLivePlan(text: string | null): void {
-        this.#live.setPlan(text ?? "");
         this.#tui.requestRender();
     }
 

@@ -200,7 +200,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.equal(noteRow[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
-    // Harness NOTE (_plurnk origin) sets contentLines and renders all lines indented 4 spaces ({§cli-rendering})
+    // Non-distilled NOTE with _plurnk origin is treated identically to model NOTE ({§cli-rendering})
     const harnessNote = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/3",
@@ -213,23 +213,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     if (harnessNote[0]?.kind === "tool_call") {
         assert.equal(harnessNote[0].origin, "_plurnk");
         assert.equal(harnessNote[0].noteBody, "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6");
-        assert.deepEqual(harnessNote[0].contentLines, ["Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6"]);
-        const renderedHarnessNote = renderOperationBlock({
-            glyph: harnessNote[0].glyph,
-            op: harnessNote[0].op,
-            target: harnessNote[0].target,
-            scope: harnessNote[0].scope,
-            aside: harnessNote[0].aside,
-            count: harnessNote[0].count,
-            outcome: harnessNote[0].outcome,
-            contentLines: harnessNote[0].contentLines,
-            outputLines: harnessNote[0].outputLines,
-            coordinate: harnessNote[0].toolCallId,
-            previewLimit: 2,
-            columns: 80,
-        });
-        assert.match(renderedHarnessNote, /    Line 6/u);
-        assert.doesNotMatch(renderedHarnessNote, /\+\d+ line/u);
+        assert.deepEqual(harnessNote[0].contentLines, []);
     }
 
     // Concluded runtime execution renders as a single-line receipt and suppresses duplicate obligation READ ({§cli-rendering}, {§cli-problems-and-notices})

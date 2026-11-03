@@ -93,9 +93,6 @@ export const runTuiViewport = async (
         sessionName: options.sessionId ?? options.tuiSession ?? "user",
         model: options.model ?? "default",
         yolo: options.yolo,
-        ...(options.planCompletedTurns !== undefined
-            ? { planCompletedTurns: options.planCompletedTurns }
-            : {}),
     });
 
     let initialPromptPrinted = false;
@@ -195,8 +192,6 @@ export const runTuiViewport = async (
             presenter.lifecycle === "parked" ||
             presenter.lifecycle === "requires_action";
         surface.setLoopActive(isLoopActive);
-        const planText = isLoopActive ? renderPlanLines(presenter.planEntries, surface.columns) : "";
-        surface.setLivePlan(planText.length > 0 ? planText : null);
         const activeLine = renderActiveLiveLine(presenter.activeLiveEntries, surface.columns);
         surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
         const loopNum = presenter.loopSeq ?? 1;
@@ -233,7 +228,7 @@ export const runTuiViewport = async (
 
     const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
         if (surface === null) return;
-        if (frame.op === "NOTE" && frame.origin === "model") {
+        if (frame.op === "NOTE") {
             const rendered = renderNoteBlock({
                 glyph: frame.glyph,
                 aside: frame.aside,
@@ -263,6 +258,12 @@ export const runTuiViewport = async (
             });
             surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
         }
+    };
+
+    const renderPlanToSurface = (frame: Extract<PresentationFrame, { kind: "plan_update" }>): void => {
+        if (surface === null) return;
+        const rendered = renderPlanLines(frame.entries, surface.columns);
+        surface.upsertToolCall(frame.toolCallId, rendered);
     };
 
     const statusTicker =
@@ -778,13 +779,18 @@ export const runTuiViewport = async (
                     }),
                 );
             } else if (rec.kind === "plan" && rec.plan && typeof rec.plan === "object") {
-                presenter.apply({
+                const planFrames = presenter.apply({
                     sessionUpdate: "plan_update",
                     plan: rec.plan as PlanUpdateContent,
                     ...(rec.meta !== undefined && typeof rec.meta === "object" && rec.meta !== null
                         ? { _meta: rec.meta as Record<string, unknown> }
                         : {}),
                 });
+                for (const f of planFrames) {
+                    if (f.kind === "plan_update") {
+                        renderPlanToSurface(f);
+                    }
+                }
             }
         }
         } finally {
@@ -1033,7 +1039,10 @@ export const runTuiViewport = async (
                     case "reasoning_tail":
                         break;
                     case "plan_update":
+                        retireLiveReasoning();
+                        currentTurns = presenter.turns;
                         if (surface !== null) {
+                            renderPlanToSurface(frame);
                             updateSurfaceStatus();
                         }
                         break;

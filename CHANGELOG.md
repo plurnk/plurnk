@@ -1,5 +1,10 @@
 # @plurnk/plurnk
 
+## 5.2.0
+
+- Support `DONE` (`🐹`), `FAIL` (`❌`), and `TODO` operations, preview `KILL` distillation bodies under `🗑️` while suppressing standalone `🗒️` rows for distilled `NOTE`s, and render per-turn `plan_update` diffs (`☐` opened, `🗹` completed) at the end of each turn in the waterfall (#232, #241, #244).
+- Bind ACP v2 `session/archive`, `session/unarchive`, `session/status`, `auth/logout`, `PlanFile`, and `SubagentUpdate` capabilities, rename `workspace.hide` to `workspace.archive` (`includeArchived`), honor active provider and `configOptions` on fresh sessions, and upgrade `@agentclientprotocol/sdk` to `2.4.0` and `@earendil-works/pi-tui` to `1.5.0` (#232, #242, #243).
+
 ## 5.1.0
 
 - Render a 3-line line-chunk live reasoning ticker (`💭`), an active streams/workers activity strip above the status bar, single-line terminal stream receipts (`<status> <aside> (<logPath>)`), and terminal-width status truncation while clearing concluded `WAIT` operations from the active strip (#238, #240).

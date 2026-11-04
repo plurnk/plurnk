@@ -312,13 +312,15 @@ const applyInitialConfig = async (
         }
     }
     if (options.sessionEnv !== undefined && Object.keys(options.sessionEnv).length > 0) {
-        for (const [alias, value] of Object.entries(options.sessionEnv)) {
-            await client.action(
-                "session.env.replace",
-                { alias, value },
-                { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
-            );
-        }
+        await Promise.all(
+            Object.entries(options.sessionEnv).map(([alias, value]) =>
+                client.action(
+                    "session.env.replace",
+                    { alias, value },
+                    { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
+                ),
+            ),
+        );
     }
 };
 

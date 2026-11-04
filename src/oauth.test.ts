@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Writable } from "node:stream";
 import { test } from "node:test";
 import type { McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
 import type { AcpClient } from "./acp-client.ts";
+import Credential from "./credential.ts";
 import { receiveAuthorization as beginAndReceive } from "./oauth.ts";
 import { executeFamilyCommand } from "./repl-commands.ts";
 
@@ -622,4 +627,230 @@ test("{§cli-configuration-source} executeFamilyCommand routes mcp oauth <alias>
         assert.equal(c.problems.length, 1);
         assert.match(String(c.problems[0]?.detail), /usage: \/mcp oauth <alias> \[callback-url\]/u);
     }
+});
+
+test("{§cli-problems-and-notices} Credential.login registers RFC 7591 public client, completes PKCE S256 grant, persists 0600 grants.json, refreshes expired tokens, and revokes on logout", async (t) => {
+    const tmpState = mkdtempSync(join(tmpdir(), "plurnk-grants-test-"));
+    t.after(() => rmSync(tmpState, { recursive: true, force: true }));
+
+    let registeredClientId = "";
+    let issuedChallenge = "";
+    let revokedToken = "";
+    let refreshCalls = 0;
+
+    const oauthServer = createServer((req, res) => {
+        const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+        const issuer = `http://${req.headers.host}`;
+        if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ resource: issuer, authorization_servers: [issuer] }));
+            return;
+        }
+        if (req.method === "GET" && url.pathname === "/.well-known/oauth-authorization-server") {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(
+                JSON.stringify({
+                    issuer,
+                    authorization_endpoint: `${issuer}/oauth/authorize`,
+                    token_endpoint: `${issuer}/oauth/token`,
+                    revocation_endpoint: `${issuer}/oauth/revoke`,
+                    registration_endpoint: `${issuer}/oauth/register`,
+                }),
+            );
+            return;
+        }
+        if (req.method === "POST" && url.pathname === "/oauth/register") {
+            let body = "";
+            req.on("data", (c) => {
+                body += String(c);
+            });
+            req.on("end", () => {
+                const parsed = JSON.parse(body) as { redirect_uris: string[]; token_endpoint_auth_method: string };
+                assert.equal(parsed.token_endpoint_auth_method, "none");
+                registeredClientId = "pub-client-1";
+                res.writeHead(201, { "content-type": "application/json" });
+                res.end(JSON.stringify({ client_id: registeredClientId, redirect_uris: parsed.redirect_uris }));
+            });
+            return;
+        }
+        if (req.method === "POST" && url.pathname === "/oauth/token") {
+            let body = "";
+            req.on("data", (c) => {
+                body += String(c);
+            });
+            req.on("end", () => {
+                const form = new URLSearchParams(body);
+                const grantType = form.get("grant_type");
+                assert.equal(form.get("client_id"), registeredClientId);
+                if (grantType === "authorization_code") {
+                    assert.equal(form.get("code"), "auth-code-123");
+                    const verifier = form.get("code_verifier") ?? "";
+                    const expectedChallenge = createHash("sha256").update(verifier).digest("base64url");
+                    assert.equal(expectedChallenge, issuedChallenge);
+                    res.writeHead(200, { "content-type": "application/json" });
+                    res.end(
+                        JSON.stringify({
+                            access_token: "initial-access-token",
+                            refresh_token: "initial-refresh-token",
+                            expires_in: 1,
+                        }),
+                    );
+                    return;
+                }
+                if (grantType === "refresh_token") {
+                    refreshCalls += 1;
+                    assert.equal(form.get("refresh_token"), "initial-refresh-token");
+                    res.writeHead(200, { "content-type": "application/json" });
+                    res.end(
+                        JSON.stringify({
+                            access_token: "rotated-access-token",
+                            refresh_token: "rotated-refresh-token",
+                            expires_in: 3600,
+                        }),
+                    );
+                    return;
+                }
+                res.writeHead(400, { "content-type": "application/json" });
+                res.end(JSON.stringify({ error: "unsupported_grant_type" }));
+            });
+            return;
+        }
+        if (req.method === "POST" && url.pathname === "/oauth/revoke") {
+            let body = "";
+            req.on("data", (c) => {
+                body += String(c);
+            });
+            req.on("end", () => {
+                const form = new URLSearchParams(body);
+                revokedToken = form.get("token") ?? "";
+                res.writeHead(200).end();
+            });
+            return;
+        }
+        res.writeHead(404).end();
+    });
+
+    await new Promise<void>((resolve) => oauthServer.listen(0, "127.0.0.1", resolve));
+    t.after(() =>
+        new Promise<void>((resolve) => {
+            oauthServer.closeAllConnections();
+            oauthServer.close(() => resolve());
+        }),
+    );
+    const { port } = oauthServer.address() as AddressInfo;
+    const acpUrl = `http://127.0.0.1:${port}/acp`;
+
+    const cred = new Credential({ XDG_STATE_HOME: tmpState });
+    const grant = await cred.login(acpUrl, {
+        signal: AbortSignal.timeout(5_000),
+        write: () => {},
+        openBrowser: async (authUrlStr) => {
+            const authUrl = new URL(authUrlStr);
+            issuedChallenge = authUrl.searchParams.get("code_challenge") ?? "";
+            assert.equal(authUrl.searchParams.get("code_challenge_method"), "S256");
+            const redirectUri = authUrl.searchParams.get("redirect_uri")!;
+            const state = authUrl.searchParams.get("state")!;
+            const cb = new URL(redirectUri);
+            cb.searchParams.set("code", "auth-code-123");
+            cb.searchParams.set("state", state);
+            const res = await fetch(cb.href);
+            assert.equal(res.status, 200);
+        },
+    });
+
+    assert.equal(grant.accessToken, "initial-access-token");
+    assert.equal(grant.refreshToken, "initial-refresh-token");
+    const grantsFile = cred.grantsPath();
+    assert.equal(statSync(grantsFile).mode & 0o777, 0o600);
+
+    // Expire stored grant in grants.json to exercise automatic refresh_token rotation
+    const storedMap = JSON.parse(readFileSync(grantsFile, "utf8")) as Record<string, { expiresAt: number }>;
+    const originKey = `http://127.0.0.1:${port}`;
+    storedMap[originKey]!.expiresAt = Date.now() - 1_000;
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(grantsFile, JSON.stringify(storedMap), { mode: 0o600 });
+    cred.invalidate();
+
+    const refreshed = await cred.token(acpUrl);
+    assert.equal(refreshed, "rotated-access-token");
+    assert.equal(refreshCalls, 1);
+
+    const logoutRes = await cred.logout(acpUrl);
+    assert.equal(logoutRes.revoked, true);
+    assert.equal(revokedToken, "rotated-refresh-token");
+    assert.equal(await cred.token(acpUrl), null);
+});
+
+test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp skills/complete, and env set/unset", async () => {
+    const calls: Array<{ readonly kind: string; readonly params: Record<string, unknown> }> = [];
+    const fakeClient = {
+        action: async (kind: string, params: Record<string, unknown>) => {
+            calls.push({ kind, params });
+            return { status: 200, kind, params };
+        },
+    } as unknown as AcpClient;
+
+    const out: string[] = [];
+    const io = {
+        stdout: new Writable({
+            write(chunk, _enc, cb) {
+                out.push(String(chunk));
+                cb();
+            },
+        }),
+        onError: (problem: Record<string, unknown>) => assert.fail(JSON.stringify(problem)),
+    };
+
+    await executeFamilyCommand(
+        fakeClient,
+        "personas",
+        ["add", "auditor", "--model", "fast", "--effort", "high", "--description", "Security auditor", "--body", "Audit carefully."],
+        { workspace: "alpha" },
+        "/tmp",
+        io,
+    );
+    await executeFamilyCommand(fakeClient, "mcp", ["skills", "gitea"], { workspace: "alpha" }, "/tmp", io);
+    await executeFamilyCommand(
+        fakeClient,
+        "mcp",
+        ["complete", "gitea", "--prompt", "review", "--name", "repo", "--value", "plurnk"],
+        { workspace: "alpha" },
+        "/tmp",
+        io,
+    );
+    await executeFamilyCommand(fakeClient, "env", ["set", "FOO=bar"], { workspace: "alpha" }, "/tmp", io);
+    await executeFamilyCommand(fakeClient, "env", ["--scope", "workspace", "unset", "FOO"], { workspace: "alpha" }, "/tmp", io);
+
+    assert.deepEqual(calls, [
+        {
+            kind: "workspace.personas.add",
+            params: {
+                alias: "auditor",
+                body: "Audit carefully.",
+                model: "fast",
+                effort: "high",
+                description: "Security auditor",
+            },
+        },
+        {
+            kind: "workspace.mcp.skills",
+            params: { alias: "gitea" },
+        },
+        {
+            kind: "workspace.mcp.complete",
+            params: {
+                alias: "gitea",
+                ref: { type: "ref/prompt", name: "review" },
+                argument: { name: "repo", value: "plurnk" },
+            },
+        },
+        {
+            kind: "session.env.replace",
+            params: { alias: "FOO", value: "bar" },
+        },
+        {
+            kind: "workspace.env.remove",
+            params: { alias: "FOO" },
+        },
+    ]);
 });

@@ -601,7 +601,7 @@ export const runCliFamily = async (
     options: CliCommonOptions,
 ): Promise<number> => {
     if (familyArgs.includes("--help") || familyArgs.includes("-h")) {
-        const extra = family === "mcp" ? "|oauth" : family === "env" ? "|import" : "";
+        const extra = family === "mcp" ? "|oauth|skills|complete" : family === "env" ? "|set|unset|import" : "";
         process.stdout.write(
             `usage: plurnk ${family} [list|discover|add|replace|enable|disable|remove${extra}] [options]\n`,
         );
@@ -645,4 +645,53 @@ export const runCliFamily = async (
     } finally {
         client.close();
     }
+};
+
+export const runCliLogin = async (options: CliCommonOptions): Promise<number> => {
+    const timeoutMs = options.oauthTimeoutMs > 0 ? options.oauthTimeoutMs : 300_000;
+    const grant = await options.credential.login(options.url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        write: (message) => (options.json ? process.stderr : process.stdout).write(message),
+    });
+    if (options.json) {
+        process.stdout.write(
+            `${JSON.stringify(
+                {
+                    status: "authorized",
+                    issuer: grant.issuer,
+                    clientId: grant.clientId,
+                    expiresAt: grant.expiresAt,
+                    grantsPath: options.credential.grantsPath(),
+                },
+                null,
+                2,
+            )}\n`,
+        );
+    } else {
+        process.stdout.write(`authorized: ${grant.issuer} (${options.credential.grantsPath()})\n`);
+    }
+    return 0;
+};
+
+export const runCliLogout = async (options: CliCommonOptions): Promise<number> => {
+    const client = new AcpClient({
+        url: options.url,
+        credential: options.credential,
+        env: options.env,
+    });
+    try {
+        await client.connect();
+        await client.logout();
+    } catch {
+        // best-effort ACP logout before local grant revocation
+    } finally {
+        client.close();
+    }
+    const { revoked, origin } = await options.credential.logout(options.url);
+    if (options.json) {
+        process.stdout.write(`${JSON.stringify({ status: revoked ? "revoked" : "none", origin }, null, 2)}\n`);
+    } else {
+        process.stdout.write(revoked ? `logged out: ${origin}\n` : `no stored grant for ${origin}\n`);
+    }
+    return 0;
 };

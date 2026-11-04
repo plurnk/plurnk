@@ -1335,8 +1335,29 @@ export const runReplSession = async (
                     return "continue";
                 }
 
-                if (["mcp", "skills", "members", "env", "schedule"].includes(cmd)) {
+                if (["mcp", "skills", "members", "env", "schedule", "personas"].includes(cmd)) {
                     await handleFamilyCommand(cmd, args);
+                    return "continue";
+                }
+
+                if (cmd === "login") {
+                    const timeoutMs = options.oauthTimeoutMs > 0 ? options.oauthTimeoutMs : 300_000;
+                    const grant = await options.credential.login(options.url, {
+                        signal: AbortSignal.timeout(timeoutMs),
+                        write: (message) => streams.stdout.write(message),
+                    });
+                    streams.stdout.write(`authorized: ${grant.issuer} (${options.credential.grantsPath()})\n`);
+                    return "continue";
+                }
+
+                if (cmd === "logout") {
+                    try {
+                        await client.logout();
+                    } catch {
+                        // best-effort ACP logout
+                    }
+                    const { revoked, origin } = await options.credential.logout(options.url);
+                    streams.stdout.write(revoked ? `logged out: ${origin}\n` : `no stored grant for ${origin}\n`);
                     return "continue";
                 }
 

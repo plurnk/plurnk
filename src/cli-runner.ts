@@ -29,6 +29,8 @@ import {
     runCliFamily,
     runCliForkSession,
     runCliListSessions,
+    runCliLogin,
+    runCliLogout,
     runCliLogRead,
     runCliModels,
     runCliNewSession,
@@ -66,6 +68,8 @@ export {
     runCliFamily,
     runCliForkSession,
     runCliListSessions,
+    runCliLogin,
+    runCliLogout,
     runCliLogRead,
     runCliModels,
     runCliNewSession,
@@ -634,11 +638,34 @@ export const runCliPrompt = async (
         const replayCount = session.items.length;
         let timedOut = false;
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        let cancelGraceTimer: ReturnType<typeof setTimeout> | undefined;
+        let interruptedExitCode: 130 | 143 | null = null;
+        let resolveCancelGrace!: () => void;
+        const cancelGracePromise = new Promise<void>((r) => {
+            resolveCancelGrace = r;
+        });
 
-        const onSigInt = () => {
-            void client.cancel(session.sessionId).catch(() => {});
+        const armCancelGrace = () => {
+            if (cancelGraceTimer === undefined && options.cancelGraceMs > 0) {
+                cancelGraceTimer = setTimeout(() => {
+                    resolveCancelGrace();
+                }, options.cancelGraceMs);
+            }
         };
-        process.once("SIGINT", onSigInt);
+
+        const onSignal = (code: 130 | 143) => {
+            if (interruptedExitCode !== null) {
+                resolveCancelGrace();
+                return;
+            }
+            interruptedExitCode = code;
+            void client.cancel(session.sessionId).catch(() => {});
+            armCancelGrace();
+        };
+        const onSigInt = () => onSignal(130);
+        const onSigTerm = () => onSignal(143);
+        process.on("SIGINT", onSigInt);
+        process.on("SIGTERM", onSigTerm);
 
         const startedAt = Date.now();
         promptDispatched = true;
@@ -648,6 +675,7 @@ export const runCliPrompt = async (
             timeoutHandle = setTimeout(() => {
                 timedOut = true;
                 void client.cancel(session.sessionId).catch(() => {});
+                armCancelGrace();
             }, options.timeoutSec * 1000);
         }
 
@@ -662,6 +690,7 @@ export const runCliPrompt = async (
             await Promise.race([
                 turnIdlePromise,
                 client.closed,
+                cancelGracePromise,
             ]);
             flushReasoningNewline();
 
@@ -738,9 +767,11 @@ export const runCliPrompt = async (
                         ? 500
                         : 200;
 
-            const turnCount = typeof terminalMeta.turnCount === "number"
-                ? terminalMeta.turnCount
-                : turns.length > 0
+            const turnCount = !turnSettled
+                ? null
+                : typeof terminalMeta.turnCount === "number"
+                  ? terminalMeta.turnCount
+                  : turns.length > 0
                     ? turns.length + 1
                     : 1;
 
@@ -779,6 +810,7 @@ export const runCliPrompt = async (
                 streams.stdout.write(finalAnswer.endsWith("\n") ? finalAnswer : `${finalAnswer}\n`);
             }
 
+            if (interruptedExitCode !== null) return interruptedExitCode;
             if (!turnSettled) return 4;
             if (timedOut || stopReason === "cancelled" || finalStatus === 499) return 3;
             if (stopReason === "max_turn_requests" || finalStatus === 429) return 2;
@@ -786,7 +818,9 @@ export const runCliPrompt = async (
             return 0;
         } finally {
             if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+            if (cancelGraceTimer !== undefined) clearTimeout(cancelGraceTimer);
             process.removeListener("SIGINT", onSigInt);
+            process.removeListener("SIGTERM", onSigTerm);
         }
     } finally {
         client.close();

@@ -230,10 +230,23 @@ export const formatFamilyRows = (family: string, result: Record<string, unknown>
                     ? def.source
                     : typeof def.value === "string"
                       ? def.value
-                      : "";
+                      : typeof def.rule === "string"
+                        ? [def.rule, typeof def.target === "string" ? def.target : ""].filter(Boolean).join("  ")
+                        : typeof def.description === "string"
+                          ? def.description
+                          : "";
+        const extra =
+            family === "personas"
+                ? [
+                      typeof def.model === "string" && def.model.length > 0 ? `model=${def.model}` : "",
+                      typeof def.effort === "string" && def.effort.length > 0 ? `effort=${def.effort}` : "",
+                  ]
+                      .filter(Boolean)
+                      .join("  ")
+                : "";
         const prov = (d.provenance ?? {}) as Record<string, unknown>;
         const source = typeof prov.source === "string" ? `source=${prov.source}` : "";
-        const rowParts = [alias, state, type, target, source].filter((p) => p.length > 0);
+        const rowParts = [alias, state, type, target, extra, source].filter((p) => p.length > 0);
         lines.push(rowParts.join("  "));
     }
     return `${lines.join("\n")}\n`;
@@ -372,6 +385,43 @@ export const executeFamilyCommand = async (
         io.stdout.write(io.json ? `${JSON.stringify(result, null, 2)}\n` : `${JSON.stringify(result)}\n`);
     };
 
+    const parseFamilyFlags = (tokens: readonly string[]): {
+        readonly flags: Map<string, string[]>;
+        readonly positionals: string[];
+    } => {
+        const flags = new Map<string, string[]>();
+        const positionals: string[] = [];
+        for (let i = 0; i < tokens.length; i += 1) {
+            const tok = tokens[i]!;
+            if (tok.startsWith("--") && tok.length > 2) {
+                const eq = tok.indexOf("=");
+                if (eq > 0) {
+                    const k = tok.slice(2, eq);
+                    const v = tok.slice(eq + 1);
+                    const arr = flags.get(k) ?? [];
+                    arr.push(v);
+                    flags.set(k, arr);
+                } else {
+                    const k = tok.slice(2);
+                    const next = tokens[i + 1];
+                    if (next !== undefined && !next.startsWith("--")) {
+                        const arr = flags.get(k) ?? [];
+                        arr.push(next);
+                        flags.set(k, arr);
+                        i += 1;
+                    } else {
+                        const arr = flags.get(k) ?? [];
+                        arr.push("true");
+                        flags.set(k, arr);
+                    }
+                }
+            } else {
+                positionals.push(tok);
+            }
+        }
+        return { flags, positionals };
+    };
+
     if (sub === "list") {
         const result = await client.action<Record<string, unknown>>(
             `${scopePrefix}.${family}.list`,
@@ -386,15 +436,25 @@ export const executeFamilyCommand = async (
         return;
     }
     if (sub === "discover") {
-        const query = rest.join(" ");
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const flagSource = flags.get("source")?.at(-1);
+        const flagQuery = flags.get("query")?.at(-1);
+        const flagRule = flags.get("rule")?.at(-1);
+        const query = positionals.join(" ");
         const payload =
-            query.length === 0
-                ? {}
-                : family === "skills"
-                  ? { source: query }
-                  : family === "schedule"
-                    ? { rule: query }
-                    : { query };
+            flagSource !== undefined
+                ? { source: flagSource }
+                : flagRule !== undefined
+                  ? { rule: flagRule }
+                  : flagQuery !== undefined
+                    ? { query: flagQuery }
+                    : query.length === 0
+                      ? {}
+                      : family === "skills" || family === "personas"
+                        ? { source: query }
+                        : family === "schedule"
+                          ? { rule: query }
+                          : { query };
         const result = await client.action<Record<string, unknown>>(
             `${scopePrefix}.${family}.discover`,
             payload,
@@ -415,9 +475,19 @@ export const executeFamilyCommand = async (
         return;
     }
     if ((sub === "add" || sub === "replace") && family === "mcp") {
-        const alias = rest[0] ?? "";
-        const target = rest[1] ?? "";
-        const extraArgs = rest.slice(2);
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const alias = positionals[0] ?? "";
+        const urlFlag = flags.get("url")?.at(-1);
+        const commandFlag = flags.get("command")?.at(-1);
+        const argFlags = flags.get("arg") ?? [];
+        const envFlags = flags.get("env") ?? [];
+        const envObj: Record<string, string> = {};
+        for (const pair of envFlags) {
+            const eq = pair.indexOf("=");
+            if (eq > 0) envObj[pair.slice(0, eq)] = pair.slice(eq + 1);
+        }
+        const target = urlFlag ?? commandFlag ?? positionals[1] ?? "";
+        const extraArgs = argFlags.length > 0 ? argFlags : positionals.slice(2);
         const payload = /^https?:\/\//iu.test(target)
             ? { alias, type: "streamable-http", url: target }
             : {
@@ -425,10 +495,39 @@ export const executeFamilyCommand = async (
                   type: "stdio",
                   command: target,
                   ...(extraArgs.length > 0 ? { args: extraArgs } : {}),
+                  ...(Object.keys(envObj).length > 0 ? { env: envObj } : {}),
               };
         const result = await client.action<Record<string, unknown>>(
             `workspace.mcp.${sub}`,
             payload,
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if (sub === "skills" && family === "mcp") {
+        const alias = rest[0];
+        const result = await client.action<Record<string, unknown>>(
+            "workspace.mcp.skills",
+            alias ? { alias } : {},
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if (sub === "complete" && family === "mcp") {
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const alias = flags.get("alias")?.at(-1) ?? positionals[0] ?? "";
+        const uri = flags.get("uri")?.at(-1);
+        const promptName = flags.get("prompt")?.at(-1);
+        const argName = flags.get("name")?.at(-1) ?? positionals[1] ?? "";
+        const argValue = flags.get("value")?.at(-1) ?? positionals[2] ?? "";
+        const ref = promptName !== undefined
+            ? { type: "ref/prompt" as const, name: promptName }
+            : { type: "ref/resource" as const, uri: uri ?? "" };
+        const result = await client.action<Record<string, unknown>>(
+            "workspace.mcp.complete",
+            { alias, ref, argument: { name: argName, value: argValue } },
             binding,
         );
         writeResult(result);
@@ -524,10 +623,10 @@ export const executeFamilyCommand = async (
         return;
     }
     if ((sub === "add" || sub === "replace") && family === "skills") {
-        const alias = rest[0] ?? "";
-        const source = rest[1] ?? "";
-        const refIdx = rest.indexOf("--ref");
-        const ref = refIdx >= 0 ? rest[refIdx + 1] : undefined;
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const alias = positionals[0] ?? "";
+        const source = flags.get("source")?.at(-1) ?? positionals[1] ?? "";
+        const ref = flags.get("ref")?.at(-1);
         const payload = {
             alias,
             ...(source.length > 0 ? { source } : {}),
@@ -535,6 +634,36 @@ export const executeFamilyCommand = async (
         };
         const result = await client.action<Record<string, unknown>>(
             `workspace.skills.${sub}`,
+            payload,
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if ((sub === "add" || sub === "replace") && family === "personas") {
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const alias = positionals[0] ?? "";
+        const source = flags.get("source")?.at(-1);
+        const model = flags.get("model")?.at(-1);
+        const effort = flags.get("effort")?.at(-1);
+        const description = flags.get("description")?.at(-1);
+        const bodyFlag = flags.get("body")?.at(-1);
+        const positionalRest = positionals.slice(1).join(" ");
+        const payload: Record<string, unknown> = {
+            alias,
+            ...(source !== undefined
+                ? { source }
+                : bodyFlag !== undefined
+                  ? { body: bodyFlag }
+                  : positionalRest.length > 0
+                    ? { source: positionalRest }
+                    : {}),
+            ...(model !== undefined ? { model } : {}),
+            ...(effort !== undefined ? { effort } : {}),
+            ...(description !== undefined ? { description } : {}),
+        };
+        const result = await client.action<Record<string, unknown>>(
+            `workspace.personas.${sub}`,
             payload,
             binding,
         );
@@ -550,12 +679,25 @@ export const executeFamilyCommand = async (
         writeResult(result);
         return;
     }
-    if ((sub === "add" || sub === "replace") && family === "env") {
-        const alias = rest[0] ?? "";
-        const value = rest.slice(1).join(" ");
+    if ((sub === "add" || sub === "replace" || sub === "set") && family === "env") {
+        const firstArg = rest[0] ?? "";
+        const eqIdx = rest.length === 1 ? firstArg.indexOf("=") : -1;
+        const alias = eqIdx > 0 ? firstArg.slice(0, eqIdx) : firstArg;
+        const value = eqIdx > 0 ? firstArg.slice(eqIdx + 1) : rest.slice(1).join(" ");
+        const verb = sub === "set" ? "replace" : sub;
         const result = await client.action<Record<string, unknown>>(
-            `${scopePrefix}.env.${sub}`,
+            `${scopePrefix}.env.${verb}`,
             { alias, value },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if (sub === "unset" && family === "env") {
+        const alias = rest[0] ?? "";
+        const result = await client.action<Record<string, unknown>>(
+            `${scopePrefix}.env.remove`,
+            { alias },
             binding,
         );
         writeResult(result);
@@ -597,10 +739,14 @@ export const executeFamilyCommand = async (
         return;
     }
     if ((sub === "add" || sub === "replace") && family === "schedule") {
-        const alias = rest[0] ?? "";
-        const sessionArg = rest[1] ?? "";
-        const rule = rest[2] ?? "";
-        const prompt = rest.slice(3).join(" ");
+        const { flags, positionals } = parseFamilyFlags(rest);
+        const alias = positionals[0] ?? "";
+        const ruleFlag = flags.get("rule")?.at(-1);
+        const targetFlag = flags.get("target")?.at(-1);
+        const promptFlag = flags.get("prompt")?.at(-1);
+        const sessionArg = targetFlag ?? positionals[1] ?? "";
+        const rule = ruleFlag ?? positionals[2] ?? "";
+        const prompt = promptFlag ?? positionals.slice(3).join(" ");
         const target = sessionArg.startsWith("session://") ? sessionArg : `session://${sessionArg}`;
         const result = await client.action<Record<string, unknown>>(
             `workspace.schedule.${sub}`,

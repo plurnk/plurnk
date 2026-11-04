@@ -1,5 +1,9 @@
 # @plurnk/plurnk
 
+## 5.2.2
+
+- Handle `mcp oauth <alias> [callback-url]` in `executeFamilyCommand` with RFC 8252 §7.3 loopback callback reception (`workspace.mcp.oauth.begin` and `workspace.mcp.oauth.complete`), and bump `@plurnk/plurnk-contracts` to `^7.2.1` and `@plurnk/plurnk-service` to `^5.2.2` (#246).
+
 ## 5.2.1
 
 - Parallelize initial `session.env.replace` RPC batch in `applyInitialConfig` and bump optional `@plurnk/plurnk-service` dependency to `^5.2.1` (#245).

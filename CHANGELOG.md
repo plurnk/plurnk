@@ -1,5 +1,9 @@
 # @plurnk/plurnk
 
+## 5.2.1
+
+- Parallelize initial `session.env.replace` RPC batch in `applyInitialConfig` and bump optional `@plurnk/plurnk-service` dependency to `^5.2.1` (#245).
+
 ## 5.2.0
 
 - Support `DONE` (`🐹`), `FAIL` (`❌`), and `TODO` operations, preview `KILL` distillation bodies under `🗑️` while suppressing standalone `🗒️` rows for distilled `NOTE`s, and render per-turn `plan_update` diffs (`☐` opened, `🗹` completed) at the end of each turn in the waterfall (#232, #241, #244).

@@ -29,6 +29,7 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/members [subcommand]", summary: "List or manage this workspace's file members." },
     { usage: "/env [--scope session|workspace] [subcommand]", summary: "Manage session overrides or shared workspace environment defaults." },
     { usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages." },
+    { usage: "/personas [subcommand]", summary: "List or manage this workspace's persona roles." },
     { usage: "/import <path>", summary: "Insert a local file into the composer." },
     { usage: "/script <path>", summary: "Submit a local .plk program through op.parse." },
     { usage: "/editor", summary: "Compose the current value in $EDITOR." },
@@ -39,6 +40,8 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/cancel @<id>", summary: "Cancel the identified proposal or question (@<id> optional in TUI)." },
     { usage: "/edit @<id> <body...>", summary: "Edit and accept the identified proposal (@<id> optional in TUI)." },
     { usage: "/answer @<id> <json>", summary: "Answer the identified elicitation or question (@<id> optional in TUI)." },
+    { usage: "/login", summary: "Sign in to the daemon through the browser and keep the grant." },
+    { usage: "/logout", summary: "Revoke the kept grant at the daemon and forget it." },
     { usage: "/stop", summary: "Cancel the running loop." },
     { usage: "/quit", summary: "Exit the interactive client." },
 ];

@@ -143,10 +143,10 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | Inspect | `/help /models /workspaces /sessions /loops /loop` |
 | Policy | `/model /child /effort /persona /capabilities /yolo` |
 | Workspace | `/workspace /rename /share /rollback /session /fork /parent /enter /older /newer` |
-| Functionality | `/mcp /skills /members /env /schedule` |
+| Functionality | `/mcp /skills /personas /members /env /schedule` |
 | Compose | `/import /script /editor` |
 | Review | `/review /approve /accept /reject /cancel /edit /answer` |
-| Session | `/stop /quit /update` |
+| Session | `/login /logout /stop /quit /update` |
 
 - **POSIX artifacts**: `dist/posix/man/plurnk.1` (dated by source commit `%cs`, no wall-clock timestamp) and `dist/posix/completions/{plurnk.bash,_plurnk,plurnk.fish}` derive from the single command/usage inventory (`npm run build:posix`). `plurnk completion <bash|zsh|fish>` prints the script to `stdout` without daemon contact; `npm run test:posix` validates with `mandoc`, `bash`, `zsh`, `fish`, and `shellcheck`.
 - **Filesystem completion**: `/import`, `/script`, `/env import` resolve against client launch directory; `@file` and `/members discover|add` resolve against bound workspace root; bare or `file:///` OP targets resolve against workspace `/`; other schemes produce no local filesystem suggestions.
@@ -158,16 +158,17 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 - **Session history on attach & reconnect**: Both initial session attach and mid-session auto-reconnect synchronize via `session/resume` with `replayFrom: { type: "start" }`. `AcpSession.applyUpdate` idempotently deduplicates replayed messages, tool calls, and terminals by durable identity (`id`, `_meta.plurnk.coordinate`, `_meta.plurnk.id`), materializing any turns missed while disconnected without duplicating already-rendered items or suppressing concurrent live updates. `session_bound` renders the `PLURNK_CLIENT_HISTORY_ENTRIES` transcript tail while populating Up-arrow composer recall from the session's `PLURNK_CLIENT_HISTORY_ENTRIES` user `prompts` history (independent of tool-call volume). Replayed entries do not count as live turns or fresh spend.
 - **Active command admission**: During an active loop, inspect/Functionality/policy commands, `/help`, `/import`, `/editor`, `/yolo`, `!`, executable fences, `/script`, `/stop`, `/quit`, and gate responses remain reachable; plain prompts and `...` inject into the running loop (`session/prompt`, observing `enqueued_new_loop` via `session/resume` observation); `?` or `:` prefixes are refused with an explanation; navigation commands (`/workspace`, `/rename`, `/session <name>`, `/fork`, hops) are refused until the active loop settles.
 
-### §cli-configuration-source 3.3 Workspace Functionality Controls (MCP, Skills, Members, Env, Schedule)
+### §cli-configuration-source 3.3 Workspace Functionality Controls (MCP, Skills, Personas, Members, Env, Schedule)
 
-Subsystem listings (`mcp`, `skills`, `schedule`, `members`, `env`) append `source=<provenance.source>` when supplied by the daemon. Every family except `members` supports `replace` with `add` arguments (`workspace.<family>.replace` / `session.env.replace`).
+Subsystem listings (`mcp`, `skills`, `personas`, `schedule`, `members`, `env`) append `source=<provenance.source>` when supplied by the daemon. Every family except `members` supports `replace` with `add` arguments (`workspace.<family>.replace` / `session.env.replace`).
 
 | Family | Commands & ACP v2 Mapping |
 | --- | --- |
-| `/mcp` / `plurnk mcp` | `list`, `discover <query>`, `add <alias> <command\|url> [args...]`, `replace`, `enable`, `disable`, `remove`, `oauth <alias> [callback-url]`. Automatic OAuth binds an IPv4 loopback listener (RFC 8252 §7.3, deadline `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`), calls `workspace.mcp.oauth.begin { alias, redirectUrl }`, opens the browser, validates exact `Host`/path/`state` on one `GET`, forwards to `workspace.mcp.oauth.complete { alias, callbackUrl }`, and prints `"Sign-in accepted; tools awaiting activation."` |
+| `/mcp` / `plurnk mcp` | `list`, `discover <query>`, `add <alias> <command\|url> [args...]`, `replace`, `enable`, `disable`, `remove`, `skills [alias]`, `complete <alias> ...`, `oauth <alias> [callback-url]`. Automatic OAuth binds an IPv4 loopback listener (RFC 8252 §7.3, deadline `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`), calls `workspace.mcp.oauth.begin { alias, redirectUrl }`, opens the browser, validates exact `Host`/path/`state` on one `GET`, forwards to `workspace.mcp.oauth.complete { alias, callbackUrl }`, and prints `"Sign-in accepted; tools awaiting activation."` |
 | `/skills` / `plurnk skills` | `list`, `discover <source>`, `add <name> <source> [--ref <ref>]`, `replace`, `enable`, `disable`, `remove` (`workspace.skills.*`). Preserves digit-leading and Unicode skill names. |
+| `/personas` / `plurnk personas` | `list`, `discover <source>`, `add <name> [--source <src>] [--body <text>] [--model <sel>] [--effort <lvl>] [--description <desc>]`, `replace`, `enable`, `disable`, `remove` (`workspace.personas.*`). |
 | `/members` / `plurnk members` | `list`, `discover <path\|glob>`, `add <glob...>`, `enable <glob>`, `disable <glob>`, `remove <glob>` (`workspace.members.*`). Definitions are gitignore-style globs (leading `!` excludes). |
-| `/env` / `plurnk env` | Defaults to `session.env.*` (`--scope workspace` selects `workspace.env.*`): `list`, `discover [query]`, `add <NAME> <value>`, `replace`, `enable`, `disable`, `remove`, `import <path>` (dotenv file). At invocation admission and workspace/session switch on root sessions, persists client env configured via `PLURNK_CLIENT_ENV_INHERIT` / `--env-inherit`, `PLURNK_CLIENT_ENV_EXCLUDE` / `--env-exclude`, `PLURNK_CLIENT_ENV_<NAME>`, and `--env <NAME>[=<value>]` (and passes them on `!` commands). |
+| `/env` / `plurnk env` | Defaults to `session.env.*` (`--scope workspace` selects `workspace.env.*`): `list`, `discover [query]`, `add <NAME> <value>`, `replace`, `set <NAME>=<value>`, `unset <NAME>`, `enable`, `disable`, `remove`, `import <path>` (dotenv file). At invocation admission and workspace/session switch on root sessions, persists client env configured via `PLURNK_CLIENT_ENV_INHERIT` / `--env-inherit`, `PLURNK_CLIENT_ENV_EXCLUDE` / `--env-exclude`, `PLURNK_CLIENT_ENV_<NAME>`, and `--env <NAME>[=<value>]` (and passes them on `!` commands). |
 | `/schedule` / `plurnk schedule` | `list`, `discover <rule>`, `add <alias> <session> <rule> <prompt...>`, `replace`, `enable`, `disable`, `remove` (`workspace.schedule.*`; target formatted as `session://<session>`). |
 
 ---

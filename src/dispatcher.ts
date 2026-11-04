@@ -13,6 +13,8 @@ import {
     runCliFamily,
     runCliForkSession,
     runCliListSessions,
+    runCliLogin,
+    runCliLogout,
     runCliLogRead,
     runCliModels,
     runCliNewSession,
@@ -100,6 +102,9 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
        plurnk members [subcommand]
        plurnk env [--scope session|workspace] [subcommand]
        plurnk schedule [subcommand]
+       plurnk personas [subcommand]
+       plurnk login [--json]
+       plurnk logout [--json]
 
 Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk-service stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
 
@@ -256,6 +261,7 @@ subcommands:
   members ...               List or manage this workspace's file members.
   env ...                   Manage session overrides or shared workspace environment defaults.
   schedule ...              List or manage this workspace's scheduled messages.
+  personas ...              List or manage this workspace's persona roles.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
@@ -264,7 +270,7 @@ subcommands:
                           grammar; the client just feeds the file.
 `;
 
-const FAMILY_COMMANDS = new Set(["mcp", "skills", "members", "env", "schedule"]);
+const FAMILY_COMMANDS = new Set(["mcp", "skills", "members", "env", "schedule", "personas"]);
 
 const readVersion = (): string => {
     try {
@@ -767,6 +773,10 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             exitCode = await runCliConfig("persona", positionals[1], common);
         } else if (first === "capabilities") {
             exitCode = await runCliCapabilities(positionals[1], common);
+        } else if (first === "login") {
+            exitCode = await runCliLogin(common);
+        } else if (first === "logout") {
+            exitCode = await runCliLogout(common);
         } else if (first === "script") {
             if (!positionals[1]) {
                 process.stderr.write("plurnk script requires a <file.plk> path.\n");

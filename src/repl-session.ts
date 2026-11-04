@@ -248,6 +248,7 @@ export const runReplSession = async (
     };
 
     let activeSession = null as AcpSession | null;
+    let activeLocalMcpOAuth = 0;
 
     const client = new AcpClient({
         url: options.url,
@@ -319,6 +320,13 @@ export const runReplSession = async (
         onElicitationRequest: async (request, signal): Promise<CreateElicitationResponse> => {
             if (signal.aborted) {
                 return { action: "cancel" };
+            }
+            if (
+                activeLocalMcpOAuth > 0 &&
+                CreateElicitationRequest.isUrl(request) &&
+                request.elicitationId.startsWith("mcp-oauth:")
+            ) {
+                return { action: "accept" };
             }
             gateSeq += 1;
             const id = mintGateHash(activeSession?.sessionId ?? currentSessionName, "elicitation", gateSeq);
@@ -620,10 +628,17 @@ export const runReplSession = async (
     });
 
     const handleFamilyCommand = async (family: string, args: readonly string[]): Promise<void> => {
-        await executeFamilyCommand(client, family, args, bindingContext(), options.cwd, {
-            stdout: streams.stdout,
-            onError: (problem) => writeErrorJsonl(streams.stderr, problem),
-        });
+        const isLocalMcpOAuth = family === "mcp" && args[0] === "oauth" && args.length === 2;
+        if (isLocalMcpOAuth) activeLocalMcpOAuth += 1;
+        try {
+            await executeFamilyCommand(client, family, args, bindingContext(), options.cwd, {
+                stdout: streams.stdout,
+                oauthTimeoutMs: options.oauthTimeoutMs,
+                onError: (problem) => writeErrorJsonl(streams.stderr, problem),
+            });
+        } finally {
+            if (isLocalMcpOAuth) activeLocalMcpOAuth -= 1;
+        }
     };
 
     const navigateTopology = async (direction: "parent" | "enter" | "older" | "newer"): Promise<void> => {

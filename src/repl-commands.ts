@@ -1,6 +1,7 @@
 // Five-stream descriptor helpers, row formatters, and workspace/session family command execution
 // ({§cli-output-channels}, {§cli-configuration-source}, {§cli-repl-mode}).
 
+import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, fstatSync, readFileSync, statSync, writeSync } from "node:fs";
 import { relative, resolve } from "node:path";
@@ -8,6 +9,7 @@ import { Writable } from "node:stream";
 import { parseEnv } from "node:util";
 import type { AcpClient } from "./acp-client.ts";
 import type { AcpSession, AcpTranscriptItem } from "./acp-session.ts";
+import { receiveAuthorization } from "./oauth.ts";
 
 export interface ClientStreams {
     readonly stdin: NodeJS.ReadableStream;
@@ -337,6 +339,10 @@ export const executeFamilyCommand = async (
     io: {
         readonly json?: boolean;
         readonly stdout: NodeJS.WritableStream;
+        readonly stderr?: NodeJS.WritableStream;
+        readonly oauthTimeoutMs?: number;
+        readonly signal?: AbortSignal;
+        readonly openBrowser?: (url: string) => Promise<ChildProcess | void>;
         readonly onError: (problem: {
             readonly type: string;
             readonly title: string;
@@ -426,6 +432,95 @@ export const executeFamilyCommand = async (
             binding,
         );
         writeResult(result);
+        return;
+    }
+    if (sub === "oauth" && family === "mcp") {
+        const alias = rest[0] ?? "";
+        const callbackUrl = rest[1];
+        if (alias.length === 0 || rest.length > 2 || callbackUrl === "") {
+            io.onError({
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Invalid mcp oauth arguments",
+                status: 400,
+                detail: "usage: /mcp oauth <alias> [callback-url]",
+            });
+            return;
+        }
+        const complete = async (cbUrl: string): Promise<Record<string, unknown>> =>
+            await client.action("workspace.mcp.oauth.complete", { alias, callbackUrl: cbUrl }, binding);
+        let result: Record<string, unknown>;
+        if (callbackUrl !== undefined) {
+            result = await complete(callbackUrl);
+        } else {
+            const timeoutMs = io.oauthTimeoutMs ?? 300_000;
+            if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+                throw new TypeError(
+                    `Invalid PLURNK_CLIENT_OAUTH_TIMEOUT_MS '${String(timeoutMs)}': must be a positive integer.`,
+                );
+            }
+            const listed = await client.action("workspace.mcp.list", {}, binding);
+            const definitions = Array.isArray(listed.definitions) ? listed.definitions : [];
+            const entry = definitions.find(
+                (item): item is Record<string, unknown> =>
+                    item !== null && typeof item === "object" && (item as { alias?: unknown }).alias === alias,
+            );
+            if (entry === undefined || entry.state === "disabled") {
+                throw new Error(`MCP server '${alias}' is not enabled in this workspace.`);
+            }
+            if (entry.state === "active") {
+                result = { status: 200, alias, definition: entry };
+            } else {
+                const definition =
+                    entry.definition !== null && typeof entry.definition === "object"
+                        ? (entry.definition as Record<string, unknown>)
+                        : undefined;
+                const authDef =
+                    definition?.type === "streamable-http" &&
+                    definition.authorization !== null &&
+                    typeof definition.authorization === "object"
+                        ? (definition.authorization as Record<string, unknown>)
+                        : undefined;
+                const redirectUrl =
+                    authDef?.type === "oauth" && typeof authDef.redirectUrl === "string"
+                        ? authDef.redirectUrl
+                        : undefined;
+                const deadline = AbortSignal.timeout(timeoutMs);
+                const signal = io.signal === undefined ? deadline : AbortSignal.any([io.signal, deadline]);
+                const noticeStream = io.json ? (io.stderr ?? process.stderr) : io.stdout;
+                result = await receiveAuthorization(
+                    {
+                        ...(redirectUrl === undefined ? {} : { redirectUrl }),
+                        begin: async (boundRedirectUrl) =>
+                            await client.action(
+                                "workspace.mcp.oauth.begin",
+                                { alias, redirectUrl: boundRedirectUrl },
+                                binding,
+                            ),
+                    },
+                    complete,
+                    {
+                        signal,
+                        write: (text) => {
+                            noticeStream.write(text);
+                        },
+                        ...(io.openBrowser !== undefined ? { openBrowser: io.openBrowser } : {}),
+                    },
+                );
+            }
+        }
+        if (io.json) {
+            io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        } else if (result.status === 202) {
+            io.stdout.write(`  ${alias}: Sign-in accepted; tools awaiting activation.\n`);
+        } else {
+            const defState =
+                result.definition !== null &&
+                typeof result.definition === "object" &&
+                typeof (result.definition as { state?: unknown }).state === "string"
+                    ? ` (${(result.definition as { state: string }).state})`
+                    : "";
+            io.stdout.write(`  authorized: ${alias}${defState}\n`);
+        }
         return;
     }
     if ((sub === "add" || sub === "replace") && family === "skills") {

@@ -633,6 +633,8 @@ export const runCliFamily = async (
             {
                 json: options.json,
                 stdout: process.stdout,
+                stderr: process.stderr,
+                oauthTimeoutMs: options.oauthTimeoutMs,
                 onError: (problem) => {
                     hadError = true;
                     writeErrorJsonl(process.stderr, problem);

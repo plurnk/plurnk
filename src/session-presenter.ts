@@ -719,7 +719,7 @@ export class SessionPresenter {
                         this.#activeWorkers.set(workerKey, {
                             key: workerKey,
                             glyph: existing?.glyph ?? "🐜",
-                            op: existing?.op ?? "WORK",
+                            op: existing?.op ?? "work",
                             target: existing?.target ?? `session:///${workerKey}`,
                             startedAt: existing?.startedAt ?? Date.now(),
                         });
@@ -797,7 +797,7 @@ export class SessionPresenter {
                                 : sTarget !== null && sTarget.includes("://")
                                   ? sTarget.slice(0, sTarget.indexOf("://"))
                                   : "sh";
-                        if (!(derivedOp.toUpperCase() in OPERATION_GLYPH_MAP)) {
+                        if (!(derivedOp.toLowerCase() in OPERATION_GLYPH_MAP)) {
                             const existing =
                                 this.#activeStreams.get(streamKey) ??
                                 [...this.#activeStreams.values()].find(
@@ -1266,7 +1266,7 @@ export class SessionPresenter {
                         : [];
 
             const authoredTarget =
-                opName === "COPY" || opName === "MOVE"
+                opName === "copy" || opName === "move"
                     ? extractRawString(rawInput?.source)
                     : extractRawString(rawInput?.target);
             const attrSessionTarget =
@@ -1284,10 +1284,10 @@ export class SessionPresenter {
                 extractTitleTarget(effectiveTitle);
 
             // Suppress internal _plurnk emission announcements, entry materializations,
-            // synthesized KILL distillation NOTEs, and TODO waterfall rows ({§cli-rendering}).
+            // synthesized kill distillation notes, and todo waterfall rows ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
-                opName === "READ" &&
+                opName === "read" &&
                 (metaPlurnk.attrs?.kind === "emission" ||
                     (typeof target === "string" && target.startsWith("ops://")))
             ) {
@@ -1295,19 +1295,19 @@ export class SessionPresenter {
             }
             if (
                 metaPlurnk.origin === "_plurnk" &&
-                opName === "EDIT" &&
+                opName === "edit" &&
                 metaPlurnk.attrs?.kind === "entry_materialized"
             ) {
                 return frames;
             }
             if (
-                opName === "NOTE" &&
+                opName === "note" &&
                 typeof metaPlurnk.attrs?.distilled === "string" &&
                 metaPlurnk.attrs.distilled.trim().length > 0
             ) {
                 return frames;
             }
-            if (opName === "TODO") {
+            if (opName === "todo") {
                 this.#pendingToolCalls.delete(update.toolCallId);
                 this.#renderedToolCalls.add(update.toolCallId);
                 this.#retireReasoning(frames);
@@ -1322,7 +1322,7 @@ export class SessionPresenter {
                     : target ?? update.toolCallId;
             const entryId = typeof metaPlurnk.id === "number" ? metaPlurnk.id : null;
             const concludedStreamCode =
-                (typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
+                (typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream > ""
                     ? this.#concludedStreams.get(metaPlurnk.attrs.stream)
                     : undefined) ??
                 (entryId !== null ? this.#concludedStreams.get(`term:${String(entryId)}`) : undefined) ??
@@ -1346,7 +1346,7 @@ export class SessionPresenter {
                 });
                 // {§cli-rendering}, {§cli-session-status} — Only open runtime streams (never synchronous verbs in OPERATION_GLYPH_MAP)
                 // enter #activeStreams while in_progress.
-                if (effectiveStatus === "in_progress" && !(opName.toUpperCase() in OPERATION_GLYPH_MAP)) {
+                if (effectiveStatus === "in_progress" && !(opName.toLowerCase() in OPERATION_GLYPH_MAP)) {
                     const existing =
                         this.#activeStreams.get(update.toolCallId) ??
                         [...this.#activeStreams.values()].find(
@@ -1374,7 +1374,7 @@ export class SessionPresenter {
                             (this.#replayingHistory || this.turns > openedTurn),
                     });
                 }
-                if (opName.toUpperCase() === "WAIT") {
+                if (opName === "wait") {
                     this.doing = null;
                 } else if (this.lifecycle === "running") {
                     this.doing = {
@@ -1384,7 +1384,7 @@ export class SessionPresenter {
                         target,
                     };
                 }
-                if (this.lifecycle === "running" || opName.toUpperCase() === "WAIT") {
+                if (this.lifecycle === "running" || opName === "wait") {
                     frames.push({
                         kind: "status_update",
                         status: this.buildStatusBar(),
@@ -1415,16 +1415,16 @@ export class SessionPresenter {
 
             // Over-budget curation moment ({§cli-rendering}): render as `📌 — curating context`.
             if (
-                (opName === "error" || opName === "ERROR" || opName === "FAIL") &&
+                (opName === "error" || opName === "fail") &&
                 problemRec?.type === "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget"
             ) {
                 frames.push({
                     kind: "tool_call",
                     toolCallId: update.toolCallId,
                     glyph: "📌",
-                    op: "INFO",
+                    op: "info",
                     origin,
-                    title: "INFO — curating context",
+                    title: "info — curating context",
                     target: null,
                     scope: null,
                     destination: null,
@@ -1453,7 +1453,7 @@ export class SessionPresenter {
             const aside = rawAside;
             const scope = extractScopeToken(rawInput?.lineMarker);
             const destination =
-                opName === "COPY" || opName === "MOVE"
+                opName === "copy" || opName === "move"
                     ? extractRawString(rawInput?.destination)
                     : null;
             const pattern =
@@ -1471,7 +1471,7 @@ export class SessionPresenter {
 
             const authoredBody = extractRawString(rawInput?.body);
             let noteBody: string | null = null;
-            if (opName === "NOTE") {
+            if (opName === "note") {
                 if (authoredBody !== null) {
                     noteBody = authoredBody;
                 } else if (receiptLines.length > 0) {
@@ -1481,7 +1481,7 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, KILL, and undelivered SEND)
+            // Authored request bodies (edit, work, fork, kill, and undelivered send)
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
@@ -1534,7 +1534,7 @@ export class SessionPresenter {
                     typeof rawOutput?.detail === "string" &&
                     rawOutput.detail.length > 0
                   ? rawOutput.detail
-                  : opName === "WAIT"
+                  : opName === "wait"
                     ? typeof rawOutput?.detail === "string" && rawOutput.detail.length > 0
                         ? rawOutput.detail
                         : typeof metaPlurnk.attrs?.waiting === "number"
@@ -1565,7 +1565,7 @@ export class SessionPresenter {
                 });
             }
 
-            if (opName.toUpperCase() === "WAIT") {
+            if (opName === "wait") {
                 this.doing = null;
                 this.buildStatusBar();
             } else if (this.lifecycle === "running") {
@@ -1679,7 +1679,7 @@ export class SessionPresenter {
                 this.#activeWorkers.set(workerKey, {
                     key: workerKey,
                     glyph: existing?.glyph ?? "🐜",
-                    op: existing?.op ?? "WORK",
+                    op: existing?.op ?? "work",
                     target: existing?.target ?? `session:///${workerKey}`,
                     startedAt: existing?.startedAt ?? Date.now(),
                 });
@@ -1749,8 +1749,8 @@ export class SessionPresenter {
                 (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
                 metaPlurnk?.op === "outside-" ||
                 metaPlurnk?.outside !== undefined;
-            const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "SEND");
-            if (effectiveOp === "WAIT") {
+            const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "send");
+            if (effectiveOp === "wait") {
                 this.doing = null;
                 this.buildStatusBar();
             }

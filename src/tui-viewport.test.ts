@@ -967,7 +967,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
             turn1ReasoningShown.resolve();
             await continueAfterTurn1.promise;
 
-            // Turn 1 finishes generating and parks on WAIT (status 202)
+            // Turn 1 finishes generating and parks on wait (status 202)
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -995,13 +995,13 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
                 update: {
                     sessionUpdate: "tool_call_update",
                     toolCallId: "6/1/1",
-                    name: "WAIT",
-                    title: "WAIT",
+                    name: "wait",
+                    title: "wait",
                     status: "completed",
                     _meta: {
                         plurnk: {
                             id: 601,
-                            op: "WAIT",
+                            op: "wait",
                             origin: "model",
                             status: 202,
                             loopSeq: 6,
@@ -1077,7 +1077,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
                     sessionUpdate: "agent_message_chunk",
                     messageId: "6/2/1",
                     content: { type: "text", text: "TURN_2_FINAL_ANSWER" },
-                    _meta: { plurnk: { op: "SEND", status: 200, loopSeq: 6, turnSeq: 2 } },
+                    _meta: { plurnk: { op: "send", status: 200, loopSeq: 6, turnSeq: 2 } },
                 },
             });
             await client.notify(methods.client.session.update, {
@@ -1346,28 +1346,28 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     },
                 },
             });
-            // Turn 2: NOTE at 17/2/1 finishes while 17/1/5 is still running
+            // Turn 2: note at 17/2/1 finishes while 17/1/5 is still running
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
                     sessionUpdate: "tool_call_update",
                     toolCallId: "17/2/1",
-                    name: "NOTE",
-                    title: "NOTE",
+                    name: "note",
+                    title: "note",
                     status: "completed",
                     rawInput: { body: "TURN_2_NOTE_BODY" },
                     _meta: {
                         plurnk: {
                             id: 24580,
                             coordinate: "17/2/1",
-                            op: "NOTE",
+                            op: "note",
                             origin: "model",
                             status: 200,
                         },
                     },
                 },
             });
-            // Now 17/1/5 completes AFTER Turn 2's NOTE has already rendered
+            // Now 17/1/5 completes AFTER Turn 2's note has already rendered
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -1388,7 +1388,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     },
                 },
             });
-            // Turn 2 also emits a plan_update at 17/2/2 and a KILL with a distillation body (17/2/6) and its synthesized NOTE (17/2/7) (#244)
+            // Turn 2 also emits a plan_update at 17/2/2 and a kill with a distillation body (17/2/6) and its synthesized note (17/2/7) (#244)
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -1416,12 +1416,12 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                 update: {
                     sessionUpdate: "tool_call_update",
                     toolCallId: "17/2/6",
-                    name: "KILL",
-                    title: "KILL (log:///17/1/*/{READ,sh}) — retire turn 1 transcripts",
+                    name: "kill",
+                    title: "kill (log:///17/1/*/{read,sh}) — retire turn 1 transcripts",
                     status: "completed",
-                    locations: [{ path: "log:///17/1/*/{READ,sh}" }],
+                    locations: [{ path: "log:///17/1/*/{read,sh}" }],
                     rawInput: {
-                        target: { raw: "log:///17/1/*/{READ,sh}" },
+                        target: { raw: "log:///17/1/*/{read,sh}" },
                         aside: "retire turn 1 transcripts",
                         body: "DISTILLED_KILL_NOTE_BODY",
                     },
@@ -1429,7 +1429,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                         plurnk: {
                             id: 24581,
                             coordinate: "17/2/6",
-                            op: "KILL",
+                            op: "kill",
                             origin: "model",
                             status: 200,
                         },
@@ -1441,8 +1441,8 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                 update: {
                     sessionUpdate: "tool_call_update",
                     toolCallId: "17/2/7",
-                    name: "NOTE",
-                    title: "NOTE",
+                    name: "note",
+                    title: "note",
                     status: "completed",
                     rawInput: {
                         aside: null,
@@ -1453,11 +1453,11 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                         plurnk: {
                             id: 24582,
                             coordinate: "17/2/7",
-                            op: "NOTE",
+                            op: "note",
                             origin: "model",
                             status: 200,
                             attrs: {
-                                distilled: "log:///17/1/*/{READ,sh}",
+                                distilled: "log:///17/1/*/{read,sh}",
                             },
                         },
                     },
@@ -1470,7 +1470,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     sessionUpdate: "agent_message_chunk",
                     messageId: "17/7/1",
                     content: { type: "text", text: "FINAL_HAMSTER_REPLY" },
-                    _meta: { plurnk: { op: "SEND", status: 200, coordinate: "17/7/1", loopSeq: 17, turnSeq: 7 } },
+                    _meta: { plurnk: { op: "send", status: 200, coordinate: "17/7/1", loopSeq: 17, turnSeq: 7 } },
                 },
             });
             await client.notify(methods.client.session.update, {
@@ -1687,7 +1687,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                             turnSeq: 1,
                             seq: 1,
                             coordinate: "1/1/1",
-                            op: "SEND",
+                            op: "send",
                             origin: "user",
                             status: 200,
                         },
@@ -1701,8 +1701,8 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                     update: {
                         sessionUpdate: "tool_call_update",
                         toolCallId: `1/1/${String(seq)}`,
-                        name: "READ",
-                        title: `READ file-${String(i)}.ts`,
+                        name: "read",
+                        title: `read file-${String(i)}.ts`,
                         status: "completed",
                         locations: [{ path: `file-${String(i)}.ts` }],
                         rawInput: { target: `file-${String(i)}.ts` },
@@ -1714,7 +1714,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                                 turnSeq: 1,
                                 seq,
                                 coordinate: `1/1/${String(seq)}`,
-                                op: "READ",
+                                op: "read",
                                 origin: "model",
                                 status: 200,
                             },
@@ -1735,7 +1735,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                             turnSeq: 1,
                             seq: 7,
                             coordinate: "1/1/7",
-                            op: "SEND",
+                            op: "send",
                             origin: "model",
                             status: 200,
                         },
@@ -1757,7 +1757,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                                 turnSeq: 1,
                                 seq: 1,
                                 coordinate: "2/1/1",
-                                op: "SEND",
+                                op: "send",
                                 origin: "user",
                                 status: 200,
                             },
@@ -1777,7 +1777,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                                 turnSeq: 1,
                                 seq: 2,
                                 coordinate: "2/1/2",
-                                op: "SEND",
+                                op: "send",
                                 origin: "model",
                                 status: 200,
                             },
@@ -1837,7 +1837,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                             turnSeq: 1,
                             seq: 2,
                             coordinate: "3/1/2",
-                            op: "SEND",
+                            op: "send",
                             origin: "model",
                             status: 200,
                         },
@@ -2046,12 +2046,12 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         ]);
     }
 
-    surface.setLiveActivity("⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 WORK (session:///helper) 12.0s");
+    surface.setLiveActivity("⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s");
     assert.deepEqual(surface.renderLiveLines(80), [
         "thought-line-18",
         "thought-line-19",
         "thought-line-20",
-        "⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 WORK (session:///helper) 12.0s",
+        "⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s",
     ]);
 
     // renderReasoning formats at most the newest 3 lines with 💭 on line 1 and 3-space indent on lines 2-3
@@ -2067,26 +2067,26 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
 
     // Status line and TailText truncate to terminal width instead of wrapping onto multiple lines (#238)
     surface.setStatus(
-        "[plurnk-service/~service(12/8)] ⌛︎  · deepseek/deepseek-reasoner(high) · 42s · ↓128k ↑16k · $1.2345 · READ src/very/long/path.ts",
+        "[plurnk-service/~service(12/8)] ⌛︎  · deepseek/deepseek-reasoner(high) · 42s · ↓128k ↑16k · $1.2345 · read src/very/long/path.ts",
     );
     const truncatedStatus = surface.renderStatusLines(50);
     assert.equal(truncatedStatus.length, 1, "status line must never wrap onto a second line");
     assert.ok(stripVTControlCharacters(truncatedStatus[0]!).includes("…"));
     assert.equal(stripVTControlCharacters(truncatedStatus[0]!).length, 50);
 
-    // Active streams & workers strip: synchronous verbs (READ, FIND, EDIT, etc.) never appear,
+    // Active streams & workers strip: synchronous verbs (read, find, edit, etc.) never appear,
     // streams appear only after surviving past their opening turn, and workers appear while active (#238)
     const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "user" });
     presenter.markTurnStart(1_000);
     presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
-        name: "READ",
-        title: "READ (workspace:///README.md)",
+        name: "read",
+        title: "read (workspace:///README.md)",
         status: "in_progress",
-        _meta: { plurnk: { op: "READ", turnSeq: 1 } },
+        _meta: { plurnk: { op: "read", turnSeq: 1 } },
     });
-    assert.equal(presenter.activeLiveEntries.length, 0, "READ must never enter activeLiveEntries");
+    assert.equal(presenter.activeLiveEntries.length, 0, "read must never enter activeLiveEntries");
 
     presenter.apply({
         sessionUpdate: "tool_call_update",
@@ -2102,7 +2102,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         "stream in its opening turn does not enter activeLiveEntries before turn boundary",
     );
 
-    // Advancing to turn 2 promotes the surviving open stream; spawning WORK adds the active worker
+    // Advancing to turn 2 promotes the surviving open stream; spawning work adds the active worker
     presenter.apply({
         sessionUpdate: "notice",
         severity: "info",
@@ -2112,16 +2112,16 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/2/1",
-        name: "WORK",
-        title: "WORK (session:///helper)",
+        name: "work",
+        title: "work (session:///helper)",
         status: "completed",
-        _meta: { plurnk: { op: "WORK", status: 200, turnSeq: 2, attrs: { session: "session:///helper" } } },
+        _meta: { plurnk: { op: "work", status: 200, turnSeq: 2, attrs: { session: "session:///helper" } } },
     });
     assert.equal(presenter.activeLiveEntries.length, 2);
     const stripText = stripVTControlCharacters(
         renderActiveLiveLine(presenter.activeLiveEntries, 80, Date.now() + 5_000),
     );
-    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 WORK \(session:\/\/\/helper\) \S+$/u);
+    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 work \(session:\/\/\/helper\) \S+$/u);
 
     // Concluding the stream and worker removes them from activeLiveEntries
     presenter.apply({
@@ -2152,7 +2152,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
             session.applyUpdate({
                 sessionUpdate: "tool_call_update",
                 toolCallId: `${i}/1/${t}`,
-                title: `READ (workspace:///file-${t}.ts)`,
+                title: `read (workspace:///file-${t}.ts)`,
                 status: "completed",
                 _meta: { plurnk: { id: i * 10 + t, coordinate: `${i}/1/${t}` } },
             });

@@ -161,17 +161,15 @@ The model can search for phrases, inspect structured data, or follow symbol
 relationships without writing a script for each question.
 
 For example, these model-side operations find TypeScript files matching
-`retry` or `timeout`, then trim older READ receipts to their first 16 lines:
+`retry` or `timeout`, then trim older `read` receipts to their first 16 lines:
 
-`````text
-````FIND (src/**/*.{ts,tsx}) ~retry OR timeout
-````
+```js
+await plurnk.find({ path: "src/**/*.{ts,tsx}", pattern: "~retry OR timeout" });
 
-````KILL (log:///1/[1-7]/*/READ) <17,-1>
-````
-`````
+await plurnk.kill({ path: "log:///1/[1-7]/*/read", range: "17,-1" });
+```
 
-The second operation targets READ results from turns 1–7 of loop 1. It curates
+The second operation targets `read` results from turns 1–7 of loop 1. It curates
 the log, not the source files. One expression can manage many entries: the
 agent has bulk operations over its own context, not just over your code.
 

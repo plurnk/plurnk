@@ -36,7 +36,7 @@ const makeFakeTerminal = (): { terminal: Terminal; written: string[] } => {
 };
 
 test("{§cli-inline-review}: type guards, QuestionForm multi-field validation, and Review permission/elicitation controls", async () => {
-    assert.equal(isPermissionGateEvent({ id: "a1b2c3d4", title: "EDIT a.ts" }), true);
+    assert.equal(isPermissionGateEvent({ id: "a1b2c3d4", title: "edit a.ts" }), true);
     assert.equal(isPermissionGateEvent({ id: "a1b2c3d4" }), false);
     assert.equal(isElicitationGateEvent({ id: "a1b2c3d4", mode: "form", message: "Question?" }), true);
     assert.equal(isElicitationGateEvent({ id: "a1b2c3d4", mode: "url", message: "Sign in" }), true);

@@ -185,7 +185,7 @@ const createMockAcpServer = async () => {
                                     sessionUpdate: "agent_message_chunk",
                                     messageId: "1/1/1",
                                     content: { type: "text", text: "First loop answer" },
-                                    _meta: { plurnk: { id: 1, op: "SEND", status: 200 } },
+                                    _meta: { plurnk: { id: 1, op: "send", status: 200 } },
                                 },
                             ],
                         };
@@ -446,13 +446,13 @@ const createMockAcpServer = async () => {
                 update: {
                     sessionUpdate: "tool_call_update",
                     toolCallId: "tc-1",
-                    title: "READ file:///tmp/test.txt",
+                    title: "read file:///tmp/test.txt",
                     status: "completed",
                     _meta: {
                         plurnk: {
                             id: 1,
                             turnId: 1,
-                            op: "READ",
+                            op: "read",
                             origin: "model",
                             status: 200,
                             coordinate: "1/1/1",
@@ -466,12 +466,12 @@ const createMockAcpServer = async () => {
                     update: {
                         sessionUpdate: "tool_call_update",
                         toolCallId: "tc-find",
-                        title: "FIND",
+                        title: "find",
                         status: "completed",
                         rawInput: { target: { raw: "workspace:///*" }, aside: "entries" },
                         rawOutput: { matches: [1, 2, 3] },
                         content: [{ type: "content", content: { type: "text", text: '[{"path":"workspace:///notes/**"}]' } }],
-                        _meta: { plurnk: { id: 2, turnId: 1, op: "FIND", origin: "model", status: 200, coordinate: "1/1/2" } },
+                        _meta: { plurnk: { id: 2, turnId: 1, op: "find", origin: "model", status: 200, coordinate: "1/1/2" } },
                     },
                 });
                 await client.notify(methods.client.session.update, {
@@ -479,10 +479,10 @@ const createMockAcpServer = async () => {
                     update: {
                         sessionUpdate: "tool_call_update",
                         toolCallId: "tc-note",
-                        title: "NOTE",
+                        title: "note",
                         status: "completed",
                         rawInput: { aside: null, body: "Check waterfall spacing." },
-                        _meta: { plurnk: { id: 3, turnId: 1, op: "NOTE", origin: "model", status: 200, coordinate: "1/1/3" } },
+                        _meta: { plurnk: { id: 3, turnId: 1, op: "note", origin: "model", status: 200, coordinate: "1/1/3" } },
                     },
                 });
                 await client.notify(methods.client.session.update, {
@@ -940,9 +940,9 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
         const errObj = await waitStderr((e) => e.type === "https://problems.plurnk.xyz/client/unknown-command");
         assert.equal(errObj.status, 400);
 
-        // Multiline executable backtick fence on fd 0 -> routes to op.parse
-        replChild.stdin!.write("```READ file:///tmp/test.txt\n```\n");
-        await waitStdout((l) => l === "OP_PARSE_OK: ```READ file:///tmp/test.txt\\n```");
+        // Executable Code Mode statement on fd 0 -> routes to op.parse
+        replChild.stdin!.write('await plurnk.read({ path: "file:///tmp/test.txt" });\n');
+        await waitStdout((l) => l === 'OP_PARSE_OK: await plurnk.read({ path: "file:///tmp/test.txt" });');
 
         // Bracketed paste multiline submission on fd 0 -> single prompt with preserved newlines
         replChild.stdin!.write("\x1b[200~Bracketed line 1\nBracketed line 2\x1b[201~\n");

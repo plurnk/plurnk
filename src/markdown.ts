@@ -75,15 +75,15 @@ export const renderModelReply = (
         readonly aside?: string | null;
     },
 ): string => {
-    const op = opts?.op ?? "SEND";
+    const op = opts?.op ?? "send";
     if (op === "outside-") {
         return renderMarkdownDocument(text, columns);
     }
     const status = opts?.status ?? 200;
-    const failed = status >= 400 || op === "FAIL";
-    const glyph = op === "WAIT" ? (failed ? "❌" : "⏳") : failed ? "❌" : "🐹";
+    const failed = status >= 400 || op === "fail";
+    const glyph = op === "wait" ? (failed ? "❌" : "⏳") : failed ? "❌" : "🐹";
     const cleanAside =
-        (op === "WAIT" || failed) && opts?.aside ? ModelText.plain(opts.aside).trim() : "";
+        (op === "wait" || failed) && opts?.aside ? ModelText.plain(opts.aside).trim() : "";
     const lead = `${paint(glyph, failed ? "failure" : "dim")}${
         cleanAside.length > 0 ? ` ${paint(cleanAside, "dim", "italic")}` : ""
     }`;
@@ -91,7 +91,7 @@ export const renderModelReply = (
     return body.length > 0 ? `${lead}\n${body}` : lead;
 };
 
-// {§cli-rendering} — Full dimmed Markdown rendering for NOTE.
+// {§cli-rendering} — Full dimmed Markdown rendering for note.
 export const renderNoteBlock = (opts: {
     readonly glyph: string;
     readonly aside?: string | null;
@@ -218,7 +218,7 @@ export const renderOperationBlock = (opts: {
     const bodyText = (opts.contentLines ?? []).join("\n");
     const bodyPreview = previewLines(
         bodyText,
-        op === "NOTE" || op === "TODO" ? Number.MAX_SAFE_INTEGER : limit,
+        op === "note" || op === "todo" ? Number.MAX_SAFE_INTEGER : limit,
         cols,
         opts.coordinate,
         op,

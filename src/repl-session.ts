@@ -1389,7 +1389,7 @@ export const runReplSession = async (
                 });
                 return "continue";
             }
-            const fence = `\`\`\`sh\n${shellCmd}\n\`\`\``;
+            const stmt = `await plurnk.sh(${JSON.stringify({ command: shellCmd })});`;
             try {
                 const res = await client.action<{
                     readonly results?: ReadonlyArray<{
@@ -1397,7 +1397,7 @@ export const runReplSession = async (
                         readonly content?: string;
                         readonly message?: string;
                     }>;
-                }>("op.parse", { text: fence }, bindingContext());
+                }>("op.parse", { text: stmt }, bindingContext());
                 for (const r of res.results ?? []) {
                     const out = r.content ?? r.message ?? String(r.status ?? 200);
                     streams.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
@@ -1413,10 +1413,10 @@ export const runReplSession = async (
             return "continue";
         }
 
-        const isExecFence =
+        const isCodeStatement =
             !rawLine.trimStart().startsWith(": ") &&
-            /^(`{3,}|~{3,})([^\s`~].*)\r?\n[\s\S]*$/u.test(line);
-        if (isExecFence) {
+            /^await\s+plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
+        if (isCodeStatement) {
             try {
                 const res = await client.action<{
                     readonly results?: ReadonlyArray<{

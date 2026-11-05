@@ -119,26 +119,26 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
                 const target = item.locations[0]?.path ?? "";
                 if (
                     itemPlurnk?.origin === "_plurnk" &&
-                    op === "READ" &&
+                    op === "read" &&
                     (itemPlurnk.attrs?.kind === "emission" || target.startsWith("ops://"))
                 ) {
                     return false;
                 }
                 if (
                     itemPlurnk?.origin === "_plurnk" &&
-                    op === "EDIT" &&
+                    op === "edit" &&
                     itemPlurnk.attrs?.kind === "entry_materialized"
                 ) {
                     return false;
                 }
                 if (
-                    op === "NOTE" &&
+                    op === "note" &&
                     typeof itemPlurnk?.attrs?.distilled === "string" &&
                     itemPlurnk.attrs.distilled.trim().length > 0
                 ) {
                     return false;
                 }
-                if (op === "TODO") {
+                if (op === "todo") {
                     return false;
                 }
                 return true;

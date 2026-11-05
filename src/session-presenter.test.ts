@@ -43,8 +43,8 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
     assert.equal(formatModelRoute("fast", null, null), "fast");
     assert.equal(formatModelRoute("none", "medium", "default"), "none");
 
-    assert.equal(operationGlyphFor("NOTE"), "🗒️");
-    assert.equal(operationGlyphFor("COPY"), "🖨️");
+    assert.equal(operationGlyphFor("note"), "🗒️");
+    assert.equal(operationGlyphFor("copy"), "🖨️");
     assert.equal(lifecycleGlyphFor("requires_action"), "💤");
 
     const presenter = new SessionPresenter({
@@ -199,15 +199,15 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
 });
 
 test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: parked wait countdown, history_lost notice on reset loop gauge, and presenter-formatters", () => {
-    assert.equal(extractTitleAside("READ src/a.ts — 12 lines"), "12 lines");
-    assert.equal(extractTitleTarget("READ src/a.ts — 12 lines"), "src/a.ts");
+    assert.equal(extractTitleAside("read src/a.ts — 12 lines"), "12 lines");
+    assert.equal(extractTitleTarget("read src/a.ts — 12 lines"), "src/a.ts");
     assert.equal(compactTarget("file:///repo/src/a.ts"), "…/src/a.ts");
     assert.equal(formatLiveWait(45), "45ms");
     assert.equal(formatLiveWait(1250), "1.3s");
     assert.equal(extractRawString({ raw: "echo hi" }), "echo hi");
     assert.equal(extractScopeToken({ marks: [10, 20] }), "<10,20>");
     assert.equal(spanLength([10, 20]), 11);
-    assert.equal(receiptCountFor("READ", { range: { returned: [1, 2] } }), 2);
+    assert.equal(receiptCountFor("read", { range: { returned: [1, 2] } }), 2);
 
     const presenter = new SessionPresenter({
         workspaceName: "ws",
@@ -339,16 +339,16 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     });
     assert.equal(presenter.turns, 2);
 
-    // WAIT outcome renders attrs.waiting ("30s") and 102 rawOutput.detail ({§cli-rendering})
+    // wait outcome renders attrs.waiting ("30s") and 102 rawOutput.detail ({§cli-rendering})
     const wait202 = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "33/2/1",
-        name: "WAIT",
-        title: "WAIT",
+        name: "wait",
+        title: "wait",
         status: "completed",
         _meta: {
             plurnk: {
-                op: "WAIT",
+                op: "wait",
                 status: 202,
                 attrs: { waiting: 30 },
             },
@@ -363,13 +363,13 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     const wait102 = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "33/2/2",
-        name: "WAIT",
-        title: "WAIT",
+        name: "wait",
+        title: "wait",
         status: "completed",
         rawOutput: { status: 102, detail: "Nothing is in flight. Continuing." },
         _meta: {
             plurnk: {
-                op: "WAIT",
+                op: "wait",
                 status: 102,
             },
         },
@@ -378,20 +378,20 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     if (wait102[0]?.kind === "tool_call") {
         assert.equal(wait102[0].outcome, "Nothing is in flight. Continuing.");
     }
-    assert.equal(presenter.doing, null, "WAIT must clear presenter.doing instead of lingering in the status bar");
-    assert.doesNotMatch(presenter.lastStatusLine, /\bWAIT\b/u);
+    assert.equal(presenter.doing, null, "wait must clear presenter.doing instead of lingering in the status bar");
+    assert.doesNotMatch(presenter.lastStatusLine, /\bwait\b/u);
 
-    // Unnamed WORK/FORK falls back to attrs.session, and replay sh falls back to receipt content ({§cli-rendering})
+    // Unnamed work/fork falls back to attrs.session, and replay sh falls back to receipt content ({§cli-rendering})
     const unnamedWork = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "33/2/3",
-        name: "WORK",
-        title: "WORK",
+        name: "work",
+        title: "work",
         status: "completed",
         rawInput: { body: "Check tests" },
         _meta: {
             plurnk: {
-                op: "WORK",
+                op: "work",
                 status: 200,
                 attrs: { session: "work-1" },
             },
@@ -774,18 +774,18 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     );
 
     // Trailing state_update: running with status.lifecycle: "parked" preserves parked state and clears doing ({§cli-session-status}, #240).
-    presenter.doing = { phase: "working", since: Date.now(), op: "WAIT", target: null };
+    presenter.doing = { phase: "working", since: Date.now(), op: "wait", target: null };
     presenter.lifecycle = "requires_action";
     presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/2",
-        name: "WAIT",
-        title: "WAIT",
+        name: "wait",
+        title: "wait",
         status: "completed",
         rawInput: { seconds: 15 },
-        _meta: { plurnk: { op: "WAIT", status: 200, attrs: { waiting: 15 } } },
+        _meta: { plurnk: { op: "wait", status: 200, attrs: { waiting: 15 } } },
     });
-    assert.equal(presenter.doing, null, "WAIT must clear doing even when lifecycle was requires_action");
+    assert.equal(presenter.doing, null, "wait must clear doing even when lifecycle was requires_action");
     const parkedStateFrames = presenter.apply({
         sessionUpdate: "state_update",
         state: "running",
@@ -806,15 +806,15 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.match(parkedStateFrames[0].status.formattedStatusLine, /updates in (?:14|15)s/u);
     }
 
-    // Model NOTE rows render with 🗒️ and preserve asides ({§cli-rendering}).
+    // Model note rows render with 🗒️ and preserve asides ({§cli-rendering}).
     const noteFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/note-1",
-        name: "NOTE",
-        title: "NOTE — observation",
+        name: "note",
+        title: "note — observation",
         status: "completed",
         rawInput: { aside: "observation", body: "Body for note" },
-        _meta: { plurnk: { op: "NOTE", status: 200, attrs: { aside: "observation" } } },
+        _meta: { plurnk: { op: "note", status: 200, attrs: { aside: "observation" } } },
     });
     assert.equal(noteFrames[0]?.kind, "tool_call");
     if (noteFrames[0]?.kind === "tool_call") {
@@ -823,16 +823,16 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(noteFrames[0].noteBody, "Body for note");
     }
 
-    // TODO tool_call_update rows are suppressed from the waterfall; plan_update projects the per-turn diff
+    // todo tool_call_update rows are suppressed from the waterfall; plan_update projects the per-turn diff
     // (newly closed 🗹 + newly opened ☐ items) at the end of the turn in the waterfall ({§cli-rendering}, {§cli-session-status}).
     const todoFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/todo-1",
-        name: "TODO",
-        title: "TODO",
+        name: "todo",
+        title: "todo",
         status: "completed",
         rawInput: { aside: null, body: "- Step 1\n- Step 2" },
-        _meta: { plurnk: { op: "TODO", status: 200 } },
+        _meta: { plurnk: { op: "todo", status: 200 } },
     });
     assert.equal(todoFrames.length, 0);
 
@@ -1080,15 +1080,15 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(freshPresenter.effort, null);
     assert.equal(freshPresenter.effortSource, null);
 
-    // KILL with distillation body previews beneath 🗑️ and suppresses synthesized NOTE with attrs.distilled ({§cli-rendering}, #244).
-    const killTarget = "log:///67/[1-2]/*/{READ,gitea,sh,emission,reasoning}";
+    // kill with distillation body previews beneath 🗑️ and suppresses synthesized note with attrs.distilled ({§cli-rendering}, #244).
+    const killTarget = "log:///67/[1-2]/*/{read,gitea,sh,emission,reasoning}";
     const killBody =
         "Verified open issues and git status across plurnk-service (#1392, #1391, #1390, #1381), plurnk (0 open), and plurnk-web (#98).";
     const killFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "67/2/6",
-        name: "KILL",
-        title: `KILL (${killTarget}) — retire loop 67 status check transcripts`,
+        name: "kill",
+        title: `kill (${killTarget}) — retire loop 67 status check transcripts`,
         status: "completed",
         locations: [{ path: killTarget }],
         rawInput: {
@@ -1100,7 +1100,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             plurnk: {
                 id: 6706,
                 coordinate: "67/2/6",
-                op: "KILL",
+                op: "kill",
                 origin: "model",
                 status: 200,
             },
@@ -1110,7 +1110,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(killFrames[0]?.kind, "tool_call");
     if (killFrames[0]?.kind === "tool_call") {
         assert.equal(killFrames[0].glyph, "🗑️");
-        assert.equal(killFrames[0].op, "KILL");
+        assert.equal(killFrames[0].op, "kill");
         assert.equal(killFrames[0].target, killTarget);
         assert.equal(killFrames[0].aside, "retire loop 67 status check transcripts");
         assert.deepEqual(killFrames[0].contentLines, [killBody]);
@@ -1143,8 +1143,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     const distilledNoteFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "67/2/7",
-        name: "NOTE",
-        title: "NOTE",
+        name: "note",
+        title: "note",
         status: "completed",
         rawInput: {
             aside: null,
@@ -1155,7 +1155,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             plurnk: {
                 id: 6707,
                 coordinate: "67/2/7",
-                op: "NOTE",
+                op: "note",
                 origin: "model",
                 status: 200,
                 attrs: {
@@ -1167,21 +1167,21 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(
         distilledNoteFrames.length,
         0,
-        "synthesized NOTE carrying attrs.distilled must be suppressed so it does not render an orphan 🗒️ block",
+        "synthesized note carrying attrs.distilled must be suppressed so it does not render an orphan 🗒️ block",
     );
 
     const bodilessKillFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "67/2/8",
-        name: "KILL",
-        title: "KILL (workspace:///old.ts)",
+        name: "kill",
+        title: "kill (workspace:///old.ts)",
         status: "completed",
         rawInput: { target: { raw: "workspace:///old.ts" }, body: null },
         _meta: {
             plurnk: {
                 id: 6708,
                 coordinate: "67/2/8",
-                op: "KILL",
+                op: "kill",
                 origin: "model",
                 status: 200,
             },

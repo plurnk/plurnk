@@ -2,24 +2,24 @@
 // ({§cli-rendering}, {§cli-session-status}, {§cli-model-selection}).
 
 export const OPERATION_GLYPH_MAP: Readonly<Record<string, string>> = {
-    NOTE: "🗒️",
-    TODO: "🚧",
-    FIND: "🔎",
-    READ: "📖",
-    EDIT: "📝",
-    COPY: "🖨️",
-    MOVE: "📦",
-    KILL: "🗑️",
-    WORK: "🐜",
-    FORK: "🔱",
-    BARE: "☁️",
-    WAIT: "⏳",
-    SEND: "✉️",
-    DONE: "🐹",
-    WARN: "⚠️",
-    FAIL: "⛔",
-    ERROR: "⛔",
-    INFO: "📌",
+    note: "🗒️",
+    todo: "🚧",
+    find: "🔎",
+    read: "📖",
+    edit: "📝",
+    copy: "🖨️",
+    move: "📦",
+    kill: "🗑️",
+    work: "🐜",
+    fork: "🔱",
+    bare: "☁️",
+    wait: "⏳",
+    send: "✉️",
+    done: "🐹",
+    warn: "⚠️",
+    fail: "⛔",
+    error: "⛔",
+    info: "📌",
 };
 
 export const operationGlyphFor = (op: string | undefined): string => {
@@ -69,7 +69,7 @@ export const extractTitleTarget = (title: string | null | undefined): string | n
     const head = title.includes(" — ") ? title.slice(0, title.indexOf(" — ")) : title;
     const parenMatch = head.match(/^\S+\s+\((.+)\)$/u);
     if (parenMatch?.[1]) return parenMatch[1];
-    const spaceMatch = head.match(/^(?:READ|EDIT|FIND|COPY|MOVE|KILL)\s+(.+)$/u);
+    const spaceMatch = head.match(/^(?:read|edit|find|copy|move|kill)\s+(.+)$/u);
     return spaceMatch?.[1]?.trim() ?? null;
 };
 
@@ -185,7 +185,7 @@ export const receiptCountFor = (op: string, rawOutput: Record<string, unknown> |
         rawOutput.range && typeof rawOutput.range === "object"
             ? (rawOutput.range as { returned?: unknown; total?: unknown })
             : undefined;
-    if (op === "READ") {
+    if (op === "read") {
         if (Array.isArray(rawOutput.lineOrdinals)) {
             return rawOutput.lineOrdinals.length;
         }
@@ -194,7 +194,7 @@ export const receiptCountFor = (op: string, rawOutput: Record<string, unknown> |
             (typeof rawOutput.count === "number" ? rawOutput.count : null)
         );
     }
-    if (op === "FIND") {
+    if (op === "find") {
         return (
             spanLength(range?.returned) ??
             (typeof range?.total === "number" ? range.total : null) ??
@@ -210,17 +210,17 @@ export const receiptCountFor = (op: string, rawOutput: Record<string, unknown> |
 };
 
 export const NO_PREVIEW_VERBS = new Set([
-    "READ",
-    "FIND",
-    "COPY",
-    "MOVE",
-    "BARE",
-    "WAIT",
-    "NOTE",
-    "TODO",
+    "read",
+    "find",
+    "copy",
+    "move",
+    "bare",
+    "wait",
+    "note",
+    "todo",
 ]);
 
-export const WORKER_OPS = new Set(["WORK", "FORK", "BARE"]);
+export const WORKER_OPS = new Set(["work", "fork", "bare"]);
 
 export const formatActiveOperationLead = (op: string): string => {
     const glyph = OPERATION_GLYPH_MAP[op];

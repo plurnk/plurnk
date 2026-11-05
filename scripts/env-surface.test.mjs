@@ -28,7 +28,6 @@ const FOREIGN = new Map([
 
 // `PLURNK_*` strings that are not knobs.
 const NOT_A_KNOB = new Map([
-    ["PLURNK_FENCE", "the language's fence, imported from contracts"],
     ["PLURNK_OPS", "the language's operation alphabet, imported from contracts"],
 ]);
 

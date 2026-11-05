@@ -202,7 +202,7 @@ options:
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
-                          descendants' turns and every BARE call (else the daemon's ceiling).
+                          descendants' turns and every bare call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (session/cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.

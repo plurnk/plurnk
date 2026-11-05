@@ -308,7 +308,7 @@ test("{§cli-inline-review}: passive AcpClient without permission or elicitation
             try {
                 const permRes = await client.request(methods.client.session.requestPermission, {
                     sessionId: params.sessionId,
-                    title: "EDIT a.ts",
+                    title: "edit a.ts",
                     description: "Review the requested action.",
                     subject: {
                         type: "command",
@@ -475,7 +475,7 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     session.applyUpdate({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
-        title: "READ (workspace:///README.md)",
+        title: "read (workspace:///README.md)",
         status: "completed",
     });
     // Subsequent thought delta with the same messageId appends in place rather than pushing a duplicate item

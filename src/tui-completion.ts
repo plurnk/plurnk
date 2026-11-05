@@ -3,7 +3,7 @@
 import { readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
-import { PLURNK_FENCE, PLURNK_OPS } from "@plurnk/plurnk-contracts";
+import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 import { INTERACTIVE_COMMANDS } from "./commands.ts";
 
 export interface PathPartial {
@@ -11,7 +11,7 @@ export interface PathPartial {
     readonly partial: string;
 }
 
-const DSL_TARGET_PARTIAL = /^`{3,}[A-Za-z0-9_.+-]+[ \t]*\(([^)\n]*)$/u;
+const DSL_TARGET_PARTIAL = /^await\s+plurnk\.[A-Za-z0-9_]+\s*\(\s*\{\s*(?:path|from|to|target)\s*:\s*["']([^"'\n]*)$/u;
 
 export const pathPartial = (line: string): PathPartial | null => {
     const verb = line.match(/^\/(?:import|script)\s+(\S*)$/u);
@@ -28,21 +28,20 @@ export const pathPartial = (line: string): PathPartial | null => {
 };
 
 export interface DslOpPartial {
-    readonly fence: string;
+    readonly prefix: string;
     readonly typed: string;
 }
 
 export const dslOpPartial = (line: string): DslOpPartial | null => {
-    const match = line.match(/^(`{3,})([A-Za-z]*)$/u);
-    return match ? { fence: match[1]!, typed: match[2]! } : null;
+    const match = line.match(/^(await\s+plurnk\.)([A-Za-z]*)$/u);
+    return match ? { prefix: match[1]!, typed: match[2]! } : null;
 };
 
-export const completeOps = ({ fence, typed }: DslOpPartial): [string[], string] => {
-    const up = typed.toUpperCase();
-    const opener = fence.length >= PLURNK_FENCE.length ? fence : PLURNK_FENCE;
+export const completeOps = ({ prefix, typed }: DslOpPartial): [string[], string] => {
+    const lower = typed.toLowerCase();
     return [
-        PLURNK_OPS.filter((operation) => operation.startsWith(up)).map((operation) => `${opener}${operation}`),
-        `${opener}${typed}`,
+        PLURNK_OPS.map((operation) => operation.toLowerCase()).filter((operation) => operation.startsWith(lower)).map((operation) => `${prefix}${operation}`),
+        `${prefix}${typed}`,
     ];
 };
 

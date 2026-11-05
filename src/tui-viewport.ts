@@ -228,7 +228,7 @@ export const runTuiViewport = async (
 
     const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
         if (surface === null) return;
-        if (frame.op === "NOTE") {
+        if (frame.op === "note") {
             const rendered = renderNoteBlock({
                 glyph: frame.glyph,
                 aside: frame.aside,
@@ -773,7 +773,7 @@ export const runTuiViewport = async (
                 }
                 surface.append(
                     renderModelReply(rec.text, surface.columns, {
-                        op: plurnkMeta?.op ?? "SEND",
+                        op: plurnkMeta?.op ?? "send",
                         status: plurnkMeta?.status ?? 200,
                         aside: plurnkMeta?.attrs?.aside ?? null,
                     }),
@@ -992,7 +992,7 @@ export const runTuiViewport = async (
                     const userText = extractUpdateText(event.content);
                     if (userText.length > 0) {
                         if (typeof plurnkMeta?.answering === "string") {
-                            if (plurnkMeta?.op === "SEND") {
+                            if (plurnkMeta?.op === "send") {
                                 const sender =
                                     typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
                                         ? plurnkMeta.source
@@ -1001,7 +1001,7 @@ export const runTuiViewport = async (
                             }
                         } else {
                             surface.recordPrompt(userText);
-                            if (plurnkMeta?.op === "SEND" && !consumeLocalSubmittedPrompt(userText)) {
+                            if (plurnkMeta?.op === "send" && !consumeLocalSubmittedPrompt(userText)) {
                                 surface.append("");
                                 surface.append(renderSubmittedInput(userText));
                                 surface.append("");
@@ -1015,8 +1015,8 @@ export const runTuiViewport = async (
                 event.sessionUpdate === "tool_call_update" &&
                 typeof event.toolCallId === "string" &&
                 (event.status === "pending" || event.status === "in_progress") &&
-                event.name !== "TODO" &&
-                (event._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op !== "TODO"
+                event.name !== "todo" &&
+                (event._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op !== "todo"
             ) {
                 surface.reserveToolCall(event.toolCallId);
             }
@@ -1084,7 +1084,7 @@ export const runTuiViewport = async (
                                 }),
                                 frame.messageId,
                             );
-                            if (frame.op === "WAIT") {
+                            if (frame.op === "wait") {
                                 updateSurfaceStatus();
                             }
                         }

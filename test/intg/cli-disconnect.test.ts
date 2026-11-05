@@ -103,8 +103,8 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
                         update: {
                             sessionUpdate: "tool_call_update",
                             toolCallId: "log:///loops/1/turns/1/ops/1",
-                            name: "READ",
-                            title: "READ file:///a.txt",
+                            name: "read",
+                            title: "read file:///a.txt",
                             status: "completed",
                             locations: [{ path: "file:///a.txt" }],
                             content: [{ type: "content", content: { type: "text", text: "alpha" } }],
@@ -112,7 +112,7 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
                                 plurnk: {
                                     id: 101,
                                     turnId: 1,
-                                    op: "READ",
+                                    op: "read",
                                     origin: "model",
                                     status: 200,
                                     scope: null,
@@ -131,7 +131,7 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
                                 plurnk: {
                                     id: 102,
                                     turnId: 1,
-                                    op: "SEND",
+                                    op: "send",
                                     origin: "model",
                                     status: 200,
                                     scope: null,
@@ -297,7 +297,7 @@ test(
                         ops: [
                             {
                                 id: 101,
-                                op: "READ",
+                                op: "read",
                                 origin: "model",
                                 status: 200,
                                 scope: null,
@@ -305,7 +305,7 @@ test(
                             },
                             {
                                 id: 102,
-                                op: "SEND",
+                                op: "send",
                                 origin: "model",
                                 status: 200,
                                 scope: null,
@@ -405,7 +405,7 @@ test(
                                     sessionUpdate: "agent_message_chunk",
                                     messageId: "m-1",
                                     content: { type: "text", text: "partial answer" },
-                                    _meta: { plurnk: { id: 102, turnId: 1, op: "SEND", status: 200 } },
+                                    _meta: { plurnk: { id: 102, turnId: 1, op: "send", status: 200 } },
                                 },
                             });
                             if (phase === "idle") {

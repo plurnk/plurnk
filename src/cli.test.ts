@@ -123,15 +123,15 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     await main(["node", "plurnk", "--version"]);
 
     // Operation glyphs ({§cli-rendering})
-    assert.equal(operationGlyphFor("READ"), "📖");
-    assert.equal(operationGlyphFor("EDIT"), "📝");
-    assert.equal(operationGlyphFor("FIND"), "🔎");
-    assert.equal(operationGlyphFor("NOTE"), "🗒️");
-    assert.equal(operationGlyphFor("WORK"), "🐜");
-    assert.equal(operationGlyphFor("FORK"), "🔱");
-    assert.equal(operationGlyphFor("WAIT"), "⏳");
-    assert.equal(operationGlyphFor("SEND"), "✉️");
-    assert.equal(operationGlyphFor("DONE"), "🐹");
+    assert.equal(operationGlyphFor("read"), "📖");
+    assert.equal(operationGlyphFor("edit"), "📝");
+    assert.equal(operationGlyphFor("find"), "🔎");
+    assert.equal(operationGlyphFor("note"), "🗒️");
+    assert.equal(operationGlyphFor("work"), "🐜");
+    assert.equal(operationGlyphFor("fork"), "🔱");
+    assert.equal(operationGlyphFor("wait"), "⏳");
+    assert.equal(operationGlyphFor("send"), "✉️");
+    assert.equal(operationGlyphFor("done"), "🐹");
     assert.equal(operationGlyphFor("sh"), "⚙️  sh");
 
     // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection})
@@ -149,28 +149,28 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.equal(r1[0]?.kind, "reasoning_tail");
     assert.deepEqual(presenter.reasoningLines, ["line 2", "line 3"]);
 
-    // Internal _plurnk emission READ (ops://...) and entry materialization EDIT are never rendered ({§cli-rendering})
+    // Internal _plurnk emission read (ops://...) and entry materialization edit are never rendered ({§cli-rendering})
     const emittedAnnouncement = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/0",
-        title: "READ (ops://x3/1/2)",
+        title: "read (ops://x3/1/2)",
         status: "completed",
         locations: [{ path: "ops://x3/1/2" }],
-        content: [{ type: "content", content: { type: "text", text: "```DONE\nHello\n```" } }],
-        _meta: { plurnk: { op: "READ", origin: "_plurnk", attrs: { kind: "emission" } } },
+        content: [{ type: "content", content: { type: "text", text: "await plurnk.done({ text: \"Hello\" });" } }],
+        _meta: { plurnk: { op: "read", origin: "_plurnk", attrs: { kind: "emission" } } },
     });
     assert.equal(emittedAnnouncement.length, 0);
 
-    // Tool call retires reasoning tail and emits operation glyph; READ and FIND show {count} and no receipt body ({§cli-markdown-projection}, {§cli-rendering})
+    // Tool call retires reasoning tail and emits operation glyph; read and find show {count} and no receipt body ({§cli-markdown-projection}, {§cli-rendering})
     const t1 = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
-        title: "READ",
+        title: "read",
         status: "completed",
         rawInput: { target: { raw: "plurnk:///session.md" }, lineMarker: { marks: [1, -1] } },
         rawOutput: { range: { returned: [1, 78] } },
         content: [{ type: "content", content: { type: "text", text: "file contents" } }],
-        _meta: { plurnk: { op: "READ" } },
+        _meta: { plurnk: { op: "read" } },
     });
     assert.equal(presenter.reasoningLines.length, 0);
     assert.equal(t1[0]?.kind, "reasoning_retired");
@@ -183,14 +183,14 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.deepEqual(t1[1].contentLines, []);
     }
 
-    // Model NOTE uses 🗒️ glyph and preserves any aside ({§cli-rendering})
+    // Model note uses 🗒️ glyph and preserves any aside ({§cli-rendering})
     const noteRow = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/2",
-        title: "NOTE — working memory",
+        title: "note — working memory",
         status: "completed",
         rawInput: { aside: "working memory", body: "Evaluate and react to the Open Message." },
-        _meta: { plurnk: { op: "NOTE" } },
+        _meta: { plurnk: { op: "note" } },
     });
     assert.equal(noteRow[0]?.kind, "tool_call");
     if (noteRow[0]?.kind === "tool_call") {
@@ -200,14 +200,14 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.equal(noteRow[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
-    // Non-distilled NOTE with _plurnk origin is treated identically to model NOTE ({§cli-rendering})
+    // Non-distilled note with _plurnk origin is treated identically to model note ({§cli-rendering})
     const harnessNote = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/3",
-        title: "NOTE — review",
+        title: "note — review",
         status: "completed",
         rawInput: { aside: "review", body: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6" },
-        _meta: { plurnk: { op: "NOTE", origin: "_plurnk" } },
+        _meta: { plurnk: { op: "note", origin: "_plurnk" } },
     });
     assert.equal(harnessNote[0]?.kind, "tool_call");
     if (harnessNote[0]?.kind === "tool_call") {
@@ -311,10 +311,10 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     });
     assert.equal(msg[0]?.kind, "session_message");
 
-    // Rich TUI waterfall formatting: 🐹 model replies, NOTE bodies, operation previews, 💭 reasoning, 🎯 loop summary
-    assert.match(renderModelReply("Hello **world**", 80, { op: "DONE", status: 200 }), /🐹[\s\S]*Hello/);
-    assert.match(renderModelReply("Cancelled", 80, { op: "FAIL", status: 200 }), /❌/);
-    assert.match(renderModelReply("Waiting", 80, { op: "WAIT", status: 200 }), /⏳/);
+    // Rich TUI waterfall formatting: 🐹 model replies, note bodies, operation previews, 💭 reasoning, 🎯 loop summary
+    assert.match(renderModelReply("Hello **world**", 80, { op: "done", status: 200 }), /🐹[\s\S]*Hello/);
+    assert.match(renderModelReply("Cancelled", 80, { op: "fail", status: 200 }), /❌/);
+    assert.match(renderModelReply("Waiting", 80, { op: "wait", status: 200 }), /⏳/);
     assert.match(
         renderNoteBlock({ glyph: "💡", aside: null, body: "Full note markdown body", columns: 80 }),
         /💡\n[\s\S]*Full note markdown body/,
@@ -322,7 +322,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.match(
         renderOperationBlock({
             glyph: "📝",
-            op: "EDIT",
+            op: "edit",
             target: "file:///tmp/a.ts",
             scope: "<1,10>",
             aside: "check",
@@ -331,7 +331,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
             previewLimit: 5,
             columns: 80,
         }),
-        /📝[\s\S]*\(file:\/\/\/tmp\/a\.ts\) <1,10>[\s\S]*\+1 line · log:\/\/\/1\/1\/1\/EDIT/,
+        /📝[\s\S]*\(file:\/\/\/tmp\/a\.ts\) <1,10>[\s\S]*\+1 line · log:\/\/\/1\/1\/1\/edit/,
     );
     assert.match(renderReasoning("step 1\nstep 2"), /💭 step 1[\s\S]*   step 2/);
     assert.match(
@@ -599,7 +599,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     // When editor is empty, adding a permission gate opens review automatically ({§cli-inline-review})
     review.addPermissionGate({
         id: "deadbeef",
-        title: "EDIT file:///tmp/a.txt",
+        title: "edit file:///tmp/a.txt",
         _meta: { plurnk: { proposal: { body: "hello" } } },
     });
     assert.equal(surface.reviewing, true);
@@ -621,7 +621,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     assert.equal(surface.reviewing, false);
 
     // Mid-turn response followed by append preserves chronological order ({§cli-markdown-projection})
-    surface.addResponse(renderModelReply("FIRST_MID_TURN_RESPONSE", 80, { op: "SEND", status: 200 }), "1/1/2");
+    surface.addResponse(renderModelReply("FIRST_MID_TURN_RESPONSE", 80, { op: "send", status: 200 }), "1/1/2");
     surface.append("SECOND_TRANSCRIPT_ROW");
     // Out-of-order tool call completion anchors at its reserved launch slot and #lastLoopHamster still receives summaryAside
     surface.reserveToolCall("1/1/1");
@@ -661,14 +661,14 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     replaySess.applyUpdate({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/2",
-        name: "NOTE",
-        title: "NOTE",
+        name: "note",
+        title: "note",
         status: "completed",
         rawInput: { aside: null, body: "distilled summary" },
         _meta: {
             plurnk: {
                 id: 8,
-                op: "NOTE",
+                op: "note",
                 origin: "model",
                 status: 200,
                 attrs: { distilled: "log:///1/1/1/sh" },
@@ -683,9 +683,9 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     }
 
     // Completion ({§cli-interactive-command-discovery})
-    assert.deepEqual(dslOpPartial("```re"), { fence: "```", typed: "re" });
-    const [ops] = completeOps({ fence: "````", typed: "RE" });
-    assert.ok(ops.includes("````READ"));
+    assert.deepEqual(dslOpPartial("await plurnk.re"), { prefix: "await plurnk.", typed: "re" });
+    const [ops] = completeOps({ prefix: "await plurnk.", typed: "RE" });
+    assert.ok(ops.includes("await plurnk.read"));
     assert.deepEqual(pathPartial("/import src/"), { kind: "local", partial: "src/" });
     assert.deepEqual(pathPartial("check @README"), { kind: "reference", partial: "README" });
 
@@ -819,7 +819,7 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
                     _meta: {
                         plurnk: {
                             proposal: {
-                                op: "EDIT",
+                                op: "edit",
                                 target: "file:///tmp/demo.txt",
                                 preview: "@@ -1 +1 @@\n-old line\n+new line",
                             },

@@ -570,7 +570,7 @@
       },
       "isPlanUpdate": {
         "posture": "native",
-        "evidence": ["src/session-presenter.ts — loop-scoped plan_update projection to #live above activity (☐ pending, 🗹 completed)"]
+        "evidence": ["src/session-presenter.ts — loop-scoped plan_update projection of newly opened 🚧 items at the end of each turn"]
       },
       "isPlanRemoved": {
         "posture": "native",

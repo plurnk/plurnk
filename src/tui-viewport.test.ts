@@ -1591,18 +1591,16 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
 
         const promptWrites = termWrites.slice(writesBeforePrompt).join("");
         const shPos = promptWrites.lastIndexOf("turn1_sh_aside");
-        const turn1PlanClosedPos = promptWrites.lastIndexOf("🗹 Survey the environment.");
-        const turn1PlanOpenPos = promptWrites.lastIndexOf("☐ Resolve all Open Work.");
+        const turn1PlanOpenPos = promptWrites.lastIndexOf("🚧 Resolve all Open Work.");
         const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
         const killPos = promptWrites.lastIndexOf("retire turn 1 transcripts");
         const distilledBodyPos = promptWrites.lastIndexOf("    DISTILLED_KILL_NOTE_BODY");
-        const turn2PlanClosedPos = promptWrites.lastIndexOf("🗹 Resolve all Open Work.");
-        const turn2PlanOpenPos = promptWrites.lastIndexOf("☐ Implement xcp2.");
+        const turn2PlanOpenPos = promptWrites.lastIndexOf("🚧 Implement xcp2.");
         const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
         assert.ok(shPos >= 0, "17/1/5 sh single-line receipt must be rendered");
         assert.equal(promptWrites.includes("echo turn1_sh"), false, "sh script body must not be previewed");
-        assert.ok(turn1PlanClosedPos > shPos, "Turn 1 plan diff must appear at the end of Turn 1 after 17/1/5 sh");
-        assert.ok(turn1PlanOpenPos > turn1PlanClosedPos, "Turn 1 plan diff renders ☐ after 🗹");
+        assert.equal(promptWrites.includes("Survey the environment."), false, "completed plan items must be ignored");
+        assert.ok(turn1PlanOpenPos > shPos, "Turn 1 plan diff must appear at the end of Turn 1 after 17/1/5 sh");
         assert.ok(notePos > turn1PlanOpenPos, "Turn 1 plan diff must appear before Turn 2 NOTE (17/2/1)");
         assert.ok(killPos > notePos, "17/2/6 KILL row must appear after 17/2/1 NOTE");
         assert.ok(
@@ -1616,10 +1614,9 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
             "synthesized NOTE with attrs.distilled must not render a standalone 🗒️ block",
         );
         assert.ok(
-            turn2PlanClosedPos > distilledBodyPos,
+            turn2PlanOpenPos > distilledBodyPos,
             "Turn 2 plan diff (emitted at 17/2/2) must sit at the end of Turn 2 after 17/2/6 KILL",
         );
-        assert.ok(turn2PlanOpenPos > turn2PlanClosedPos, "Turn 2 plan diff renders ☐ Implement xcp2.");
         assert.ok(hamsterPos > turn2PlanOpenPos, "Turn 7 🐹 reply must appear below Turn 2 plan diff");
         assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);
 

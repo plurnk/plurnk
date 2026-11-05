@@ -823,8 +823,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(noteFrames[0].noteBody, "Body for note");
     }
 
-    // todo tool_call_update rows are suppressed from the waterfall; plan_update projects the per-turn diff
-    // (newly closed 🗹 + newly opened ☐ items) at the end of the turn in the waterfall ({§cli-rendering}, {§cli-session-status}).
+    // todo tool_call_update rows are suppressed from the waterfall; plan_update projects only newly opened pending
+    // (🚧) items at the end of the turn in the waterfall, ignoring completed items ({§cli-rendering}, {§cli-session-status}).
     const todoFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "6/2/todo-1",
@@ -853,11 +853,10 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(planFrames[0].toolCallId, `6/2/${String(Number.MAX_SAFE_INTEGER)}`);
     }
     assert.deepEqual(presenter.planEntries, [
-        { content: "Step 1", status: "completed" },
         { content: "Step 2", status: "pending" },
     ]);
     const renderedPlan = stripVTControlCharacters(renderPlanLines(presenter.planEntries, 80));
-    assert.equal(renderedPlan, "🗹 Step 1\n☐ Step 2");
+    assert.equal(renderedPlan, "🚧 Step 2");
 
     // #live reserves strictly 3 reasoning lines + 1 activity line ({§cli-rendering}, {§cli-session-status}).
     const tail = new TailText(() => 3);
@@ -883,8 +882,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     }
     assert.deepEqual(presenter.planEntries, []);
 
-    // Per-turn diff across turns: only newly completed (🗹) and newly added (☐) items are emitted for each turn;
-    // previously completed items and unchanged pending items are never reprinted ({§cli-rendering}, {§cli-session-status}).
+    // Per-turn diff across turns: only newly added pending (🚧) items are emitted for each turn;
+    // completed items and unchanged pending items are never printed ({§cli-rendering}, {§cli-session-status}).
     const diffPresenter = new SessionPresenter({
         workspaceName: "ws",
         sessionName: "main",
@@ -919,13 +918,11 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     if (t1Final[0]?.kind === "plan_update") {
         assert.equal(t1Final[0].toolCallId, `1/1/${String(Number.MAX_SAFE_INTEGER)}`);
         assert.deepEqual(t1Final[0].entries, [
-            { content: "Survey the environment.", status: "completed" },
             { content: "Resolve all Open Work.", status: "pending" },
         ]);
     }
 
-    // Turn 2: model replaces TODO with Step A and Step B -> "Resolve all Open Work." is newly completed,
-    // "Survey the environment." was already completed in Turn 1 (not reprinted), Step A & Step B are newly opened.
+    // Turn 2: model replaces TODO with Step A and Step B -> completed items are ignored, Step A & Step B are newly opened.
     const t2Frames = diffPresenter.apply({
         sessionUpdate: "plan_update",
         plan: {
@@ -944,13 +941,12 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     if (t2Frames[0]?.kind === "plan_update") {
         assert.equal(t2Frames[0].toolCallId, `1/2/${String(Number.MAX_SAFE_INTEGER)}`);
         assert.deepEqual(t2Frames[0].entries, [
-            { content: "Resolve all Open Work.", status: "completed" },
             { content: "Step A", status: "pending" },
             { content: "Step B", status: "pending" },
         ]);
     }
 
-    // Turn 3: Step A is completed, Step B remains pending (unchanged -> not reprinted), Step C is newly opened.
+    // Turn 3: Step A is completed (ignored), Step B remains pending (unchanged -> not reprinted), Step C is newly opened.
     const t3Frames = diffPresenter.apply({
         sessionUpdate: "plan_update",
         plan: {
@@ -970,12 +966,11 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     if (t3Frames[0]?.kind === "plan_update") {
         assert.equal(t3Frames[0].toolCallId, `1/3/${String(Number.MAX_SAFE_INTEGER)}`);
         assert.deepEqual(t3Frames[0].entries, [
-            { content: "Step A", status: "completed" },
             { content: "Step C", status: "pending" },
         ]);
     }
 
-    // Turn 4: All items completed before DONE -> only Step B and Step C are newly completed.
+    // Turn 4: All items completed before DONE -> no pending items remain.
     const t4Frames = diffPresenter.apply({
         sessionUpdate: "plan_update",
         plan: {
@@ -994,10 +989,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(t4Frames[0]?.kind, "plan_update");
     if (t4Frames[0]?.kind === "plan_update") {
         assert.equal(t4Frames[0].toolCallId, `1/4/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(t4Frames[0].entries, [
-            { content: "Step B", status: "completed" },
-            { content: "Step C", status: "completed" },
-        ]);
+        assert.deepEqual(t4Frames[0].entries, []);
     }
 
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers

@@ -313,11 +313,11 @@ export const renderPlanLines = (
     const maxItemCols = Math.max(20, columns - 3);
     const lines: string[] = [];
     for (const entry of entries) {
+        if (entry.status === "completed") continue;
         const clean = ModelText.plain(entry.content).replace(/\s+/gu, " ").trim();
         if (clean.length === 0) continue;
-        const box = paint(entry.status === "completed" ? "🗹" : "☐", "note");
         const label = paint(truncateToColumns(clean, maxItemCols), "dim");
-        lines.push(`${box} ${label}`);
+        lines.push(`🚧 ${label}`);
     }
     return lines.join("\n");
 };

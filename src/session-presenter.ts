@@ -1148,11 +1148,8 @@ export class SessionPresenter {
                     status: entry.status,
                 }));
                 this.planEntries = this.#latestPlanEntries.filter((entry) => {
-                    const prior = this.#settledPlanStatus.get(entry.content);
-                    if (entry.status === "completed") {
-                        return prior !== "completed";
-                    }
-                    return prior !== "pending";
+                    if (entry.status === "completed") return false;
+                    return this.#settledPlanStatus.get(entry.content) !== "pending";
                 });
             }
             const toolCallId = `${turnKey}/${String(Number.MAX_SAFE_INTEGER)}`;

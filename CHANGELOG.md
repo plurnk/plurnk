@@ -1,5 +1,10 @@
 # @plurnk/plurnk
 
+## 5.3.0
+
+- Lowercase operation names across the presenter, viewport, and specs, render newly opened plan items with `🚧` while ignoring completed items, and implement `plurnk login` / `plurnk logout`, `PLURNK_CLIENT_CANCEL_GRACE_SECONDS`, `SIGINT`/`SIGTERM` cancellation, and unified family commands (#247).
+- Bump `@plurnk/plurnk-contracts` to `^7.3.0` and `@plurnk/plurnk-service` to `^5.3.0` (#248).
+
 ## 5.2.2
 
 - Handle `mcp oauth <alias> [callback-url]` in `executeFamilyCommand` with RFC 8252 §7.3 loopback callback reception (`workspace.mcp.oauth.begin` and `workspace.mcp.oauth.complete`), and bump `@plurnk/plurnk-contracts` to `^7.2.1` and `@plurnk/plurnk-service` to `^5.2.2` (#246).

@@ -451,13 +451,13 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
         sessionUpdate: "notice",
         severity: "info",
         title: "engine:turn:results_pending",
-        description: "All Open Messages resolved. Review new results; emit no OPs if finished.",
+        description: "All Open Work resolved, but tool call results received for review. Submit nothing to conclude.",
         _meta: {
             plurnk: {
                 notice: {
                     source: "engine:turn",
                     kind: "results_pending",
-                    message: "All Open Messages resolved. Review new results; emit no OPs if finished.",
+                    message: "All Open Work resolved, but tool call results received for review. Submit nothing to conclude.",
                 },
             },
         },

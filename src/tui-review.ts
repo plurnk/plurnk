@@ -10,20 +10,48 @@ export type QuestionAnswer =
     | { kind: "invalid"; message: string }
     | { kind: "complete"; content: Record<string, unknown> };
 
-const extractQuestionChoices = (schema: Record<string, unknown>): string[] => {
-    const props = schema.properties;
-    if (!props || typeof props !== "object" || Array.isArray(props)) return [];
-    const entries = Object.values(props as Record<string, Record<string, unknown>>);
-    if (entries.length !== 1) return [];
-    const field = entries[0]!;
-    if (Array.isArray(field.enum) && field.enum.every((v) => typeof v === "string")) {
-        return field.enum as string[];
+export interface QuestionChoice {
+    readonly value: string;
+    readonly label: string;
+    readonly description?: string;
+}
+
+const extractTitledOptions = (list: unknown): QuestionChoice[] => {
+    if (!Array.isArray(list) || list.length === 0) return [];
+    const out: QuestionChoice[] = [];
+    for (const item of list) {
+        if (item === null || typeof item !== "object" || Array.isArray(item)) return [];
+        const rec = item as Record<string, unknown>;
+        if (typeof rec.const !== "string") return [];
+        const label = typeof rec.title === "string" && rec.title.length > 0 ? rec.title : rec.const;
+        const description =
+            typeof rec.description === "string" && rec.description.length > 0 ? rec.description : undefined;
+        out.push(description !== undefined ? { value: rec.const, label, description } : { value: rec.const, label });
     }
-    if (Array.isArray(field.oneOf)) {
-        const vals = field.oneOf
-            .map((item) => (item && typeof item === "object" ? (item as { const?: unknown }).const : undefined))
-            .filter((v): v is string => typeof v === "string");
-        if (vals.length === field.oneOf.length) return vals;
+    return out;
+};
+
+const extractFieldChoiceOptions = (field: Record<string, unknown>): QuestionChoice[] => {
+    if (field.type === "string") {
+        if (Array.isArray(field.enum) && field.enum.length > 0 && field.enum.every((v) => typeof v === "string")) {
+            const names = Array.isArray(field.enumNames) ? field.enumNames : undefined;
+            return (field.enum as string[]).map((v, idx) => ({
+                value: v,
+                label: typeof names?.[idx] === "string" && (names[idx] as string).length > 0 ? (names[idx] as string) : v,
+            }));
+        }
+        return extractTitledOptions(field.oneOf ?? field.anyOf);
+    }
+    if (field.type === "array" && field.items !== null && typeof field.items === "object" && !Array.isArray(field.items)) {
+        const items = field.items as Record<string, unknown>;
+        if (Array.isArray(items.enum) && items.enum.length > 0 && items.enum.every((v) => typeof v === "string")) {
+            const names = Array.isArray(items.enumNames) ? items.enumNames : undefined;
+            return (items.enum as string[]).map((v, idx) => ({
+                value: v,
+                label: typeof names?.[idx] === "string" && (names[idx] as string).length > 0 ? (names[idx] as string) : v,
+            }));
+        }
+        return extractTitledOptions(items.anyOf ?? items.oneOf);
     }
     return [];
 };
@@ -50,6 +78,13 @@ export class QuestionForm {
         "title",
         "description",
         "enum",
+        "enumNames",
+        "oneOf",
+        "anyOf",
+        "items",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
         "const",
         "default",
         "examples",
@@ -62,7 +97,24 @@ export class QuestionForm {
         "exclusiveMinimum",
         "exclusiveMaximum",
         "multipleOf",
+        "_meta",
     ]);
+
+    static #isSupportedField(field: unknown): field is Record<string, unknown> {
+        if (field === null || typeof field !== "object" || Array.isArray(field)) return false;
+        const rec = field as Record<string, unknown>;
+        if (!Object.keys(rec).every((key) => QuestionForm.#FIELD_KEYS.has(key))) return false;
+        if (rec.type === "string" || rec.type === "number" || rec.type === "integer" || rec.type === "boolean") {
+            if ((rec.oneOf !== undefined || rec.anyOf !== undefined) && extractFieldChoiceOptions(rec).length === 0) {
+                return false;
+            }
+            return true;
+        }
+        if (rec.type === "array") {
+            return extractFieldChoiceOptions(rec).length > 0;
+        }
+        return false;
+    }
 
     constructor(schema: Record<string, unknown>, toolName?: string) {
         this.#schema = schema;
@@ -79,14 +131,7 @@ export class QuestionForm {
             (schema.type === undefined || schema.type === "object") &&
             Object.keys(schema).every((key) => QuestionForm.#FORM_KEYS.has(key)) &&
             [...this.#required].every((key) => Object.hasOwn(properties, key)) &&
-            fields.every(
-                ([, field]) =>
-                    field !== null &&
-                    typeof field === "object" &&
-                    !Array.isArray(field) &&
-                    typeof (field as Record<string, unknown>).type === "string" &&
-                    Object.keys(field as Record<string, unknown>).every((key) => QuestionForm.#FIELD_KEYS.has(key)),
-            )
+            fields.every(([, field]) => QuestionForm.#isSupportedField(field))
                 ? (fields as Array<[string, Record<string, unknown>]>)
                 : null;
     }
@@ -98,6 +143,14 @@ export class QuestionForm {
         const field = this.#fields[this.#index];
         if (field === undefined) return "Press Enter to submit the empty form.";
         const [key, schema] = field;
+        const description = typeof schema.description === "string" ? ` — ${schema.description}` : "";
+        if (this.#fields.length === 1 && key === "answer" && typeof schema.title !== "string") {
+            const reqHint = this.#required.has(key) ? "required" : "optional";
+            if (this.multiSelect) return `Select options (${reqHint})${description}`;
+            if (this.choices.length > 0) return `Select an option (${reqHint})${description}`;
+            const type = typeof schema.type === "string" ? `${schema.type}; ` : "";
+            return `Answer (${type}${this.#required.has(key) ? "required" : "optional; Enter skips"})${description}`;
+        }
         const title = typeof schema.title === "string" ? `${schema.title} (${key})` : key;
         const type = typeof schema.type === "string" ? `${schema.type}; ` : "";
         const hint = `${type}${
@@ -107,15 +160,28 @@ export class QuestionForm {
                   ? "optional; select Skip to omit"
                   : "optional; Enter skips"
         }`;
-        const description = typeof schema.description === "string" ? ` — ${schema.description}` : "";
         return `${title} (${hint})${description}`;
     }
 
-    get choices(): string[] {
+    get choiceOptions(): ReadonlyArray<QuestionChoice> {
         const field = this.#fields?.[this.#index];
-        return field === undefined || field[1].type !== "string"
-            ? []
-            : extractQuestionChoices({ properties: { [field[0]]: field[1] } });
+        return field === undefined ? [] : extractFieldChoiceOptions(field[1]);
+    }
+
+    get choices(): string[] {
+        return this.choiceOptions.map((c) => c.value);
+    }
+
+    get multiSelect(): boolean {
+        const field = this.#fields?.[this.#index];
+        return field !== undefined && field[1].type === "array" && this.choiceOptions.length > 0;
+    }
+
+    get defaultSelection(): string[] {
+        const field = this.#fields?.[this.#index];
+        if (field === undefined || !Array.isArray(field[1].default)) return [];
+        const allowed = new Set(this.choices);
+        return (field[1].default as unknown[]).filter((v): v is string => typeof v === "string" && allowed.has(v));
     }
 
     get optional(): boolean {
@@ -179,17 +245,39 @@ export class QuestionForm {
         }
         if (text !== "") {
             const choices = this.choices;
-            const ordinal = Number(text);
-            let value: unknown =
-                choices.length > 0 && Number.isInteger(ordinal) && ordinal >= 1 && ordinal <= choices.length
-                    ? choices[ordinal - 1]
-                    : text;
-            const type = schema.type;
-            if (type !== undefined && type !== "string") {
-                try {
-                    value = JSON.parse(text);
-                } catch {
-                    return { kind: "invalid", message: `${key} requires a JSON ${String(type)} value.` };
+            let value: unknown;
+            if (this.multiSelect) {
+                if (text.startsWith("[")) {
+                    try {
+                        value = JSON.parse(text);
+                    } catch {
+                        return { kind: "invalid", message: `${key} requires a JSON array value.` };
+                    }
+                } else {
+                    value = text
+                        .split(",")
+                        .map((part) => part.trim())
+                        .filter((part) => part.length > 0)
+                        .map((part) => {
+                            const ord = Number(part);
+                            return Number.isInteger(ord) && ord >= 1 && ord <= choices.length
+                                ? choices[ord - 1]!
+                                : part;
+                        });
+                }
+            } else {
+                const ordinal = Number(text);
+                value =
+                    choices.length > 0 && Number.isInteger(ordinal) && ordinal >= 1 && ordinal <= choices.length
+                        ? choices[ordinal - 1]
+                        : text;
+                const type = schema.type;
+                if (type !== undefined && type !== "string") {
+                    try {
+                        value = JSON.parse(text);
+                    } catch {
+                        return { kind: "invalid", message: `${key} requires a JSON ${String(type)} value.` };
+                    }
                 }
             }
             const invalid = QuestionForm.#validation(schema, value, key);
@@ -439,11 +527,52 @@ export default class Review extends Container implements Focusable {
     }
 
     #configureFormControl(req: GateRequest & { kind: "elicitation_form" }): void {
-        const choices = req.form.choices;
-        if (choices.length > 0) {
-            const items = choices.map((label, index) => ({
+        const choiceOptions = req.form.choiceOptions;
+        if (req.form.multiSelect && choiceOptions.length > 0) {
+            const selected = new Set<string>(req.form.defaultSelection);
+            const buildMultiControl = (cursorIndex = 0): void => {
+                const items = choiceOptions.map((opt, index) => ({
+                    value: `toggle:${index}`,
+                    label: `[${selected.has(opt.value) ? "x" : " "}] ${ModelText.plain(opt.label)}`,
+                    ...(opt.description !== undefined ? { description: ModelText.plain(opt.description) } : {}),
+                }));
+                items.push({ value: "submit", label: `Submit (${selected.size} selected)` });
+                if (req.form.optional) {
+                    items.push({ value: "skip", label: "Skip (optional)" });
+                }
+                const control = new SelectList(
+                    items,
+                    Math.max(1, Math.floor(this.#surface.rows / 3)),
+                    editorTheme.selectList,
+                );
+                control.setSelectedIndex(cursorIndex);
+                control.onSelect = ({ value }) => {
+                    if (value.startsWith("toggle:")) {
+                        const idx = Number(value.slice("toggle:".length));
+                        const opt = choiceOptions[idx];
+                        if (opt !== undefined) {
+                            if (selected.has(opt.value)) selected.delete(opt.value);
+                            else selected.add(opt.value);
+                            buildMultiControl(idx);
+                            this.#show();
+                        }
+                        return;
+                    }
+                    if (value === "skip") {
+                        this.#submitFormAnswer(req, "");
+                        return;
+                    }
+                    const ordered = choiceOptions.map((o) => o.value).filter((v) => selected.has(v));
+                    this.#submitFormAnswer(req, JSON.stringify(ordered));
+                };
+                req.control = control;
+            };
+            buildMultiControl(0);
+        } else if (choiceOptions.length > 0) {
+            const items = choiceOptions.map((opt, index) => ({
                 value: String(index + 1),
-                label: label === req.form.freeResponseChoice ? "Free response" : ModelText.plain(label),
+                label: opt.value === req.form.freeResponseChoice ? "Free response" : ModelText.plain(opt.label),
+                ...(opt.description !== undefined ? { description: ModelText.plain(opt.description) } : {}),
             }));
             if (req.form.optional) {
                 items.push({ value: "", label: "Skip (optional)" });
@@ -517,7 +646,9 @@ export default class Review extends Container implements Focusable {
                         request.busy
                             ? "Submitting… · Esc: composer"
                             : request.control instanceof SelectList
-                              ? "↑/↓: choose · Enter: confirm · Esc: composer"
+                              ? request.kind === "elicitation_form" && request.form.multiSelect
+                                  ? "↑/↓: move · Space/Enter: toggle/submit · Esc: composer"
+                                  : "↑/↓: choose · Enter: confirm · Esc: composer"
                               : "Enter: submit · Shift-Enter: newline · Esc: composer",
                         "dim",
                     ),
@@ -530,8 +661,20 @@ export default class Review extends Container implements Focusable {
     }
 
     handleInput(data: string): void {
-        if (!this.#current?.busy) {
-            this.#control?.handleInput(data);
+        const current = this.#current;
+        if (current?.busy) return;
+        if (
+            data === " " &&
+            current?.kind === "elicitation_form" &&
+            current.form.multiSelect &&
+            this.#control instanceof SelectList
+        ) {
+            const item = this.#control.getSelectedItem();
+            if (item !== null && item.value.startsWith("toggle:")) {
+                this.#control.onSelect?.(item);
+                return;
+            }
         }
+        this.#control?.handleInput(data);
     }
 }

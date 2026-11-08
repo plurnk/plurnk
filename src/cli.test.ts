@@ -13,6 +13,7 @@ import {
     formatProposalDiffPreview,
     formatServiceUpdateResult,
     matchesRuntimeAcceptance,
+    openCliSession,
 } from "./cli-runner.ts";
 import { hyperlink } from "./color.ts";
 import { renderMarkdownDocument, renderMermaid } from "./markdown.ts";
@@ -886,4 +887,39 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
     const doc = renderMarkdownDocument("# Title\n\nParagraph text.", 60);
     assert.match(doc, /Title/u);
     assert.match(doc, /Paragraph text\./u);
+
+    // 5. openCliSession deduplicates identical notices across newSession, resumeSession, and live updates ({§cli-rendering})
+    const listeners = new Set<(notification: { readonly sessionId: string; readonly update: { readonly sessionUpdate: "notice"; readonly severity: "info"; readonly title: string; readonly description: string } }) => void>();
+    const shadowedNotice = {
+        sessionUpdate: "notice" as const,
+        severity: "info" as const,
+        title: "engine:configuration:plugin_shadowed",
+        description: "plugin plurnk-web is shadowed",
+    };
+    const fakeClient = {
+        onSessionUpdate(cb: typeof listeners extends Set<infer T> ? T : never) {
+            listeners.add(cb);
+            return () => listeners.delete(cb);
+        },
+        onDisconnect() {
+            return () => {};
+        },
+        async newSession() {
+            for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+            return { sessionId: "1#user", configOptions: [] };
+        },
+        async resumeSession() {
+            for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+            return { configOptions: [] };
+        },
+    };
+    const opened = await openCliSession(
+        fakeClient as never,
+        { cwd: "/tmp" } as never,
+        undefined,
+        true,
+    );
+    for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+    assert.equal(opened.items.filter((item) => item.kind === "notice").length, 1);
+    opened.dispose();
 });

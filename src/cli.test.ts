@@ -888,13 +888,18 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
     assert.match(doc, /Title/u);
     assert.match(doc, /Paragraph text\./u);
 
-    // 5. openCliSession deduplicates identical notices across newSession, resumeSession, and live updates ({§cli-rendering})
-    const listeners = new Set<(notification: { readonly sessionId: string; readonly update: { readonly sessionUpdate: "notice"; readonly severity: "info"; readonly title: string; readonly description: string } }) => void>();
+    // 5. openCliSession deduplicates identical configuration notices across newSession, resumeSession, and live updates ({§cli-rendering})
+    const listeners = new Set<(notification: { readonly sessionId: string; readonly update: { readonly sessionUpdate: "notice"; readonly severity: "info"; readonly title: string; readonly description?: string } }) => void>();
     const shadowedNotice = {
         sessionUpdate: "notice" as const,
         severity: "info" as const,
         title: "engine:configuration:plugin_shadowed",
         description: "plugin plurnk-web is shadowed",
+    };
+    const loopStatusNotice = {
+        sessionUpdate: "notice" as const,
+        severity: "info" as const,
+        title: "engine:loop:loop_status",
     };
     const fakeClient = {
         onSessionUpdate(cb: typeof listeners extends Set<infer T> ? T : never) {
@@ -920,6 +925,19 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
         true,
     );
     for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
-    assert.equal(opened.items.filter((item) => item.kind === "notice").length, 1);
+    for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
+    for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
+    assert.equal(
+        opened.items.filter(
+            (item) => item.kind === "notice" && item.title === "engine:configuration:plugin_shadowed",
+        ).length,
+        1,
+    );
+    assert.equal(
+        opened.items.filter(
+            (item) => item.kind === "notice" && item.title === "engine:loop:loop_status",
+        ).length,
+        2,
+    );
     opened.dispose();
 });

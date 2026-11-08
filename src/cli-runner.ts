@@ -336,6 +336,14 @@ export const openCliSession = async (
 ): Promise<AcpSession> => {
     let session: AcpSession | null = null;
     const bufferedNotifications: { readonly sessionId: string; readonly update: SessionUpdate }[] = [];
+    const seenStartupNotices = new Set<string>();
+    const isDuplicateNotice = (update: SessionUpdate): boolean => {
+        if (!SessionUpdate.isNotice(update)) return false;
+        const key = `${update.severity}:${update.title}:${update.description ?? ""}`;
+        if (seenStartupNotices.has(key)) return true;
+        seenStartupNotices.add(key);
+        return false;
+    };
 
     const matchesSession = (incomingId: string, boundId: string): boolean =>
         incomingId === boundId ||
@@ -347,6 +355,7 @@ export const openCliSession = async (
             return;
         }
         if (matchesSession(notification.sessionId, session.sessionId)) {
+            if (isDuplicateNotice(notification.update)) return;
             session.applyUpdate(notification.update);
         }
     });
@@ -385,11 +394,11 @@ export const openCliSession = async (
             ...(systemPrompt !== undefined ? { systemPrompt } : {}),
             _meta: { plurnk: plurnkMeta },
         });
-        session = new AcpSession(created.sessionId, {
+        const nextSession = new AcpSession(created.sessionId, {
             configOptions: created.configOptions,
             meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
         });
-        session.onDispose(() => {
+        nextSession.onDispose(() => {
             offUpdate();
             offDisconnect();
         });
@@ -399,27 +408,23 @@ export const openCliSession = async (
                 _meta: { plurnk: plurnkMeta },
             });
             if (resumed.configOptions && resumed.configOptions.length > 0) {
-                session.configOptions = [...resumed.configOptions];
+                nextSession.configOptions = [...resumed.configOptions];
             }
             if (resumed._meta !== undefined && resumed._meta !== null) {
-                const prevPlurnk = (session.meta?.plurnk ?? {}) as Record<string, unknown>;
+                const prevPlurnk = (nextSession.meta?.plurnk ?? {}) as Record<string, unknown>;
                 const nextPlurnk = ((resumed._meta as Record<string, unknown>).plurnk ?? {}) as Record<string, unknown>;
-                session.meta = {
-                    ...(session.meta ?? {}),
+                nextSession.meta = {
+                    ...(nextSession.meta ?? {}),
                     ...(resumed._meta as Record<string, unknown>),
                     plurnk: { ...prevPlurnk, ...nextPlurnk },
                 };
             }
         }
+        session = nextSession;
 
-        const seenStartupNotices = new Set<string>();
         for (const notification of bufferedNotifications) {
             if (matchesSession(notification.sessionId, session.sessionId)) {
-                if (SessionUpdate.isNotice(notification.update)) {
-                    const key = `${notification.update.severity}:${notification.update.title}:${notification.update.description ?? ""}`;
-                    if (seenStartupNotices.has(key)) continue;
-                    seenStartupNotices.add(key);
-                }
+                if (isDuplicateNotice(notification.update)) continue;
                 session.applyUpdate(notification.update);
             }
         }

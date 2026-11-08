@@ -339,6 +339,7 @@ export const openCliSession = async (
     const seenStartupNotices = new Set<string>();
     const isDuplicateNotice = (update: SessionUpdate): boolean => {
         if (!SessionUpdate.isNotice(update)) return false;
+        if (!update.title?.startsWith("engine:configuration:")) return false;
         const key = `${update.severity}:${update.title}:${update.description ?? ""}`;
         if (seenStartupNotices.has(key)) return true;
         seenStartupNotices.add(key);

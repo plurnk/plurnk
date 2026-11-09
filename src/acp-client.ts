@@ -596,6 +596,66 @@ export const classifyPreFlightDisconnect = (
     return { staleConnection: false, credentialInvalid: false };
 };
 
+export const scrubAcpMeta = <T>(value: T): T => {
+    if (Array.isArray(value)) {
+        return value.map((item) => scrubAcpMeta(item)) as unknown as T;
+    }
+    if (value !== null && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (k === "_meta") {
+                if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+                    const kept: Record<string, unknown> = {};
+                    for (const [mk, mv] of Object.entries(v as Record<string, unknown>)) {
+                        if (mk.startsWith("io.modelcontextprotocol/")) {
+                            kept[mk] = scrubAcpMeta(mv);
+                        }
+                    }
+                    if (Object.keys(kept).length > 0) {
+                        out._meta = kept;
+                    }
+                }
+                continue;
+            }
+            out[k] = scrubAcpMeta(v);
+        }
+        return out as T;
+    }
+    return value;
+};
+
+const wrapStreamWithMetaScrubber = <M>(stream: {
+    readonly readable: ReadableStream<M>;
+    readonly writable: WritableStream<M>;
+}): {
+    readonly readable: ReadableStream<M>;
+    readonly writable: WritableStream<M>;
+} => {
+    const readable = stream.readable.pipeThrough(
+        new TransformStream<M, M>({
+            transform(msg, controller) {
+                controller.enqueue(scrubAcpMeta(msg));
+            },
+        }),
+    );
+    const writer = stream.writable.getWriter();
+    const writable = new WritableStream<M>({
+        async write(msg) {
+            await writer.write(scrubAcpMeta(msg));
+        },
+        async close() {
+            await writer.close();
+        },
+        async abort(reason) {
+            await writer.abort(reason);
+        },
+    });
+    return { readable, writable };
+};
+
+const isTruthyKnob = (val: string | undefined): boolean =>
+    val === "1" || val === "true" || val === "yes" || val === "on";
+
 export interface AcpClientOptions {
     readonly url: string;
     readonly token?: string;
@@ -604,6 +664,7 @@ export interface AcpClientOptions {
     readonly headers?: Readonly<Record<string, string>>;
     readonly clientName?: string;
     readonly clientVersion?: string;
+    readonly debugNoMeta?: boolean;
     readonly onSessionUpdate?: SessionUpdateHandler;
     readonly onAuthStatusUpdate?: AuthStatusUpdateHandler;
     readonly onPermissionRequest?: PermissionRequestHandler;
@@ -617,6 +678,7 @@ export class AcpClient {
     readonly #staticHeaders: Record<string, string>;
     readonly #clientName: string;
     readonly #clientVersion: string;
+    readonly #debugNoMeta: boolean;
     #connection: ClientConnection | null = null;
     #initResponse: InitializeResponse | null = null;
     #hasConnected = false;
@@ -640,6 +702,10 @@ export class AcpClient {
         };
         this.#clientName = options.clientName ?? "@plurnk/plurnk";
         this.#clientVersion = options.clientVersion ?? "1.0.0";
+        this.#debugNoMeta =
+            typeof options.debugNoMeta === "boolean"
+                ? options.debugNoMeta
+                : isTruthyKnob(options.env?.PLURNK_CLIENT_DEBUG_NO_META);
         if (options.onSessionUpdate !== undefined) {
             this.#updateListeners.add(options.onSessionUpdate);
         }
@@ -900,7 +966,7 @@ export class AcpClient {
         const parsedUrl = new URL(this.#url);
         const isWebSocket = parsedUrl.protocol === "ws:" || parsedUrl.protocol === "wss:";
 
-        const stream = isWebSocket
+        const rawStream = isWebSocket
             ? createWebSocketStream(this.#url, {
                   WebSocket: NodeWebSocket as unknown as WebSocketConstructor,
                   headers: initialHeaders,
@@ -908,6 +974,7 @@ export class AcpClient {
             : createHttpStream(this.#url, {
                   fetch: async (input, init) => this.#fetchWithAuth(input, init),
               });
+        const stream = this.#debugNoMeta ? wrapStreamWithMetaScrubber(rawStream) : rawStream;
 
         const conn = app.connect(stream);
         this.#connection = conn;

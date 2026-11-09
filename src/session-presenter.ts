@@ -363,6 +363,20 @@ export const extractMessageVoice = (
     return null;
 };
 
+const extractCoordinateSeqs = (
+    id: unknown,
+): { readonly loopSeq?: number; readonly turnSeq?: number } => {
+    if (typeof id !== "string" || id.length === 0) return {};
+    const m = /^(?:outside-)?(\d+)\/(\d+)\/(?:\d+|reasoning)$/u.exec(id);
+    if (m === null) return {};
+    const loopSeq = Number.parseInt(m[1]!, 10);
+    const turnSeq = Number.parseInt(m[2]!, 10);
+    return {
+        ...(Number.isFinite(loopSeq) && loopSeq > 0 ? { loopSeq } : {}),
+        ...(Number.isFinite(turnSeq) && turnSeq > 0 ? { turnSeq } : {}),
+    };
+};
+
 export class SessionPresenter {
     workspaceName: string;
     sessionName: string;
@@ -1128,6 +1142,27 @@ export class SessionPresenter {
     apply(update: SessionUpdate): PresentationFrame[] {
         const frames: PresentationFrame[] = [];
 
+        if (SessionUpdate.isSessionInfoUpdate(update)) {
+            this.ingestMeta(update._meta as MetaRecord | undefined);
+            if (typeof update.title === "string" && update.title.length > 0) {
+                const hashIdx = update.title.indexOf("#");
+                if (hashIdx > 0 && hashIdx < update.title.length - 1) {
+                    const ws = update.title.slice(0, hashIdx).trim();
+                    const sess = update.title.slice(hashIdx + 1).trim();
+                    if (ws.length > 0) this.workspaceName = ws;
+                    if (sess.length > 0) this.sessionName = sess;
+                } else {
+                    this.sessionName = update.title;
+                }
+            }
+            this.#flushPendingHistoryLost(frames);
+            frames.push({
+                kind: "status_update",
+                status: this.buildStatusBar(),
+            });
+            return frames;
+        }
+
         if (SessionUpdate.isConfigOptionUpdate(update)) {
             this.ingestMeta(update._meta as MetaRecord | undefined);
             this.#applyConfigOptions(update.configOptions, true);
@@ -1136,12 +1171,32 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isUsageUpdate(update)) {
+            const hasMetaBudget =
+                typeof (update._meta as { plurnk?: { budget?: unknown } } | undefined)?.plurnk?.budget === "object" &&
+                (update._meta as { plurnk?: { budget?: unknown } }).plurnk?.budget !== null;
             this.ingestMeta(update._meta as MetaRecord | undefined);
-            if (this.contextTokens === null && this.curationWeight === 0) {
+            if (!hasMetaBudget) {
                 this.curationWeight = update.used;
-            }
-            if (this.contextCapacity === null && this.curationBudget === 0) {
                 this.curationBudget = update.size;
+            } else {
+                if (this.contextTokens === null && this.curationWeight === 0) {
+                    this.curationWeight = update.used;
+                }
+                if (this.contextCapacity === null && this.curationBudget === 0) {
+                    this.curationBudget = update.size;
+                }
+            }
+            const hasMetaSpend =
+                typeof (update._meta as { plurnk?: { status?: { spend?: unknown } } } | undefined)?.plurnk?.status
+                    ?.spend === "object" &&
+                (update._meta as { plurnk?: { status?: { spend?: unknown } } }).plurnk?.status?.spend !== null;
+            if (
+                !hasMetaSpend &&
+                update.cost &&
+                typeof update.cost.amount === "number" &&
+                Number.isFinite(update.cost.amount)
+            ) {
+                this.costUsd = String(update.cost.amount);
             }
             this.#flushPendingHistoryLost(frames);
             return frames;
@@ -1162,9 +1217,11 @@ export class SessionPresenter {
                       }
                     | undefined
             )?.plurnk;
+            const thoughtCoord = extractCoordinateSeqs(update.messageId);
             this.#syncLoopAndTurn(
-                thoughtPlurnk?.loopSeq,
-                typeof thoughtPlurnk?.turnSeq === "number" ? thoughtPlurnk.turnSeq : thoughtPlurnk?.turn,
+                thoughtPlurnk?.loopSeq ?? thoughtCoord.loopSeq,
+                (typeof thoughtPlurnk?.turnSeq === "number" ? thoughtPlurnk.turnSeq : thoughtPlurnk?.turn) ??
+                    thoughtCoord.turnSeq,
             );
             const deltaText = SessionUpdate.isAgentThoughtChunk(update)
                 ? contentBlockToText(update.content)
@@ -1321,7 +1378,11 @@ export class SessionPresenter {
                     distilled?: string;
                 };
             };
-            this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq);
+            const toolCoord = extractCoordinateSeqs(update.toolCallId);
+            this.#syncLoopAndTurn(
+                metaPlurnk.loopSeq ?? toolCoord.loopSeq,
+                metaPlurnk.turnSeq ?? toolCoord.turnSeq,
+            );
             const incomingRawInput =
                 update.rawInput && typeof update.rawInput === "object"
                     ? (update.rawInput as Record<string, unknown>)
@@ -1845,7 +1906,11 @@ export class SessionPresenter {
                       }
                     | undefined
             )?.plurnk;
-            this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq);
+            const msgCoord = extractCoordinateSeqs(update.messageId);
+            this.#syncLoopAndTurn(
+                metaPlurnk?.loopSeq ?? msgCoord.loopSeq,
+                metaPlurnk?.turnSeq ?? msgCoord.turnSeq,
+            );
             this.#loopConcluded = false;
             const text = SessionUpdate.isAgentMessageChunk(update)
                 ? contentBlockToText(update.content)
@@ -2216,10 +2281,21 @@ export class SessionPresenter {
                 const hasAuthoritativeSpend =
                     ((update._meta as { plurnk?: { status?: { spend?: unknown } } } | undefined)?.plurnk?.status
                         ?.spend ?? null) !== null;
+                const stdUsage = (update as { usage?: { inputTokens?: unknown; outputTokens?: unknown } }).usage;
                 const acc = termMeta?.usage?.accounting;
                 const usage = acc?.usage ?? acc?.knownUsage;
-                const loopIn = typeof usage?.inputTokens === "number" ? usage.inputTokens : undefined;
-                const loopOut = typeof usage?.outputTokens === "number" ? usage.outputTokens : undefined;
+                const loopIn =
+                    typeof usage?.inputTokens === "number"
+                        ? usage.inputTokens
+                        : typeof stdUsage?.inputTokens === "number"
+                          ? stdUsage.inputTokens
+                          : undefined;
+                const loopOut =
+                    typeof usage?.outputTokens === "number"
+                        ? usage.outputTokens
+                        : typeof stdUsage?.outputTokens === "number"
+                          ? stdUsage.outputTokens
+                          : undefined;
                 const costStr = acc?.costUsd ?? acc?.knownCostUsd;
                 if (!hasAuthoritativeSpend) {
                     if (loopIn !== undefined) {
@@ -2258,7 +2334,7 @@ export class SessionPresenter {
                 const elapsedMs = Math.max(1, Date.now() - this.#turnStartedAt);
                 const statusBar = this.buildStatusBar(elapsedMs, status);
                 const rawTurns = termMeta?.turnCount;
-                const turns = typeof rawTurns === "number" && rawTurns >= 0 ? rawTurns : 1;
+                const turns = typeof rawTurns === "number" && rawTurns >= 0 ? rawTurns : Math.max(1, this.turns);
                 this.turns = turns;
                 this.#loopConcluded = true;
                 const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;

@@ -137,6 +137,9 @@ export interface AcpUsageSnapshot {
         readonly amount: number;
         readonly currency: string;
     } | null;
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly totalTokens?: number;
     readonly meta?: MetaRecord;
 }
 
@@ -525,10 +528,11 @@ export class AcpSession {
             }
         } else if (SessionUpdate.isUsageUpdate(update)) {
             this.usage = {
+                ...(this.usage ?? {}),
                 used: update.used,
                 size: update.size,
                 ...(update.cost !== undefined ? { cost: update.cost } : {}),
-                meta: patchMeta(undefined, update._meta),
+                meta: patchMeta(this.usage?.meta, update._meta),
             };
         } else if (SessionUpdate.isNotice(update)) {
             this.#activeStreamMessage = null;
@@ -550,6 +554,23 @@ export class AcpSession {
                 this.stopReason = typeof update.stopReason === "string"
                     ? update.stopReason
                     : undefined;
+                if (update.usage && typeof update.usage === "object") {
+                    this.usage = {
+                        used: this.usage?.used ?? 0,
+                        size: this.usage?.size ?? 0,
+                        ...(this.usage?.cost !== undefined ? { cost: this.usage.cost } : {}),
+                        ...(typeof update.usage.inputTokens === "number"
+                            ? { inputTokens: update.usage.inputTokens }
+                            : {}),
+                        ...(typeof update.usage.outputTokens === "number"
+                            ? { outputTokens: update.usage.outputTokens }
+                            : {}),
+                        ...(typeof update.usage.totalTokens === "number"
+                            ? { totalTokens: update.usage.totalTokens }
+                            : {}),
+                        meta: this.usage?.meta,
+                    };
+                }
             } else {
                 this.stopReason = undefined;
             }

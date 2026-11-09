@@ -1043,7 +1043,7 @@ export const runTuiViewport = async (
                                 surface.recordPrompt(userText);
                             }
                             if (
-                                plurnkMeta?.op === "send" &&
+                                (plurnkMeta === undefined || plurnkMeta.op === "send") &&
                                 (userVoice !== null || !consumeLocalSubmittedPrompt(userText))
                             ) {
                                 surface.append("");

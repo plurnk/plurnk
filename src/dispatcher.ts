@@ -69,6 +69,7 @@ export const CLIENT_OPTIONS = {
     "status-stream": { type: "boolean" },
     share: { type: "string" },
     "no-git": { type: "boolean" },
+    "debug-no-meta": { type: "boolean" },
     loop: { type: "string" },
     turn: { type: "string" },
     since: { type: "string" },
@@ -225,6 +226,8 @@ options:
                           PLURNK_CLIENT_SHARE.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
+      --debug-no-meta     scrub _meta from ACP traffic to run on pure standard ACPv2
+                          (overrides PLURNK_CLIENT_DEBUG_NO_META).
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -372,6 +375,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 token !== "--repl" &&
                 token !== "--status-stream" &&
                 token !== "--no-git" &&
+                token !== "--debug-no-meta" &&
                 token !== "--all"
             ) {
                 i += 1;
@@ -596,6 +600,13 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const repl = parsed.values.repl === true || isTruthyEnv(env.PLURNK_CLIENT_REPL);
     const json = parsed.values.json === true || isTruthyEnv(env.PLURNK_CLIENT_JSON);
     const statusStream = parsed.values["status-stream"] === true || isTruthyEnv(env.PLURNK_CLIENT_STATUS_STREAM);
+    const debugNoMeta =
+        typeof parsed.values["debug-no-meta"] === "boolean"
+            ? parsed.values["debug-no-meta"]
+            : isTruthyEnv(env.PLURNK_CLIENT_DEBUG_NO_META);
+    if (typeof parsed.values["debug-no-meta"] === "boolean") {
+        env.PLURNK_CLIENT_DEBUG_NO_META = debugNoMeta ? "1" : "0";
+    }
     const shareFolder = typeof parsed.values.share === "string"
         ? parsed.values.share
         : env.PLURNK_CLIENT_SHARE;
@@ -667,6 +678,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         repl,
         json,
         statusStream,
+        debugNoMeta,
         ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
         previewLines,
         historyEntries,

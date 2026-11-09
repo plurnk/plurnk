@@ -17,6 +17,7 @@ import {
     ACP_ACTION_KINDS,
     AcpClient,
     classifyPreFlightDisconnect,
+    scrubAcpMeta,
 } from "./acp-client.ts";
 import { AcpSession, type AcpMessageItem, type AcpPlanState } from "./acp-session.ts";
 import { runCliConfig } from "./cli-subcommands.ts";
@@ -637,6 +638,142 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-invocation} {§cli-conformance}: scrubAcpMeta and AcpClient debugNoMeta strip non-MCP _meta across the wire while preserving standard ACPv2 projection (#252)", async () => {
+    const scrubbed = scrubAcpMeta({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+            sessionId: "1#user",
+            update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: "1/1/1",
+                status: "completed",
+                _meta: {
+                    plurnk: { op: "read", secret: true },
+                    "io.modelcontextprotocol/related-task": { taskId: "t-1" },
+                },
+            },
+            _meta: {
+                plurnk: { workspaceId: 1 },
+            },
+        },
+    }) as {
+        params: {
+            _meta?: unknown;
+            update: { _meta?: Record<string, unknown> };
+        };
+    };
+    assert.equal(scrubbed.params._meta, undefined);
+    assert.deepEqual(scrubbed.params.update._meta, {
+        "io.modelcontextprotocol/related-task": { taskId: "t-1" },
+    });
+
+    let serverReceivedNewMeta: unknown = "unset";
+    let serverReceivedPromptMeta: unknown = "unset";
+
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.new, async ({ params }) => {
+            serverReceivedNewMeta = params._meta;
+            return {
+                sessionId: "1#user",
+                configOptions: [],
+                _meta: { plurnk: { workspace: { id: 1, name: "ws" } } },
+            };
+        })
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            serverReceivedPromptMeta = params._meta;
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "1/1/2",
+                    content: { type: "text", text: "Pure ACP reply" },
+                    _meta: { plurnk: { op: "done", status: 200 } },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                    usage: {
+                        inputTokens: 120,
+                        outputTokens: 30,
+                        totalTokens: 150,
+                    },
+                    _meta: { plurnk: { terminal: { status: 200, turnCount: 1 } } },
+                },
+            });
+            return { messageId: "m-1", _meta: { plurnk: { loopId: 1 } } };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    let session: AcpSession | null = null;
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        token: "test-token",
+        debugNoMeta: true,
+        onSessionUpdate: (notification) => {
+            session?.applyUpdate(notification.update);
+        },
+    });
+
+    try {
+        await client.connect();
+        const created = await client.newSession("/tmp/ws", {
+            _meta: { plurnk: { workspace: "ws", session: "user" } },
+        });
+        assert.equal(serverReceivedNewMeta, undefined, "outbound session/new _meta must be scrubbed");
+        assert.equal(created._meta, undefined, "inbound session/new _meta must be scrubbed");
+        session = new AcpSession(created.sessionId, {
+            configOptions: created.configOptions,
+            meta: created._meta as Record<string, unknown> | undefined,
+        });
+        const idleArrived = new Promise<void>((resolve) => {
+            session?.onUpdate((u) => {
+                if (SessionUpdate.isStateUpdate(u) && u.state === "idle") {
+                    resolve();
+                }
+            });
+        });
+
+        await client.prompt(session.sessionId, "hello", {
+            _meta: { plurnk: { maxTurns: 3 } },
+        });
+        await idleArrived;
+        assert.equal(serverReceivedPromptMeta, undefined, "outbound session/prompt _meta must be scrubbed");
+        assert.equal(session.lastAgentMessageText(), "Pure ACP reply");
+        assert.equal(session.lastStateMeta, undefined, "inbound state_update _meta must be scrubbed");
+        assert.equal(session.usage?.inputTokens, 120);
+        assert.equal(session.usage?.outputTokens, 30);
+        assert.equal(session.usage?.totalTokens, 150);
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
 
 
 

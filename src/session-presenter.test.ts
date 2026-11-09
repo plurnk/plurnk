@@ -1182,3 +1182,90 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.deepEqual(bodilessKillFrames[0].contentLines, []);
     }
 });
+
+test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresenter operates on pure ACPv2 updates without _meta.plurnk (#252)", () => {
+    const presenter = new SessionPresenter({
+        workspaceName: "default",
+        sessionName: "user",
+        model: "fast",
+    });
+
+    // 1. session_info_update updates workspaceName and sessionName from standard title
+    const infoFrames = presenter.apply({
+        sessionUpdate: "session_info_update",
+        title: "acme#worker",
+    });
+    assert.equal(presenter.workspaceName, "acme");
+    assert.equal(presenter.sessionName, "worker");
+    assert.equal(infoFrames[0]?.kind, "status_update");
+
+    // 2. usage_update without _meta.plurnk updates curationWeight, curationBudget, and costUsd across turns
+    presenter.apply({
+        sessionUpdate: "usage_update",
+        used: 1200,
+        size: 10000,
+        cost: { amount: 0.0125, currency: "USD" },
+    });
+    assert.equal(presenter.curationWeight, 1200);
+    assert.equal(presenter.curationBudget, 10000);
+    assert.equal(presenter.costUsd, "0.0125");
+
+    presenter.apply({
+        sessionUpdate: "usage_update",
+        used: 3400,
+        size: 10000,
+        cost: { amount: 0.0375, currency: "USD" },
+    });
+    assert.equal(presenter.curationWeight, 3400);
+    assert.equal(presenter.curationBudget, 10000);
+    assert.equal(presenter.costUsd, "0.0375");
+
+    // 3. Standard messageId and toolCallId coordinates advance loopSeq and turns without _meta.plurnk
+    presenter.markTurnStart();
+    presenter.apply({
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "3/1/reasoning",
+        content: { type: "text", text: "Thinking turn 1" },
+    });
+    assert.equal(presenter.loopSeq, 3);
+    assert.equal(presenter.turns, 1);
+
+    const toolFrames = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "3/2/1",
+        name: "read",
+        title: "read (workspace:///README.md)",
+        status: "completed",
+        locations: [{ path: "workspace:///README.md" }],
+    });
+    assert.equal(presenter.loopSeq, 3);
+    assert.equal(presenter.turns, 2);
+    assert.equal(toolFrames.find((f) => f.kind === "tool_call")?.op, "read");
+
+    const replyFrames = presenter.apply({
+        sessionUpdate: "agent_message_chunk",
+        messageId: "3/2/2",
+        content: { type: "text", text: "All done." },
+    });
+    assert.equal(replyFrames.find((f) => f.kind === "reply_chunk")?.text, "All done.");
+
+    // 4. Idle state_update without _meta.plurnk.terminal reads standard update.usage and preserves multi-turn count
+    const idleFrames = presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+        usage: {
+            inputTokens: 450,
+            outputTokens: 90,
+            totalTokens: 540,
+        },
+    });
+    const bar = idleFrames.find((f) => f.kind === "status_bar");
+    assert.ok(bar && bar.kind === "status_bar");
+    assert.equal(bar.turns, 2);
+    assert.equal(bar.loopInputTokens, 450);
+    assert.equal(bar.loopOutputTokens, 90);
+    assert.equal(presenter.inputTokens, 450);
+    assert.equal(presenter.outputTokens, 90);
+});
+

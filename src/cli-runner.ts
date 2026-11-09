@@ -117,6 +117,7 @@ export interface CliCommonOptions {
     readonly json: boolean;
     readonly repl?: boolean;
     readonly statusStream: boolean;
+    readonly debugNoMeta?: boolean;
     readonly shareFolder?: string;
     readonly previewLines: number;
     readonly historyEntries: number;
@@ -391,20 +392,46 @@ export const openCliSession = async (
                       content: [{ type: "text" as const, text: options.systemPrompt }],
                   }
                 : undefined;
-        const created = await client.newSession(options.cwd, {
-            ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-            _meta: { plurnk: plurnkMeta },
-        });
-        const nextSession = new AcpSession(created.sessionId, {
-            configOptions: created.configOptions,
-            meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
-        });
+        let nextSession: AcpSession | null = null;
+        let alreadyReplayedOnResume = false;
+        if (options.debugNoMeta && options.sessionId !== undefined && options.sessionId.length > 0) {
+            try {
+                const resumedFirst = await client.resumeSession(options.sessionId, options.cwd, {
+                    ...(replayHistory ? { replayFrom: { type: "start" as const } } : {}),
+                    ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+                });
+                const resolvedId =
+                    typeof (resumedFirst as { sessionId?: unknown }).sessionId === "string"
+                        ? (resumedFirst as unknown as { sessionId: string }).sessionId
+                        : options.sessionId;
+                nextSession = new AcpSession(resolvedId, {
+                    configOptions: resumedFirst.configOptions,
+                    meta: (resumedFirst._meta ?? undefined) as Record<string, unknown> | undefined,
+                });
+                alreadyReplayedOnResume = true;
+            } catch (resumeErr) {
+                const code = (resumeErr as { code?: unknown } | undefined)?.code;
+                if (code !== -32002) {
+                    throw resumeErr;
+                }
+            }
+        }
+        if (nextSession === null) {
+            const created = await client.newSession(options.cwd, {
+                ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+                _meta: { plurnk: plurnkMeta },
+            });
+            nextSession = new AcpSession(created.sessionId, {
+                configOptions: created.configOptions,
+                meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
+            });
+        }
         nextSession.onDispose(() => {
             offUpdate();
             offDisconnect();
         });
-        if (replayHistory) {
-            const resumed = await client.resumeSession(created.sessionId, options.cwd, {
+        if (replayHistory && !alreadyReplayedOnResume) {
+            const resumed = await client.resumeSession(nextSession.sessionId, options.cwd, {
                 replayFrom: { type: "start" },
                 _meta: { plurnk: plurnkMeta },
             });
@@ -744,23 +771,53 @@ export const runCliPrompt = async (
             const turnsById = new Map<number, Record<string, unknown>[]>();
             for (const item of turnItems) {
                 const p = (item.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
-                if (loopId === null && typeof p?.loopId === "number") {
-                    loopId = p.loopId;
+                const rawCoord =
+                    typeof p?.coordinate === "string"
+                        ? p.coordinate
+                        : item.kind === "tool_call"
+                          ? item.toolCallId
+                          : item.kind === "agent_message" || item.kind === "user_message" || item.kind === "agent_thought"
+                            ? item.id
+                            : undefined;
+                const coordMatch =
+                    typeof rawCoord === "string" ? /^(\d+)\/(\d+)\/(\d+)$/u.exec(rawCoord) : null;
+                if (loopId === null) {
+                    if (typeof p?.loopId === "number") {
+                        loopId = p.loopId;
+                    } else if (coordMatch !== null) {
+                        loopId = Number.parseInt(coordMatch[1]!, 10);
+                    }
                 }
-                if (p !== undefined && typeof p.op === "string") {
-                    const turnId = typeof p.turnId === "number" ? p.turnId : 1;
+                const opName =
+                    typeof p?.op === "string"
+                        ? p.op
+                        : item.kind === "tool_call" && typeof item.name === "string"
+                          ? item.name
+                          : undefined;
+                if (opName !== undefined && (p !== undefined || item.kind === "tool_call")) {
+                    const turnId =
+                        typeof p?.turnId === "number"
+                            ? p.turnId
+                            : coordMatch !== null
+                              ? Number.parseInt(coordMatch[2]!, 10)
+                              : 1;
                     let bucket = turnsById.get(turnId);
                     if (bucket === undefined) {
                         bucket = [];
                         turnsById.set(turnId, bucket);
                     }
                     bucket.push({
-                        id: p.id,
-                        op: p.op,
-                        origin: p.origin ?? "model",
-                        status: p.status ?? 200,
-                        scope: p.scope ?? null,
-                        coordinate: p.coordinate,
+                        id: p?.id ?? (coordMatch !== null ? Number.parseInt(coordMatch[3]!, 10) : undefined),
+                        op: opName,
+                        origin: p?.origin ?? "model",
+                        status:
+                            typeof p?.status === "number"
+                                ? p.status
+                                : item.kind === "tool_call" && item.status === "failed"
+                                  ? 500
+                                  : 200,
+                        scope: p?.scope ?? null,
+                        coordinate: rawCoord,
                     });
                 }
             }

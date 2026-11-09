@@ -1,5 +1,6 @@
 export {
     AcpClient,
+    scrubAcpMeta,
     toAcpWebSocketUrl,
     type AcpClientOptions,
     type ElicitationRequestHandler,

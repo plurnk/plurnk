@@ -564,10 +564,15 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
+    static #isReplyHeaderLine(firstLine: string): boolean {
+        const plain = stripVTControlCharacters(firstLine).trim();
+        return plain === "🐹" || /^\[[^\]\s]+\]$/u.test(plain);
+    }
+
     static #decorateHamsterHeader(raw: string, summaryAside: string): string | null {
         const nl = raw.indexOf("\n");
         const firstLine = nl >= 0 ? raw.slice(0, nl) : raw;
-        if (stripVTControlCharacters(firstLine).trim() !== "🐹") {
+        if (!TuiSurface.#isReplyHeaderLine(firstLine)) {
             return null;
         }
         const decoratedFirst = `${firstLine} ${paint(summaryAside, "dim")}`;
@@ -612,7 +617,7 @@ export default class TuiSurface {
             this.#transcript.addChild(slot);
             this.#lastWasSpacer = false;
             const firstLine = item.text.split("\n", 1)[0] ?? "";
-            if (stripVTControlCharacters(firstLine).trim() === "🐹") {
+            if (TuiSurface.#isReplyHeaderLine(firstLine)) {
                 this.#lastLoopHamster = slot;
             }
         }

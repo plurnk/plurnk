@@ -314,6 +314,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
 
     // Rich TUI waterfall formatting: 🐹 model replies, note bodies, operation previews, 💭 reasoning, 🎯 loop summary
     assert.match(renderModelReply("Hello **world**", 80, { op: "done", status: 200 }), /🐹[\s\S]*Hello/);
+    assert.match(renderModelReply("Hello **scout**", 80, { op: "done", status: 200, voice: "scoutproxy" }), /\[scoutproxy\][\s\S]*Hello/);
     assert.match(renderModelReply("Cancelled", 80, { op: "fail", status: 200 }), /❌/);
     assert.match(renderModelReply("Waiting", 80, { op: "wait", status: 200 }), /⏳/);
     assert.match(
@@ -521,6 +522,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     );
     assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
     assert.match(renderSubmittedInput("line 1\nline 2"), /🎤 line 1[\s\S]*line 2/u);
+    assert.match(renderSubmittedInput("line 1\nline 2", "scoutproxy"), /\[scoutproxy\] line 1[\s\S]*line 2/u);
     assert.equal(concluded(200, false), "reply");
     assert.equal(concluded(499, false), "stopped");
     assert.equal(concluded(500, false), "failed");

@@ -228,6 +228,7 @@ export type PresentationFrame =
           readonly op: string;
           readonly status: number;
           readonly aside: string | null;
+          readonly voice?: string | null;
       }
     | {
           readonly kind: "notice";
@@ -291,6 +292,76 @@ interface ActiveWorkerState {
     readonly target: string;
     readonly startedAt: number;
 }
+
+export const extractMessageVoice = (
+    plurnkMeta:
+        | {
+              readonly voice?: unknown;
+              readonly source?: unknown;
+              readonly address?: unknown;
+              readonly target?: unknown;
+              readonly receipt?: {
+                  readonly repliedTo?: unknown;
+                  readonly repliedToSources?: unknown;
+              } | null;
+          }
+        | null
+        | undefined,
+): string | null => {
+    if (!plurnkMeta || typeof plurnkMeta !== "object") return null;
+    if (typeof plurnkMeta.voice === "string" && plurnkMeta.voice.trim().length > 0) {
+        return plurnkMeta.voice.trim();
+    }
+    const candidates: unknown[] = [];
+    if (
+        plurnkMeta.receipt &&
+        typeof plurnkMeta.receipt === "object" &&
+        Array.isArray(plurnkMeta.receipt.repliedToSources)
+    ) {
+        candidates.push(...plurnkMeta.receipt.repliedToSources);
+    }
+    if (
+        plurnkMeta.receipt &&
+        typeof plurnkMeta.receipt === "object" &&
+        Array.isArray(plurnkMeta.receipt.repliedTo)
+    ) {
+        candidates.push(...plurnkMeta.receipt.repliedTo);
+    }
+    candidates.push(plurnkMeta.source, plurnkMeta.target, plurnkMeta.address);
+    for (const candidate of candidates) {
+        if (typeof candidate !== "string" || candidate.length === 0) continue;
+        const acpMatch = /^acp:\/\/([^/?#]+)/u.exec(candidate);
+        if (acpMatch !== null) {
+            try {
+                const principal = decodeURIComponent(acpMatch[1] ?? "").trim();
+                if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                    return principal;
+                }
+            } catch {
+                // fall through
+            }
+            continue;
+        }
+        const sessionMatch = /^session:\/\/([^/?#]+)/u.exec(candidate);
+        if (sessionMatch !== null) {
+            try {
+                const worker = decodeURIComponent(sessionMatch[1] ?? "").trim();
+                if (worker.length > 0) return worker;
+            } catch {
+                // fall through
+            }
+            continue;
+        }
+        const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
+        if (messageMatch !== null) {
+            const principal = (messageMatch[1] ?? "").trim();
+            if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                return principal;
+            }
+        }
+    }
+    return null;
+};
 
 export class SessionPresenter {
     workspaceName: string;
@@ -1731,7 +1802,15 @@ export class SessionPresenter {
                               status?: number;
                               loopSeq?: number;
                               turnSeq?: number;
+                              voice?: string;
+                              source?: string;
+                              address?: string;
+                              target?: string;
                               attrs?: { aside?: string };
+                              receipt?: {
+                                  repliedTo?: readonly string[];
+                                  repliedToSources?: readonly string[];
+                              };
                               outside?: unknown;
                           };
                       }
@@ -1747,6 +1826,7 @@ export class SessionPresenter {
                 metaPlurnk?.op === "outside-" ||
                 metaPlurnk?.outside !== undefined;
             const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "send");
+            const voice = isOutside || effectiveOp === "wait" ? null : extractMessageVoice(metaPlurnk);
             if (effectiveOp === "wait") {
                 this.doing = null;
                 this.buildStatusBar();
@@ -1758,6 +1838,7 @@ export class SessionPresenter {
                 op: effectiveOp,
                 status: typeof metaPlurnk?.status === "number" ? metaPlurnk.status : 200,
                 aside: metaPlurnk?.attrs?.aside ?? null,
+                ...(voice !== null ? { voice } : {}),
             });
             return frames;
         }

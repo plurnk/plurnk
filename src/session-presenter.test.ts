@@ -1267,5 +1267,31 @@ test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresen
     assert.equal(bar.loopOutputTokens, 90);
     assert.equal(presenter.inputTokens, 450);
     assert.equal(presenter.outputTokens, 90);
+
+    // 5. Custom _plurnk_telemetry SessionUpdate routes workspace state and engine turn progress to the status bar
+    const telemetryFrames = presenter.apply({
+        sessionUpdate: "_plurnk_telemetry",
+        _meta: {
+            plurnk: {
+                workspace: {
+                    id: 13,
+                    name: "gookie",
+                    projectRoot: "/tmp/gookie",
+                    projectLabel: "~/gookie",
+                },
+                notice: {
+                    source: "engine:turn",
+                    kind: "turn_awaiting_model",
+                },
+            },
+        },
+    });
+    assert.equal(presenter.workspaceName, "gookie");
+    assert.equal(presenter.lifecycle, "running");
+    assert.equal(telemetryFrames[0]?.kind, "status_update");
+    if (telemetryFrames[0]?.kind === "status_update") {
+        assert.equal(telemetryFrames[0].newTurn, true);
+    }
 });
+
 

@@ -347,9 +347,12 @@ export const openCliSession = async (
         return false;
     };
 
-    const matchesSession = (incomingId: string, boundId: string): boolean =>
-        incomingId === boundId ||
-        (!boundId.includes("#") && incomingId.endsWith(`#${boundId}`));
+    const matchesSession = (incomingId: string, boundId: string): boolean => {
+        if (incomingId === boundId) return true;
+        if (/^\d+#/u.test(boundId)) return false;
+        const boundSuffix = boundId.includes("#") ? boundId.slice(boundId.indexOf("#") + 1) : boundId;
+        return incomingId.endsWith(`#${boundSuffix}`);
+    };
 
     const offUpdate = client.onSessionUpdate((notification) => {
         if (session === null) {
@@ -367,17 +370,26 @@ export const openCliSession = async (
 
     try {
         const qualifiedMatch =
-            options.sessionId !== undefined ? /^(\d+)#(.+)$/u.exec(options.sessionId) : null;
+            options.sessionId !== undefined ? /^([^#]+)#(.+)$/u.exec(options.sessionId) : null;
+        const qualifiedPrefix = qualifiedMatch !== null ? qualifiedMatch[1]! : undefined;
         const resolvedSessionName = qualifiedMatch !== null ? qualifiedMatch[2]! : options.sessionId;
         const resolvedWorkspaceId =
-            qualifiedMatch !== null ? Number.parseInt(qualifiedMatch[1]!, 10) : undefined;
+            qualifiedPrefix !== undefined && /^[1-9]\d*$/u.test(qualifiedPrefix)
+                ? Number.parseInt(qualifiedPrefix, 10)
+                : undefined;
+        const resolvedWorkspaceName =
+            qualifiedPrefix !== undefined && !/^\d+$/u.test(qualifiedPrefix)
+                ? qualifiedPrefix
+                : undefined;
         const plurnkMeta: Record<string, unknown> = {
             create: true,
             ...(options.workspace !== undefined
                 ? { workspace: options.workspace }
                 : resolvedWorkspaceId !== undefined
                   ? { workspaceId: resolvedWorkspaceId }
-                  : {}),
+                  : resolvedWorkspaceName !== undefined
+                    ? { workspace: resolvedWorkspaceName }
+                    : {}),
             ...(resolvedSessionName !== undefined
                 ? { session: resolvedSessionName, name: resolvedSessionName }
                 : {}),

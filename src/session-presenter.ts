@@ -1351,6 +1351,21 @@ export class SessionPresenter {
             return frames;
         }
 
+        if (SessionUpdate.isCustom(update)) {
+            if (update.sessionUpdate === "_plurnk_telemetry") {
+                this.ingestMeta(update._meta as MetaRecord | undefined);
+                if (this.#applyEngineNoticeMeta(update._meta, frames)) {
+                    return frames;
+                }
+                this.#flushPendingHistoryLost(frames);
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+            }
+            return frames;
+        }
+
         if (SessionUpdate.isConfigOptionUpdate(update)) {
             this.ingestMeta(update._meta as MetaRecord | undefined);
             this.#applyConfigOptions(update.configOptions, true);
@@ -2056,12 +2071,7 @@ export class SessionPresenter {
             return frames;
         }
 
-        if (
-            SessionUpdate.isUserMessageChunk(update) ||
-            SessionUpdate.isUserMessage(update) ||
-            update.sessionUpdate === "user_message_chunk" ||
-            update.sessionUpdate === "user_message"
-        ) {
+        if (SessionUpdate.isUserMessageChunk(update) || SessionUpdate.isUserMessage(update)) {
             const published = (update._meta as { plurnk?: { published?: boolean } } | undefined)?.plurnk?.published;
             if (published !== false && this.inboxCount > 0) {
                 this.inboxCount = Math.max(0, this.inboxCount - 1);

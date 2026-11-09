@@ -115,6 +115,11 @@ export const runReplSession = async (
         const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
         if (typeof ws?.name === "string" && ws.name.length > 0) {
             currentWorkspace = ws.name;
+        } else if (session.sessionId.includes("#")) {
+            const prefix = session.sessionId.slice(0, session.sessionId.indexOf("#"));
+            if (prefix.length > 0 && !/^\d+$/u.test(prefix)) {
+                currentWorkspace = prefix;
+            }
         }
         if (typeof ws?.projectRoot === "string") {
             currentProjectRoot = ws.projectRoot;
@@ -285,6 +290,30 @@ export const runReplSession = async (
                 currentLifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
                 if (termMeta?.problem !== undefined) {
                     writeErrorJsonl(streams.stderr, termMeta.problem);
+                }
+            }
+            writeEventJsonl(streams.events, update);
+            return;
+        }
+
+        if (SessionUpdate.isCustom(update)) {
+            const rawNotice = (
+                update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
+            )?.plurnk?.notice;
+            if (
+                rawNotice?.kind === "turn_generated" ||
+                rawNotice?.kind === "turn_awaiting_model" ||
+                rawNotice?.kind === "loop_status"
+            ) {
+                flushReasoningNewline();
+            }
+            if (rawNotice?.kind === "loop_status") {
+                if (rawNotice.status === 202) {
+                    currentLifecycle = "parked";
+                } else if (rawNotice.status === 102) {
+                    currentLifecycle = "running";
+                } else if (rawNotice.status === 100) {
+                    currentLifecycle = "queued";
                 }
             }
             writeEventJsonl(streams.events, update);

@@ -1152,9 +1152,12 @@ export class SessionPresenter {
                 update._meta as
                     | {
                           plurnk?: {
+                              op?: string;
+                              status?: number;
                               loopSeq?: number;
                               turnSeq?: number;
                               turn?: number;
+                              outside?: unknown;
                           };
                       }
                     | undefined
@@ -1166,6 +1169,23 @@ export class SessionPresenter {
             const deltaText = SessionUpdate.isAgentThoughtChunk(update)
                 ? contentBlockToText(update.content)
                 : (update.content ?? []).map(contentBlockToText).join("");
+            const isOutside =
+                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
+                thoughtPlurnk?.op === "outside-" ||
+                thoughtPlurnk?.outside !== undefined;
+            if (isOutside) {
+                this.#retireReasoning(frames);
+                this.#loopConcluded = false;
+                frames.push({
+                    kind: "reply_chunk",
+                    messageId: update.messageId,
+                    text: deltaText,
+                    op: "outside-",
+                    status: typeof thoughtPlurnk?.status === "number" ? thoughtPlurnk.status : 200,
+                    aside: null,
+                });
+                return frames;
+            }
             if (SessionUpdate.isAgentThought(update)) {
                 this.#reasoningBuffer = deltaText;
             } else {

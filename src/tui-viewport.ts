@@ -760,7 +760,13 @@ export const runTuiViewport = async (
                     }
                 }
             } else if (
-                rec.kind === "agent_message" &&
+                (rec.kind === "agent_message" ||
+                    (rec.kind === "agent_thought" &&
+                        ((typeof rec.id === "string" && rec.id.startsWith("outside-")) ||
+                            (rec.meta as { plurnk?: { op?: unknown; outside?: unknown } } | undefined)?.plurnk?.op ===
+                                "outside-" ||
+                            (rec.meta as { plurnk?: { outside?: unknown } } | undefined)?.plurnk?.outside !==
+                                undefined))) &&
                 typeof rec.text === "string" &&
                 rec.text.length > 0
             ) {

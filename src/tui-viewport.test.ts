@@ -2496,11 +2496,12 @@ test("{§cli-markdown-projection} {§cli-rendering}: outside text never enters C
             await ctx.client.notify(methods.client.session.update, {
                 sessionId: ctx.params.sessionId,
                 update: {
-                    sessionUpdate: "agent_message_chunk",
+                    sessionUpdate: "agent_thought_chunk",
                     messageId: "outside-model-call-1",
                     content: { type: "text", text: "Unfenced outside narration" },
                     _meta: {
                         plurnk: {
+                            op: "outside-",
                             outside: { modelCallId: 1 },
                         },
                     },
@@ -2615,6 +2616,23 @@ test("{§cli-markdown-projection} {§cli-rendering}: outside text never enters C
         const tcFrame = frames.find((f) => f.kind === "tool_call");
         assert.ok(tcFrame !== undefined && tcFrame.kind === "tool_call");
         assert.equal(tcFrame.noteBody, "Hydrated note body from HTTP entry route");
+        const outsideFrames = presenter.apply({
+            sessionUpdate: "agent_thought_chunk",
+            messageId: "outside-model-call-1",
+            content: { type: "text", text: "Unfenced outside narration" },
+            _meta: {
+                plurnk: {
+                    op: "outside-",
+                    outside: { modelCallId: 1 },
+                },
+            },
+        });
+        assert.equal(outsideFrames.length, 1);
+        assert.equal(outsideFrames[0]?.kind, "reply_chunk");
+        if (outsideFrames[0]?.kind === "reply_chunk") {
+            assert.equal(outsideFrames[0].op, "outside-");
+            assert.equal(outsideFrames[0].text, "Unfenced outside narration");
+        }
     } finally {
         await acpServer.close();
         httpServer.closeAllConnections();

@@ -156,6 +156,20 @@ export const runReplSession = async (
 
     const handleSessionUpdate = (update: SessionUpdate): void => {
         if (SessionUpdate.isAgentThoughtChunk(update)) {
+            const metaPlurnk = (
+                update._meta as
+                    | { plurnk?: { op?: unknown; outside?: unknown } }
+                    | undefined
+            )?.plurnk;
+            const isOutside =
+                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
+                metaPlurnk?.op === "outside-" ||
+                metaPlurnk?.outside !== undefined;
+            if (isOutside) {
+                flushReasoningNewline();
+                writeEventJsonl(streams.events, update);
+                return;
+            }
             const delta = contentBlockToText(update.content);
             if (delta.length > 0) {
                 streams.reasoning.write(delta);

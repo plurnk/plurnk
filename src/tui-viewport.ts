@@ -18,7 +18,12 @@ import { matchesKey, wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-
 import stringWidth from "string-width";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
-import { formatModelRoute, SessionPresenter, type PresentationFrame } from "./session-presenter.ts";
+import {
+    extractMessageVoice,
+    formatModelRoute,
+    SessionPresenter,
+    type PresentationFrame,
+} from "./session-presenter.ts";
 import { makeAutocompleteProvider } from "./tui-completion.ts";
 import Review, { isElicitationGateEvent, isPermissionGateEvent } from "./tui-review.ts";
 import TuiSurface, {
@@ -689,22 +694,29 @@ export const runTuiViewport = async (
                               plurnk?: {
                                   answering?: string;
                                   source?: string;
+                                  voice?: string;
+                                  address?: string;
+                                  target?: string;
                               };
                           }
                         | undefined
                 )?.plurnk;
-                if (typeof plurnkMeta?.answering === "string") {
+                if (
+                    typeof plurnkMeta?.answering === "string" ||
+                    (typeof plurnkMeta?.source === "string" && plurnkMeta.source.startsWith("session://"))
+                ) {
                     const sender =
-                        typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
+                        typeof plurnkMeta?.source === "string" && plurnkMeta.source.length > 0
                             ? plurnkMeta.source
-                            : plurnkMeta.answering;
+                            : (plurnkMeta?.answering ?? "session");
                     surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(rec.text)}`);
                 } else {
-                    if (addToEditorHistory) {
+                    const userVoice = extractMessageVoice(plurnkMeta);
+                    if (addToEditorHistory && userVoice === null) {
                         surface.recordPrompt(rec.text);
                     }
                     surface.append("");
-                    surface.append(renderSubmittedInput(rec.text));
+                    surface.append(renderSubmittedInput(rec.text, userVoice));
                     surface.append("");
                 }
             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
@@ -760,7 +772,15 @@ export const runTuiViewport = async (
                                   status?: number;
                                   loopSeq?: number;
                                   turnSeq?: number;
+                                  voice?: string;
+                                  source?: string;
+                                  address?: string;
+                                  target?: string;
                                   attrs?: { aside?: string };
+                                  receipt?: {
+                                      repliedTo?: readonly string[];
+                                      repliedToSources?: readonly string[];
+                                  };
                               };
                           }
                         | undefined
@@ -776,6 +796,7 @@ export const runTuiViewport = async (
                         op: plurnkMeta?.op ?? "send",
                         status: plurnkMeta?.status ?? 200,
                         aside: plurnkMeta?.attrs?.aside ?? null,
+                        voice: extractMessageVoice(plurnkMeta),
                     }),
                 );
             } else if (rec.kind === "plan" && rec.plan && typeof rec.plan === "object") {
@@ -983,6 +1004,9 @@ export const runTuiViewport = async (
                                   published?: boolean;
                                   answering?: string;
                                   source?: string;
+                                  voice?: string;
+                                  address?: string;
+                                  target?: string;
                                   op?: string;
                               };
                           }
@@ -991,19 +1015,29 @@ export const runTuiViewport = async (
                 if (plurnkMeta?.published !== false) {
                     const userText = extractUpdateText(event.content);
                     if (userText.length > 0) {
-                        if (typeof plurnkMeta?.answering === "string") {
+                        if (
+                            typeof plurnkMeta?.answering === "string" ||
+                            (typeof plurnkMeta?.source === "string" &&
+                                plurnkMeta.source.startsWith("session://"))
+                        ) {
                             if (plurnkMeta?.op === "send") {
                                 const sender =
                                     typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
                                         ? plurnkMeta.source
-                                        : plurnkMeta.answering;
+                                        : (plurnkMeta?.answering ?? "session");
                                 surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(userText)}`);
                             }
                         } else {
-                            surface.recordPrompt(userText);
-                            if (plurnkMeta?.op === "send" && !consumeLocalSubmittedPrompt(userText)) {
+                            const userVoice = extractMessageVoice(plurnkMeta);
+                            if (userVoice === null) {
+                                surface.recordPrompt(userText);
+                            }
+                            if (
+                                plurnkMeta?.op === "send" &&
+                                (userVoice !== null || !consumeLocalSubmittedPrompt(userText))
+                            ) {
                                 surface.append("");
-                                surface.append(renderSubmittedInput(userText));
+                                surface.append(renderSubmittedInput(userText, userVoice));
                                 surface.append("");
                             }
                         }
@@ -1081,6 +1115,7 @@ export const runTuiViewport = async (
                                     op: frame.op,
                                     status: frame.status,
                                     aside: frame.aside,
+                                    voice: frame.voice,
                                 }),
                                 frame.messageId,
                             );

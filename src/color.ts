@@ -170,8 +170,13 @@ export const resumeCommand = (workspace: string, session: string): string => {
     return `plurnk --workspace ${quote(workspace)} --session ${quote(session)}`;
 };
 
-export const renderSubmittedInput = (text: string): string =>
-    text
+export const renderSubmittedInput = (text: string, voice?: string | null): string => {
+    const trimmedVoice =
+        typeof voice === "string" && voice.trim().length > 0 ? ModelText.plain(voice.trim()) : null;
+    const lead = trimmedVoice !== null ? `[${trimmedVoice}] ` : "🎤 ";
+    const indent = trimmedVoice !== null ? " ".repeat(lead.length) : "   ";
+    return text
         .split("\n")
-        .map((line, i) => paint(`${i === 0 ? "🎤 " : "   "}${ModelText.plain(line)}`, "human", "bold"))
+        .map((line, i) => paint(`${i === 0 ? lead : indent}${ModelText.plain(line)}`, "human", "bold"))
         .join("\n");
+};

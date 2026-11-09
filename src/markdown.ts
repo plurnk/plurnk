@@ -73,6 +73,7 @@ export const renderModelReply = (
         readonly op?: string | null;
         readonly status?: number | null;
         readonly aside?: string | null;
+        readonly voice?: string | null;
     },
 ): string => {
     const op = opts?.op ?? "send";
@@ -81,7 +82,22 @@ export const renderModelReply = (
     }
     const status = opts?.status ?? 200;
     const failed = status >= 400 || op === "fail";
-    const glyph = op === "wait" ? (failed ? "❌" : "⏳") : failed ? "❌" : "🐹";
+    const trimmedVoice =
+        typeof opts?.voice === "string" && opts.voice.trim().length > 0
+            ? ModelText.plain(opts.voice.trim())
+            : null;
+    const glyph =
+        op === "wait"
+            ? failed
+                ? "❌"
+                : "⏳"
+            : trimmedVoice !== null
+              ? failed
+                  ? `❌ [${trimmedVoice}]`
+                  : `[${trimmedVoice}]`
+              : failed
+                ? "❌"
+                : "🐹";
     const cleanAside =
         (op === "wait" || failed) && opts?.aside ? ModelText.plain(opts.aside).trim() : "";
     const lead = `${paint(glyph, failed ? "failure" : "dim")}${

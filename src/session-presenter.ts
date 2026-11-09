@@ -671,7 +671,10 @@ export class SessionPresenter {
                 this.#resetLoopTurns();
             }
             if (typeof status.loopSeq === "number") {
-                if (this.loopSeq !== null && this.loopSeq !== status.loopSeq) {
+                if (
+                    (this.loopSeq !== null && this.loopSeq !== status.loopSeq) ||
+                    ((status.lifecycle === "queued" || status.lifecycle === "running") && this.#loopConcluded)
+                ) {
                     this.#resetLoopTurns();
                 }
                 this.loopSeq = status.loopSeq;
@@ -1139,6 +1142,188 @@ export class SessionPresenter {
         }
     }
 
+    #applyEngineNoticeMeta(
+        meta: unknown,
+        frames: PresentationFrame[],
+        legacyTitle?: string,
+    ): boolean {
+        const plurnkMeta = (
+            meta as
+                | { plurnk?: { notice?: Record<string, unknown> } }
+                | undefined
+        )?.plurnk;
+        const rawNotice = plurnkMeta?.notice;
+
+        if (rawNotice?.source === "engine:turn" || legacyTitle?.startsWith("engine:turn:")) {
+            if (rawNotice?.kind === "turn_awaiting_model" || legacyTitle === "engine:turn:turn_awaiting_model") {
+                this.#retireReasoning(frames);
+                if (this.#loopConcluded) {
+                    this.#resetLoopTurns();
+                }
+                this.lastLoopStatus = null;
+                if (this.turns > 0 && this.#awaitingTurnCount + 1 > this.turns) {
+                    this.#settlePriorPlanTurn();
+                }
+                this.#awaitingTurnCount += 1;
+                this.turns = Math.max(this.turns, this.#awaitingTurnCount);
+                this.#promoteSurvivingStreams(this.turns, true);
+                this.lifecycle = "running";
+                this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                    newTurn: true,
+                });
+                return true;
+            }
+            if (rawNotice?.kind === "turn_generated" || legacyTitle === "engine:turn:turn_generated") {
+                this.#retireReasoning(frames);
+                this.lastLoopStatus = null;
+                this.lifecycle = "running";
+                this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                const acc = rawNotice?.accounting as
+                    | {
+                          requests?: number;
+                          inputTokens?: number;
+                          outputTokens?: number;
+                          knownInputTokens?: number;
+                          knownOutputTokens?: number;
+                          usage?: { inputTokens?: number; outputTokens?: number };
+                          knownUsage?: { inputTokens?: number; outputTokens?: number };
+                          costUsd?: string | null;
+                          knownCostUsd?: string | null;
+                      }
+                    | undefined;
+                const inTok =
+                    typeof acc?.inputTokens === "number"
+                        ? acc.inputTokens
+                        : typeof acc?.knownInputTokens === "number"
+                          ? acc.knownInputTokens
+                          : typeof acc?.usage?.inputTokens === "number"
+                            ? acc.usage.inputTokens
+                            : typeof acc?.knownUsage?.inputTokens === "number"
+                              ? acc.knownUsage.inputTokens
+                              : 0;
+                const outTok =
+                    typeof acc?.outputTokens === "number"
+                        ? acc.outputTokens
+                        : typeof acc?.knownOutputTokens === "number"
+                          ? acc.knownOutputTokens
+                          : typeof acc?.usage?.outputTokens === "number"
+                            ? acc.usage.outputTokens
+                            : typeof acc?.knownUsage?.outputTokens === "number"
+                              ? acc.knownUsage.outputTokens
+                              : 0;
+                this.inputTokens += inTok;
+                this.outputTokens += outTok;
+                const turnCost =
+                    typeof acc?.costUsd === "string"
+                        ? acc.costUsd
+                        : typeof acc?.knownCostUsd === "string"
+                          ? acc.knownCostUsd
+                          : null;
+                if (turnCost !== null) {
+                    this.costUsd = addDecimal(this.costUsd, turnCost);
+                    this.#loopCostUsd = addDecimal(this.#loopCostUsd, turnCost);
+                }
+                if (
+                    acc !== undefined &&
+                    acc.costUsd === null &&
+                    (typeof acc.knownCostUsd === "string" || (typeof acc.requests === "number" && acc.requests > 0))
+                ) {
+                    this.hasUnknownCost = true;
+                }
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return true;
+            }
+            if (rawNotice?.kind === "results_pending" || legacyTitle === "engine:turn:results_pending") {
+                this.lastLoopStatus = null;
+                this.lifecycle = "running";
+                this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return true;
+            }
+        }
+
+        if (rawNotice?.kind === "loop_status") {
+            if (typeof rawNotice.loopSeq === "number") {
+                if (
+                    (this.loopSeq !== null && this.loopSeq !== rawNotice.loopSeq) ||
+                    ((rawNotice.status === 100 || rawNotice.status === 102) && this.#loopConcluded)
+                ) {
+                    this.#resetLoopTurns();
+                }
+                this.loopSeq = rawNotice.loopSeq;
+                this.#bindingsWithLoops.add(`${this.workspaceName}#${this.sessionName}`);
+            }
+            if (typeof rawNotice.packetCount === "number" && rawNotice.packetCount > 0) {
+                if (rawNotice.packetCount > this.turns && this.turns > 0) {
+                    this.#settlePriorPlanTurn();
+                }
+                this.turns = Math.max(this.turns, rawNotice.packetCount);
+            } else if (rawNotice.status === 102 && this.turns === 0) {
+                this.turns = 1;
+            }
+            if (rawNotice.status === 202) {
+                this.#retireReasoning(frames);
+                this.#promoteSurvivingStreams(this.turns, true);
+                this.lastLoopStatus = null;
+                this.lifecycle = "parked";
+                this.doing = null;
+                this.waitUntil = typeof rawNotice.waitUntil === "number" ? rawNotice.waitUntil : null;
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return true;
+            }
+            if (rawNotice.status === 100 || rawNotice.status === 102) {
+                this.lastLoopStatus = null;
+                this.waitUntil = null;
+                this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
+                this.doing =
+                    rawNotice.status === 102
+                        ? { phase: "working", since: Date.now(), op: null, target: null }
+                        : null;
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return true;
+            }
+        }
+
+        if (
+            rawNotice?.kind === "search_progress" ||
+            (typeof rawNotice?.source === "string" &&
+                rawNotice.source.startsWith("exec:") &&
+                typeof rawNotice.percent === "number")
+        ) {
+            const pct = typeof rawNotice.percent === "number" ? rawNotice.percent : undefined;
+            if (pct !== undefined && pct >= 100) {
+                this.activity = null;
+            } else {
+                this.activity = {
+                    phase: typeof rawNotice?.phase === "string" ? rawNotice.phase : "search",
+                    ...(pct !== undefined ? { percent: pct } : {}),
+                };
+            }
+            frames.push({
+                kind: "status_update",
+                status: this.buildStatusBar(),
+            });
+            return true;
+        }
+
+        return false;
+    }
+
     apply(update: SessionUpdate): PresentationFrame[] {
         const frames: PresentationFrame[] = [];
 
@@ -1154,6 +1339,9 @@ export class SessionPresenter {
                 } else {
                     this.sessionName = update.title;
                 }
+            }
+            if (this.#applyEngineNoticeMeta(update._meta, frames)) {
+                return frames;
             }
             this.#flushPendingHistoryLost(frames);
             frames.push({
@@ -1950,179 +2138,15 @@ export class SessionPresenter {
                 return frames;
             }
 
+            if (this.#applyEngineNoticeMeta(update._meta, frames, update.title)) {
+                return frames;
+            }
+
             const plurnkMeta = (
                 update._meta as
                     | { plurnk?: { notice?: Record<string, unknown>; problem?: Record<string, unknown> } }
                     | undefined
             )?.plurnk;
-            const rawNotice = plurnkMeta?.notice;
-
-            if (rawNotice?.source === "engine:turn" || update.title?.startsWith("engine:turn:")) {
-                if (rawNotice?.kind === "turn_awaiting_model" || update.title === "engine:turn:turn_awaiting_model") {
-                    this.#retireReasoning(frames);
-                    if (this.#loopConcluded) {
-                        this.#resetLoopTurns();
-                    }
-                    this.lastLoopStatus = null;
-                    if (this.turns > 0 && this.#awaitingTurnCount + 1 > this.turns) {
-                        this.#settlePriorPlanTurn();
-                    }
-                    this.#awaitingTurnCount += 1;
-                    this.turns = Math.max(this.turns, this.#awaitingTurnCount);
-                    this.#promoteSurvivingStreams(this.turns, true);
-                    this.lifecycle = "running";
-                    this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
-                    frames.push({
-                        kind: "status_update",
-                        status: this.buildStatusBar(),
-                        newTurn: true,
-                    });
-                    return frames;
-                }
-                if (rawNotice?.kind === "turn_generated" || update.title === "engine:turn:turn_generated") {
-                    this.#retireReasoning(frames);
-                    this.lastLoopStatus = null;
-                    this.lifecycle = "running";
-                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
-                    const acc = rawNotice?.accounting as
-                        | {
-                              requests?: number;
-                              inputTokens?: number;
-                              outputTokens?: number;
-                              knownInputTokens?: number;
-                              knownOutputTokens?: number;
-                              usage?: { inputTokens?: number; outputTokens?: number };
-                              knownUsage?: { inputTokens?: number; outputTokens?: number };
-                              costUsd?: string | null;
-                              knownCostUsd?: string | null;
-                          }
-                        | undefined;
-                    const inTok =
-                        typeof acc?.inputTokens === "number"
-                            ? acc.inputTokens
-                            : typeof acc?.knownInputTokens === "number"
-                              ? acc.knownInputTokens
-                              : typeof acc?.usage?.inputTokens === "number"
-                                ? acc.usage.inputTokens
-                                : typeof acc?.knownUsage?.inputTokens === "number"
-                                  ? acc.knownUsage.inputTokens
-                                  : 0;
-                    const outTok =
-                        typeof acc?.outputTokens === "number"
-                            ? acc.outputTokens
-                            : typeof acc?.knownOutputTokens === "number"
-                              ? acc.knownOutputTokens
-                              : typeof acc?.usage?.outputTokens === "number"
-                                ? acc.usage.outputTokens
-                                : typeof acc?.knownUsage?.outputTokens === "number"
-                                  ? acc.knownUsage.outputTokens
-                                  : 0;
-                    this.inputTokens += inTok;
-                    this.outputTokens += outTok;
-                    const turnCost =
-                        typeof acc?.costUsd === "string"
-                            ? acc.costUsd
-                            : typeof acc?.knownCostUsd === "string"
-                              ? acc.knownCostUsd
-                              : null;
-                    if (turnCost !== null) {
-                        this.costUsd = addDecimal(this.costUsd, turnCost);
-                        this.#loopCostUsd = addDecimal(this.#loopCostUsd, turnCost);
-                    }
-                    if (
-                        acc !== undefined &&
-                        acc.costUsd === null &&
-                        (typeof acc.knownCostUsd === "string" || (typeof acc.requests === "number" && acc.requests > 0))
-                    ) {
-                        this.hasUnknownCost = true;
-                    }
-                    frames.push({
-                        kind: "status_update",
-                        status: this.buildStatusBar(),
-                    });
-                    return frames;
-                }
-                if (rawNotice?.kind === "results_pending" || update.title === "engine:turn:results_pending") {
-                    this.lastLoopStatus = null;
-                    this.lifecycle = "running";
-                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
-                    frames.push({
-                        kind: "status_update",
-                        status: this.buildStatusBar(),
-                    });
-                    return frames;
-                }
-            }
-
-            if (rawNotice?.kind === "loop_status") {
-                if (typeof rawNotice.loopSeq === "number") {
-                    if (
-                        (this.loopSeq !== null && this.loopSeq !== rawNotice.loopSeq) ||
-                        ((rawNotice.status === 100 || rawNotice.status === 102) && this.#loopConcluded)
-                    ) {
-                        this.#resetLoopTurns();
-                    }
-                    this.loopSeq = rawNotice.loopSeq;
-                    this.#bindingsWithLoops.add(`${this.workspaceName}#${this.sessionName}`);
-                }
-                if (typeof rawNotice.packetCount === "number" && rawNotice.packetCount > 0) {
-                    if (rawNotice.packetCount > this.turns && this.turns > 0) {
-                        this.#settlePriorPlanTurn();
-                    }
-                    this.turns = Math.max(this.turns, rawNotice.packetCount);
-                } else if (rawNotice.status === 102 && this.turns === 0) {
-                    this.turns = 1;
-                }
-                if (rawNotice.status === 202) {
-                    this.#retireReasoning(frames);
-                    this.#promoteSurvivingStreams(this.turns, true);
-                    this.lastLoopStatus = null;
-                    this.lifecycle = "parked";
-                    this.doing = null;
-                    this.waitUntil = typeof rawNotice.waitUntil === "number" ? rawNotice.waitUntil : null;
-                    frames.push({
-                        kind: "status_update",
-                        status: this.buildStatusBar(),
-                    });
-                    return frames;
-                }
-                if (rawNotice.status === 100 || rawNotice.status === 102) {
-                    this.lastLoopStatus = null;
-                    this.waitUntil = null;
-                    this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
-                    this.doing =
-                        rawNotice.status === 102
-                            ? { phase: "working", since: Date.now(), op: null, target: null }
-                            : null;
-                    frames.push({
-                        kind: "status_update",
-                        status: this.buildStatusBar(),
-                    });
-                    return frames;
-                }
-            }
-
-            if (
-                rawNotice?.kind === "search_progress" ||
-                (typeof rawNotice?.source === "string" &&
-                    rawNotice.source.startsWith("exec:") &&
-                    typeof rawNotice.percent === "number")
-            ) {
-                const pct = typeof rawNotice.percent === "number" ? rawNotice.percent : undefined;
-                if (pct !== undefined && pct >= 100) {
-                    this.activity = null;
-                } else {
-                    this.activity = {
-                        phase: typeof rawNotice?.phase === "string" ? rawNotice.phase : "search",
-                        ...(pct !== undefined ? { percent: pct } : {}),
-                    };
-                }
-                frames.push({
-                    kind: "status_update",
-                    status: this.buildStatusBar(),
-                });
-                return frames;
-            }
 
             if (plurnkMeta?.problem !== undefined) {
                 this.disconnected = true;
@@ -2159,6 +2183,9 @@ export class SessionPresenter {
             const priorBaseOutputTokens = this.#turnBaseOutputTokens;
             const priorBaseCostUsd = this.#turnBaseCostUsd;
             this.ingestMeta(update._meta as MetaRecord | undefined);
+            if (this.#applyEngineNoticeMeta(update._meta, frames)) {
+                return frames;
+            }
             const metaLifecycle = (
                 update._meta as { plurnk?: { status?: { lifecycle?: unknown } } } | undefined
             )?.plurnk?.status?.lifecycle;

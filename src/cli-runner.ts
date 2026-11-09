@@ -433,7 +433,7 @@ export const openCliSession = async (
         if (replayHistory && !alreadyReplayedOnResume) {
             const resumed = await client.resumeSession(nextSession.sessionId, options.cwd, {
                 replayFrom: { type: "start" },
-                _meta: { plurnk: plurnkMeta },
+                _meta: { plurnk: { ...plurnkMeta, window: true } },
             });
             if (resumed.configOptions && resumed.configOptions.length > 0) {
                 nextSession.configOptions = [...resumed.configOptions];

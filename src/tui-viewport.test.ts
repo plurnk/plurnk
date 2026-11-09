@@ -13,7 +13,7 @@ import {
 import type { Terminal } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { AcpSession } from "./acp-session.ts";
-import type { CliCommonOptions } from "./cli-runner.ts";
+import { runCliPrompt, type CliCommonOptions } from "./cli-runner.ts";
 import Credential from "./credential.ts";
 import { extractPromptHistory } from "./repl-commands.ts";
 import { SessionPresenter } from "./session-presenter.ts";
@@ -2417,6 +2417,208 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
         assert.equal(surface.editor.getText(), "/model deepseek/deepseek-chat high");
     } finally {
         surface.stop();
+    }
+});
+
+test("{§cli-markdown-projection}: TuiSurface attaches loop summary aside to named voice [scoutproxy] header as well as 🐹", () => {
+    const writes: string[] = [];
+    const fakeTerm = {
+        start() {},
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            writes.push(data);
+        },
+        get columns() {
+            return 80;
+        },
+        get rows() {
+            return 24;
+        },
+        get kittyProtocolActive() {
+            return false;
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+    };
+    const surface = new TuiSurface(fakeTerm);
+    surface.start();
+    try {
+        surface.addResponse("[scoutproxy]\n  Reply to proxy", "1/1/1");
+        const attached = surface.archiveTurn("2 turns, 1.2s");
+        assert.equal(attached, true);
+    } finally {
+        surface.stop();
+    }
+});
+
+test("{§cli-markdown-projection} {§cli-rendering}: outside text never enters CLI stdout or --json response, and resource_link note bodies are fetched with OAuth headers", async () => {
+    let fetchedAuthHeader: string | undefined;
+    const agentApp = createAcpAgent({ name: "outside-and-resource-link-agent" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [],
+        }))
+        .onRequest(methods.agent.session.prompt, async (ctx) => {
+            await ctx.client.notify(methods.client.session.update, {
+                sessionId: ctx.params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "1/1/1",
+                    name: "note",
+                    title: "note",
+                    status: "completed",
+                    content: [
+                        {
+                            type: "content",
+                            content: {
+                                type: "resource_link",
+                                uri: `${baseUrl}/acp/1/user/entry?target=log%3A%2F%2F1%2F1%2F1`,
+                                name: "note",
+                                mimeType: "text/plain",
+                            },
+                        },
+                    ],
+                },
+            });
+            await ctx.client.notify(methods.client.session.update, {
+                sessionId: ctx.params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "outside-model-call-1",
+                    content: { type: "text", text: "Unfenced outside narration" },
+                    _meta: {
+                        plurnk: {
+                            outside: { modelCallId: 1 },
+                        },
+                    },
+                },
+            });
+            await ctx.client.notify(methods.client.session.update, {
+                sessionId: ctx.params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "1/1/2",
+                    content: { type: "text", text: "Delivered final answer" },
+                    _meta: {
+                        plurnk: {
+                            op: "done",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            await ctx.client.notify(methods.client.session.update, {
+                sessionId: ctx.params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { messageId: "m-1" };
+        });
+    const acpServer = new AcpServer({ agent: agentApp });
+    const acpHandler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => {
+        if (req.url === "/oauth/token") {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ access_token: "test-oauth-token", expires_in: 3600 }));
+            return;
+        }
+        if (req.url === "/acp/1/user/entry?target=log%3A%2F%2F1%2F1%2F1") {
+            fetchedAuthHeader = req.headers.authorization;
+            res.writeHead(200, { "content-type": "text/plain" });
+            res.end("Hydrated note body from HTTP entry route");
+            return;
+        }
+        acpHandler(req, res);
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", () => resolve()));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+    const baseUrl = `http://127.0.0.1:${String(addr.port)}`;
+
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    const eventsChunks: string[] = [];
+    const stdout = new PassThrough();
+    stdout.on("data", (c: Buffer) => stdoutChunks.push(c.toString("utf8")));
+    const stderr = new PassThrough();
+    stderr.on("data", (c: Buffer) => stderrChunks.push(c.toString("utf8")));
+    const events = new PassThrough();
+    events.on("data", (c: Buffer) => eventsChunks.push(c.toString("utf8")));
+
+    try {
+        const exitCode = await runCliPrompt(
+            "check outside",
+            {
+                url: `${baseUrl}/acp`,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port: addr.port,
+                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 2000,
+                cancelGraceMs: 500,
+                workspace: "alpha",
+                sessionId: "user",
+                tuiSession: "user",
+                yolo: true,
+                auto: false,
+                json: true,
+                repl: false,
+                statusStream: false,
+                previewLines: 5,
+                historyEntries: 10,
+                mermaidTimeoutMs: 2000,
+                color: "never",
+                bell: false,
+                cwd: "/tmp",
+                env: { PLURNK_SECRET: "test-secret" },
+            },
+            {
+                stdin: new PassThrough(),
+                stdout,
+                stderr,
+                events,
+                reasoning: new PassThrough(),
+            },
+        );
+        assert.equal(exitCode, 0);
+        assert.equal(fetchedAuthHeader, "Bearer test-oauth-token");
+        const parsedJson = JSON.parse(stdoutChunks.join("").trim()) as { response: string };
+        assert.equal(parsedJson.response, "Delivered final answer");
+        const eventLines = eventsChunks
+            .join("")
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((l: string) => JSON.parse(l) as Record<string, unknown>);
+        const noteEvent = eventLines.find((e: Record<string, unknown>) => e.sessionUpdate === "tool_call_update");
+        assert.ok(noteEvent !== undefined);
+        const presenter = new SessionPresenter();
+        const frames = presenter.apply(noteEvent as never);
+        const tcFrame = frames.find((f) => f.kind === "tool_call");
+        assert.ok(tcFrame !== undefined && tcFrame.kind === "tool_call");
+        assert.equal(tcFrame.noteBody, "Hydrated note body from HTTP entry route");
+    } finally {
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
 

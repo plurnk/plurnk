@@ -167,9 +167,21 @@ export const runReplSession = async (
         if (SessionUpdate.isAgentMessageChunk(update)) {
             flushReasoningNewline();
             writeEventJsonl(streams.events, update);
-            const text = contentBlockToText(update.content);
-            if (text.length > 0) {
-                streams.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+            const metaPlurnk = (
+                update._meta as
+                    | { plurnk?: { op?: unknown; outside?: unknown } }
+                    | undefined
+            )?.plurnk;
+            const isOutside =
+                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
+                metaPlurnk?.op === "outside-" ||
+                metaPlurnk?.outside !== undefined;
+            // {§cli-markdown-projection} — Outside text never enters CLI stdout.
+            if (!isOutside) {
+                const text = contentBlockToText(update.content);
+                if (text.length > 0) {
+                    streams.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+                }
             }
             return;
         }

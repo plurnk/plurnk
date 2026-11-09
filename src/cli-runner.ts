@@ -725,8 +725,15 @@ export const runCliPrompt = async (
 
             const stopReason = turnSettled ? (session.stopReason ?? "end_turn") : "error";
             const turnItems = session.items.slice(replayCount);
+            // {§cli-markdown-projection} — Outside text never enters CLI stdout or `--json` response.
             const agentMessages = turnItems
-                .filter((item): item is AcpMessageItem => item.kind === "agent_message")
+                .filter((item): item is AcpMessageItem => {
+                    if (item.kind !== "agent_message") return false;
+                    const p = (item.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+                    if (typeof item.id === "string" && item.id.startsWith("outside-")) return false;
+                    if (p?.op === "outside-" || p?.outside !== undefined) return false;
+                    return true;
+                })
                 .map((item) => item.text);
             const finalAnswer = agentMessages.at(-1) ?? "";
 

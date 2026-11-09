@@ -3,7 +3,10 @@
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
 import { createWebSocketStream, type WebSocketConstructor } from "@agentclientprotocol/sdk/experimental/ws-client";
 import {
+    ContentBlock,
     PROTOCOL_VERSION,
+    SessionUpdate,
+    ToolCallContent,
     client,
     methods,
     type ArchiveSessionResponse,
@@ -12,7 +15,6 @@ import {
     type CancelTerminalResponse,
     type CancelToolCallResponse,
     type ClientConnection,
-    type ContentBlock,
     type CreateElicitationRequest,
     type CreateElicitationResponse,
     type DeleteSessionResponse,
@@ -708,6 +710,150 @@ export class AcpClient {
         };
     }
 
+    async #fetchWithAuth(
+        input: Parameters<typeof globalThis.fetch>[0],
+        init?: Parameters<typeof globalThis.fetch>[1],
+    ): Promise<Response> {
+        const currentHeaders = await this.#resolveHeaders();
+        const merged = new Headers(init?.headers);
+        for (const [k, v] of Object.entries(currentHeaders)) {
+            if (!merged.has(k)) merged.set(k, v);
+        }
+        const res = await globalThis.fetch(input, { ...init, headers: merged });
+        if (res.status === 401 && this.#credential !== null) {
+            this.#credential.invalidate();
+            const refreshedHeaders = await this.#resolveHeaders();
+            if (
+                refreshedHeaders.authorization !== undefined &&
+                refreshedHeaders.authorization !== currentHeaders.authorization
+            ) {
+                void res.body?.cancel().catch(() => undefined);
+                const retryMerged = new Headers(init?.headers);
+                for (const [k, v] of Object.entries(refreshedHeaders)) {
+                    if (!retryMerged.has(k)) retryMerged.set(k, v);
+                }
+                return await globalThis.fetch(input, { ...init, headers: retryMerged });
+            }
+        }
+        return res;
+    }
+
+    async #fetchResourceLinkText(uri: string): Promise<string | null> {
+        let targetUrl: string;
+        try {
+            targetUrl = new URL(uri, this.#url).href;
+        } catch {
+            return null;
+        }
+        if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+            return null;
+        }
+        try {
+            const res = await this.#fetchWithAuth(targetUrl, { method: "GET" });
+            if (!res.ok) {
+                void res.body?.cancel().catch(() => undefined);
+                return null;
+            }
+            return await res.text();
+        } catch {
+            return null;
+        }
+    }
+
+    async #hydrateSessionUpdate(params: UpdateSessionNotification): Promise<UpdateSessionNotification> {
+        const update = params.update;
+        if (
+            SessionUpdate.isUserMessageChunk(update) ||
+            SessionUpdate.isAgentMessageChunk(update) ||
+            SessionUpdate.isAgentThoughtChunk(update)
+        ) {
+            if (ContentBlock.isResourceLink(update.content)) {
+                const fetched = await this.#fetchResourceLinkText(update.content.uri);
+                if (fetched !== null) {
+                    return {
+                        ...params,
+                        update: {
+                            ...update,
+                            content: { type: "text", text: fetched },
+                        },
+                    };
+                }
+            }
+            return params;
+        }
+        if (
+            SessionUpdate.isUserMessage(update) ||
+            SessionUpdate.isAgentMessage(update) ||
+            SessionUpdate.isAgentThought(update)
+        ) {
+            if (Array.isArray(update.content) && update.content.some((b) => ContentBlock.isResourceLink(b))) {
+                const hydratedBlocks: ContentBlock[] = [];
+                for (const block of update.content) {
+                    if (ContentBlock.isResourceLink(block)) {
+                        const fetched = await this.#fetchResourceLinkText(block.uri);
+                        if (fetched !== null) {
+                            hydratedBlocks.push({ type: "text", text: fetched });
+                            continue;
+                        }
+                    }
+                    hydratedBlocks.push(block);
+                }
+                return {
+                    ...params,
+                    update: {
+                        ...update,
+                        content: hydratedBlocks,
+                    },
+                };
+            }
+            return params;
+        }
+        if (SessionUpdate.isToolCallUpdate(update)) {
+            const metaOp = (update._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op;
+            const opName = (
+                typeof update.name === "string"
+                    ? update.name
+                    : typeof metaOp === "string"
+                      ? metaOp
+                      : ""
+            ).toLowerCase();
+            if (
+                (opName === "note" ||
+                    opName === "edit" ||
+                    opName === "work" ||
+                    opName === "fork" ||
+                    opName === "kill" ||
+                    opName === "send") &&
+                Array.isArray(update.content) &&
+                update.content.some((c) => ToolCallContent.isContent(c) && ContentBlock.isResourceLink(c.content))
+            ) {
+                const hydratedContent: ToolCallContent[] = [];
+                for (const item of update.content) {
+                    if (ToolCallContent.isContent(item) && ContentBlock.isResourceLink(item.content)) {
+                        const fetched = await this.#fetchResourceLinkText(item.content.uri);
+                        if (fetched !== null) {
+                            hydratedContent.push({
+                                ...item,
+                                content: { type: "text", text: fetched },
+                            });
+                            continue;
+                        }
+                    }
+                    hydratedContent.push(item);
+                }
+                return {
+                    ...params,
+                    update: {
+                        ...update,
+                        content: hydratedContent,
+                    },
+                };
+            }
+            return params;
+        }
+        return params;
+    }
+
     async connect(): Promise<InitializeResponse> {
         if (this.#connection !== null && !this.#connection.signal.aborted && this.#initResponse !== null) {
             return this.#initResponse;
@@ -718,10 +864,17 @@ export class AcpClient {
 
         const app = client({ name: this.#clientName });
 
-        app.onNotification(methods.client.session.update, async (ctx) => {
-            for (const listener of this.#updateListeners) {
-                await listener(ctx.params);
-            }
+        let updateChain = Promise.resolve();
+        app.onNotification(methods.client.session.update, (ctx) => {
+            updateChain = updateChain
+                .then(async () => {
+                    const hydrated = await this.#hydrateSessionUpdate(ctx.params);
+                    for (const listener of this.#updateListeners) {
+                        await listener(hydrated);
+                    }
+                })
+                .catch(() => undefined);
+            return updateChain;
         });
 
         app.onNotification(methods.client.auth.statusUpdate, async (ctx) => {
@@ -753,30 +906,7 @@ export class AcpClient {
                   headers: initialHeaders,
               })
             : createHttpStream(this.#url, {
-                  fetch: async (input, init) => {
-                      const currentHeaders = await this.#resolveHeaders();
-                      const merged = new Headers(init?.headers);
-                      for (const [k, v] of Object.entries(currentHeaders)) {
-                          if (!merged.has(k)) merged.set(k, v);
-                      }
-                      const res = await globalThis.fetch(input, { ...init, headers: merged });
-                      if (res.status === 401 && this.#credential !== null) {
-                          this.#credential.invalidate();
-                          const refreshedHeaders = await this.#resolveHeaders();
-                          if (
-                              refreshedHeaders.authorization !== undefined &&
-                              refreshedHeaders.authorization !== currentHeaders.authorization
-                          ) {
-                              void res.body?.cancel().catch(() => undefined);
-                              const retryMerged = new Headers(init?.headers);
-                              for (const [k, v] of Object.entries(refreshedHeaders)) {
-                                  if (!retryMerged.has(k)) retryMerged.set(k, v);
-                              }
-                              return await globalThis.fetch(input, { ...init, headers: retryMerged });
-                          }
-                      }
-                      return res;
-                  },
+                  fetch: async (input, init) => this.#fetchWithAuth(input, init),
               });
 
         const conn = app.connect(stream);

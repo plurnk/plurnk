@@ -1529,9 +1529,14 @@ export class SessionPresenter {
             const count = receiptCountFor(opName, rawOutput);
 
             const receiptLines: string[] = [];
+            const textReceiptLines: string[] = [];
             for (const c of update.content ?? []) {
                 if (ToolCallContent.isContent(c)) {
-                    receiptLines.push(contentBlockToText(c.content));
+                    const txt = contentBlockToText(c.content);
+                    receiptLines.push(txt);
+                    if (!ContentBlock.isResourceLink(c.content)) {
+                        textReceiptLines.push(txt);
+                    }
                 } else if (ToolCallContent.isDiff(c) && typeof c.patch?.text === "string") {
                     receiptLines.push(c.patch.text);
                 }
@@ -1542,6 +1547,8 @@ export class SessionPresenter {
             if (opName === "note") {
                 if (authoredBody !== null) {
                     noteBody = authoredBody;
+                } else if (textReceiptLines.length > 0) {
+                    noteBody = textReceiptLines.join("\n");
                 } else if (receiptLines.length > 0) {
                     noteBody = receiptLines.join("\n");
                 } else {
@@ -1553,14 +1560,16 @@ export class SessionPresenter {
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
+            const previewBody =
+                authoredBody ?? (textReceiptLines.length > 0 ? textReceiptLines.join("\n") : null);
             const contentLines: string[] = [];
             if (
                 !isRuntimeExec &&
                 !NO_PREVIEW_VERBS.has(opName) &&
-                authoredBody !== null &&
-                authoredBody.trim().length > 0
+                previewBody !== null &&
+                previewBody.trim().length > 0
             ) {
-                contentLines.push(authoredBody);
+                contentLines.push(previewBody);
             }
 
             const outputLines: string[] = [];

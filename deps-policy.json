@@ -13,9 +13,9 @@
         {
             "name": "@agentclientprotocol/sdk",
             "requirement": "caret",
-            "resolved": "2.4.0",
-            "verifiedLatest": "2.4.0",
-            "verifiedAt": "2026-11-02",
+            "resolved": "2.5.0",
+            "verifiedLatest": "2.5.0",
+            "verifiedAt": "2026-11-09",
             "maxLag": "any version",
             "budgetDays": 14,
             "why": "ACP v2 draft; wire/API may change incompatibly in any release"

@@ -106,7 +106,7 @@ test("{§cli-conformance} deps:drift enforces the verification age budget, regis
     const withinBudgetNow = Date.parse("2026-11-10T00:00:00Z");
     assert.deepEqual(evaluateDriftAge(policy, withinBudgetNow), []);
 
-    const expiredNow = Date.parse("2026-11-20T00:00:00Z");
+    const expiredNow = Date.parse("2026-11-25T00:00:00Z");
     const ageViolations = evaluateDriftAge(policy, expiredNow);
     assert.equal(ageViolations.length, 2);
     assert.ok(ageViolations[0].includes("budget: 14d"));

@@ -234,8 +234,29 @@ export const runReplSession = async (
         }
 
         if (SessionUpdate.isStateUpdate(update)) {
-            if (update.state === "running") {
-                currentLifecycle = "running";
+            const rawNotice = (
+                update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
+            )?.plurnk?.notice;
+            if (
+                rawNotice?.kind === "turn_generated" ||
+                rawNotice?.kind === "turn_awaiting_model" ||
+                rawNotice?.kind === "loop_status"
+            ) {
+                flushReasoningNewline();
+            }
+            if (rawNotice?.kind === "loop_status") {
+                if (rawNotice.status === 202) {
+                    currentLifecycle = "parked";
+                } else if (rawNotice.status === 102) {
+                    currentLifecycle = "running";
+                } else if (rawNotice.status === 100) {
+                    currentLifecycle = "queued";
+                }
+            } else if (update.state === "running") {
+                const metaLifecycle = (
+                    update._meta as { plurnk?: { status?: { lifecycle?: unknown } } } | undefined
+                )?.plurnk?.status?.lifecycle;
+                currentLifecycle = metaLifecycle === "parked" ? "parked" : "running";
             } else if (update.state === "requires_action") {
                 currentLifecycle = "parked";
             } else if (update.state === "idle") {

@@ -1,5 +1,18 @@
 # @plurnk/plurnk
 
+## 6.0.0
+
+### Upgrade
+
+Upgrade this client and `@plurnk/plurnk-service` together to `6.0.0`.
+
+- Handle ACP v2 `_plurnk_telemetry` notifications (`kind: "notice"` and `kind: "state"`), parse `workspaceName#sessionName` composite session identifiers directly from `sessionId` when `_meta.plurnk` is omitted, and opt into windowed session resume (#252).
+- Add `--debug-no-meta` (`PLURNK_CLIENT_DEBUG_NO_META`) to strip `_meta.plurnk` from inbound ACP notifications for pure ACP v2 fallback verification, and upgrade `@agentclientprotocol/sdk` to `^2.5.0` and `@earendil-works/pi-tui` to `1.5.1` (#252, https://repo.possumtech.com/plurnk/plurnk-service/issues/1439).
+- Render named voice labels on prompts and replies, hydrate `resource_link` reply bodies when inline text is omitted, and route outside-of-operation prose via `agent_thought_chunk` to stderr stream `4` / TUI `💭` instead of stdout (#252).
+- Render ACP v2 multi-select (`multiple: true`) and titled question options (`Option { id, title, label }`) in interactive review cards (#250).
+- Deduplicate `engine:configuration` startup notices across session resume and live updates while preserving distinct action and provider notices (#251).
+- Retire the stream `lifetime` field from client status fixtures (#249).
+
 ## 5.3.0
 
 - Lowercase operation names across the presenter, viewport, and specs, render newly opened plan items with `🚧` while ignoring completed items, and implement `plurnk login` / `plurnk logout`, `PLURNK_CLIENT_CANCEL_GRACE_SECONDS`, `SIGINT`/`SIGTERM` cancellation, and unified family commands (#247).

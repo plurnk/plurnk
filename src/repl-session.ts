@@ -490,6 +490,7 @@ export const runReplSession = async (
             client,
             {
                 ...options,
+                interactive: !options.auto,
                 ...(workspaceName !== undefined ? { workspace: workspaceName } : {}),
                 sessionId: sessionName,
                 model: bindOpts?.initial ? options.model : undefined,
@@ -1518,14 +1519,24 @@ export const runReplSession = async (
         if (line.startsWith("...")) {
             const injected = line.slice(3).trimStart();
             if (injected.length === 0) return "continue";
-            void client.prompt(session.sessionId, [{ type: "text", text: injected }]).catch((err) => {
-                writeErrorJsonl(streams.stderr, {
-                    type: "https://problems.plurnk.xyz/client/prompt-failed",
-                    title: "Prompt failed",
-                    status: 500,
-                    detail: err instanceof Error ? err.message : String(err),
+            void client
+                .prompt(session.sessionId, [{ type: "text", text: injected }], {
+                    plurnk: {
+                        interactive: !options.auto,
+                        tools: !options.auto ? ["question", "mcp_input_required"] : [],
+                        descendants: true,
+                        control: true,
+                        ...(options.auto ? { envelope: { auto: true } } : {}),
+                    },
+                })
+                .catch((err) => {
+                    writeErrorJsonl(streams.stderr, {
+                        type: "https://problems.plurnk.xyz/client/prompt-failed",
+                        title: "Prompt failed",
+                        status: 500,
+                        detail: err instanceof Error ? err.message : String(err),
+                    });
                 });
-            });
             return "continue";
         }
 
@@ -1549,6 +1560,10 @@ export const runReplSession = async (
         void client
             .prompt(session.sessionId, [{ type: "text", text: promptText }], {
                 plurnk: {
+                    interactive: !options.auto,
+                    tools: !options.auto ? ["question", "mcp_input_required"] : [],
+                    descendants: true,
+                    control: true,
                     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     ...(options.auto ? { envelope: { auto: true } } : {}),
                     ...(openPaths.length > 0 ? { openPaths } : {}),

@@ -22,6 +22,7 @@ import {
 import { AcpSession, type AcpMessageItem, type AcpPlanState } from "./acp-session.ts";
 import { runCliConfig } from "./cli-subcommands.ts";
 import Credential from "./credential.ts";
+import { SessionPresenter } from "./session-presenter.ts";
 
 test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with replayFrom start and AcpSession idempotently materializes missed turns without duplicating prior ones", async () => {
     const sseResponses = new Set<http.ServerResponse>();
@@ -772,6 +773,107 @@ test("{§cli-invocation} {§cli-conformance}: scrubAcpMeta and AcpClient debugNo
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-conformance} {§cli-rendering}: AcpClient.sessionOptions queries pre-session options and SessionPresenter handles ToolCallContent.isSession (#256)", async () => {
+    const receivedRequests: Array<{ cwd: string; sessionId?: string }> = [];
+
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    options: {},
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.options, async ({ params }) => {
+            receivedRequests.push({
+                cwd: params.cwd,
+                ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
+            });
+            return {
+                configOptions: [
+                    {
+                        configId: "mode",
+                        name: "Mode",
+                        category: "mode",
+                        type: "select",
+                        currentValue: "default",
+                        options: [
+                            { value: "default", name: "Default" },
+                            { value: "plan", name: "Plan" },
+                        ],
+                    },
+                ],
+                availableCommands: [{ type: "command", name: "help", description: "Help" }],
+            };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        token: "test-token",
+    });
+
+    try {
+        const init = await client.connect();
+        assert.deepEqual(init.capabilities?.session?.options, {});
+
+        const preOpts = await client.sessionOptions("/tmp/ws");
+        assert.equal(preOpts.configOptions?.length, 1);
+        assert.equal(preOpts.configOptions?.[0]?.configId, "mode");
+        assert.equal(preOpts.availableCommands?.[0]?.name, "help");
+
+        const existingOpts = await client.sessionOptions("/tmp/ws", { sessionId: "1#user" });
+        assert.equal(existingOpts.configOptions?.[0]?.configId, "mode");
+        assert.deepEqual(receivedRequests, [
+            { cwd: "/tmp/ws" },
+            { cwd: "/tmp/ws", sessionId: "1#user" },
+        ]);
+
+        const session = new AcpSession("1#user");
+        const presenter = new SessionPresenter({
+            workspaceName: "ws",
+            sessionName: "user",
+            model: "fast",
+            yolo: false,
+        });
+        const sessionToolUpdate = {
+            sessionUpdate: "tool_call_update" as const,
+            toolCallId: "1/1/1",
+            title: "work worker",
+            status: "completed" as const,
+            content: [{ type: "session" as const, sessionId: "1#worker" }],
+            _meta: { plurnk: { op: "note" } },
+        };
+        session.applyUpdate(sessionToolUpdate);
+        assert.equal(session.items[0]?.kind, "tool_call");
+        if (session.items[0]?.kind === "tool_call") {
+            assert.deepEqual(session.items[0].content, [{ type: "session", sessionId: "1#worker" }]);
+        }
+
+        const frames = presenter.apply(sessionToolUpdate);
+        const opFrame = frames.find((f) => f.kind === "tool_call");
+        assert.ok(opFrame && opFrame.kind === "tool_call");
+        assert.equal(opFrame.noteBody, "[session] 1#worker");
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
 
 
 

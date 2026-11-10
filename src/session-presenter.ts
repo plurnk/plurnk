@@ -54,6 +54,7 @@ export const TOOL_CALL_CONTENT_GUARDS = {
     isContent: true,
     isDiff: true,
     isTerminal: true,
+    isSession: true,
     isCustom: true,
 } as const satisfies Record<keyof typeof ToolCallContent, true>;
 
@@ -1828,6 +1829,8 @@ export class SessionPresenter {
                     }
                 } else if (ToolCallContent.isDiff(c) && typeof c.patch?.text === "string") {
                     receiptLines.push(c.patch.text);
+                } else if (ToolCallContent.isSession(c)) {
+                    receiptLines.push(`[session] ${c.sessionId}`);
                 }
             }
 

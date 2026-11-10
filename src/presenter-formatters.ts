@@ -172,6 +172,29 @@ export const extractScopeToken = (lineMarker: unknown): string | null => {
     return tokens.length > 0 ? `<${tokens.map(String).join(",")}>` : null;
 };
 
+const SCRIPT_OPS = new Set(["sh", "js", "python3"]);
+
+export const extractToolFields = (
+    op: string,
+    rawInput: Record<string, unknown> | undefined,
+): string | null => {
+    if (op in OPERATION_GLYPH_MAP || SCRIPT_OPS.has(op) || !rawInput) return null;
+    const rawBody = extractRawString(rawInput.body);
+    let parsed: unknown = null;
+    if (rawBody !== null) {
+        try {
+            parsed = JSON.parse(rawBody);
+        } catch {
+            return null;
+        }
+    } else if (rawInput.body && typeof rawInput.body === "object" && !Array.isArray(rawInput.body)) {
+        parsed = rawInput.body;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const keys = Object.keys(parsed);
+    return keys.length > 0 ? `{${keys.join(",")}}` : null;
+};
+
 export const spanLength = (span: unknown): number | null => {
     if (!Array.isArray(span) || span.length !== 2) return null;
     const [start, end] = span;

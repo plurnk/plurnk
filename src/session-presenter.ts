@@ -70,6 +70,7 @@ import {
     extractScopeToken,
     extractTitleAside,
     extractTitleTarget,
+    extractToolFields,
     formatActiveOperationLead,
     formatDuration,
     formatLiveWait,
@@ -93,6 +94,7 @@ export {
     extractScopeToken,
     extractTitleAside,
     extractTitleTarget,
+    extractToolFields,
     formatActiveOperationLead,
     formatDuration,
     formatLiveWait,
@@ -191,6 +193,7 @@ export type PresentationFrame =
           readonly scope: string | null;
           readonly destination: string | null;
           readonly pattern: string | null;
+          readonly fields?: string | null;
           readonly count: number | null;
           readonly aside: string | null;
           readonly noteBody: string | null;
@@ -1781,6 +1784,7 @@ export class SessionPresenter {
                     scope: null,
                     destination: null,
                     pattern: null,
+                    fields: null,
                     count: null,
                     aside: null,
                     noteBody: null,
@@ -1810,6 +1814,7 @@ export class SessionPresenter {
                     : null;
             const pattern =
                 extractRawString(rawInput?.matcher) ?? extractRawString(rawInput?.pattern);
+            const fields = extractToolFields(opName, rawInput);
             const count = receiptCountFor(opName, rawOutput);
 
             const receiptLines: string[] = [];
@@ -1950,6 +1955,7 @@ export class SessionPresenter {
                 scope,
                 destination,
                 pattern,
+                fields,
                 count,
                 aside,
                 noteBody,

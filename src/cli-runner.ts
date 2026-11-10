@@ -116,6 +116,7 @@ export interface CliCommonOptions {
     readonly bell: boolean;
     readonly json: boolean;
     readonly repl?: boolean;
+    readonly interactive?: boolean;
     readonly debugNoMeta?: boolean;
     readonly shareFolder?: string;
     readonly previewLines: number;
@@ -382,8 +383,13 @@ export const openCliSession = async (
             qualifiedPrefix !== undefined && !/^\d+$/u.test(qualifiedPrefix)
                 ? qualifiedPrefix
                 : undefined;
+        const attended = options.interactive === true && !options.auto;
         const plurnkMeta: Record<string, unknown> = {
             create: true,
+            interactive: attended,
+            tools: attended ? ["question", "mcp_input_required"] : [],
+            descendants: true,
+            control: true,
             ...(options.workspace !== undefined
                 ? { workspace: options.workspace }
                 : resolvedWorkspaceId !== undefined
@@ -728,6 +734,10 @@ export const runCliPrompt = async (
         try {
             const promptMeta: Record<string, unknown> = {
                 plurnk: {
+                    interactive: false,
+                    tools: [],
+                    descendants: true,
+                    control: true,
                     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     ...(options.auto ? { envelope: { auto: true } } : {}),
                 },

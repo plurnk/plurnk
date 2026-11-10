@@ -999,9 +999,13 @@ export class AcpClient {
                     version: this.#clientVersion,
                 },
                 capabilities: {
-                    elicitation: {
-                        form: {},
-                    },
+                    ...(this.#elicitationHandler !== undefined
+                        ? {
+                              elicitation: {
+                                  form: {},
+                              },
+                          }
+                        : {}),
                 },
             });
             this.#initResponse = initRes;

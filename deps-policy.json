@@ -3,9 +3,9 @@
         {
             "name": "@earendil-works/pi-tui",
             "requirement": "exact",
-            "resolved": "1.5.1",
-            "verifiedLatest": "1.5.1",
-            "verifiedAt": "2026-11-09",
+            "resolved": "1.5.2",
+            "verifiedLatest": "1.5.2",
+            "verifiedAt": "2026-11-10",
             "maxLag": "0 minors",
             "budgetDays": 14,
             "why": "whole terminal interaction layer; ~5 minors/3 weeks; no shipped changelog; native prebuilds"
@@ -15,7 +15,7 @@
             "requirement": "caret",
             "resolved": "2.5.0",
             "verifiedLatest": "2.5.0",
-            "verifiedAt": "2026-11-09",
+            "verifiedAt": "2026-11-10",
             "maxLag": "any version",
             "budgetDays": 14,
             "why": "ACP v2 draft; wire/API may change incompatibly in any release"

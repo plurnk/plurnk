@@ -53,7 +53,6 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | `--history-entries <n>` | string | Non-negative recent entry count restored on TUI/REPL attach; `0` disables history (`PLURNK_CLIENT_HISTORY_ENTRIES`). |
 | `--color <when>` | string | `always`, `auto`, or `never` (`PLURNK_CLIENT_COLOR`). |
 | `--timeout <s>` | string | Cancel prompt loop via `session/cancel` after `<s>` seconds; CLI exits `3` with `"timedOut": true` (`PLURNK_CLIENT_TIMEOUT`). |
-| `--status-stream` | flag | Print one greppable accounting row per turn on `stderr` (`PLURNK_CLIENT_STATUS_STREAM`). |
 | `--share <folder>` | string | Write unredacted `workspace.share` into `<folder>` (`~/` expanded, refuses overwrite) when prompt/session ends; `/share <folder>` mid-session (`PLURNK_CLIENT_SHARE`). |
 | `--files-items <n>` | string | Create-time turn-0 tracked-file preview: `-1` full, `0` off, `N` first-N (`PLURNK_CLIENT_FILES_ITEMS`). |
 | `--max-commands <n>` | string | Create-time positive integer tightening workspace operation ceiling (`PLURNK_CLIENT_MAX_COMMANDS`). |

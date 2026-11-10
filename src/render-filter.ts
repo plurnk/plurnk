@@ -3,8 +3,6 @@
 
 import stringWidth from "string-width";
 
-const DEFAULT_WIDTH = 60;
-
 // ─── Inline Markdown → plain text ───────────────────────────────────────────
 
 const stripInline = (text: string): string => {
@@ -194,7 +192,7 @@ const wrapLine = (text: string, width: number, indent = ""): string[] => {
 
 // ─── Main projection ───────────────────────────────────────────────────────
 
-export const renderMarkdown = (markdown: string, width: number = DEFAULT_WIDTH): string => {
+export const renderMarkdown = (markdown: string, width: number): string => {
     const blocks = parseBlocks(markdown);
     const out: string[] = [];
 

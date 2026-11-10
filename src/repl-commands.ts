@@ -551,8 +551,8 @@ export const executeFamilyCommand = async (
         if (callbackUrl !== undefined) {
             result = await complete(callbackUrl);
         } else {
-            const timeoutMs = io.oauthTimeoutMs ?? 300_000;
-            if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+            const timeoutMs = io.oauthTimeoutMs;
+            if (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0) {
                 throw new TypeError(
                     `Invalid PLURNK_CLIENT_OAUTH_TIMEOUT_MS '${String(timeoutMs)}': must be a positive integer.`,
                 );

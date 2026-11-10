@@ -66,7 +66,6 @@ export const CLIENT_OPTIONS = {
     "mermaid-timeout-ms": { type: "string" },
     color: { type: "string" },
     "max-commands": { type: "string" },
-    "status-stream": { type: "boolean" },
     share: { type: "string" },
     "no-git": { type: "boolean" },
     "debug-no-meta": { type: "boolean" },
@@ -219,7 +218,6 @@ options:
                           PLURNK_CLIENT_COLOR; always/never override color env preferences.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
-      --status-stream     also print one greppable accounting row per turn on stderr.
       --share <folder>    when the prompt or session ends, write the workspace's share for
                           a bug report into <folder>, unredacted. A leading ~/
                           expands; a relative folder is this directory's. Overrides
@@ -373,7 +371,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 token !== "--auto" &&
                 token !== "--bell" &&
                 token !== "--repl" &&
-                token !== "--status-stream" &&
                 token !== "--no-git" &&
                 token !== "--debug-no-meta" &&
                 token !== "--all"
@@ -599,7 +596,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const bell = parsed.values.bell === true || isTruthyEnv(env.PLURNK_CLIENT_BELL);
     const repl = parsed.values.repl === true || isTruthyEnv(env.PLURNK_CLIENT_REPL);
     const json = parsed.values.json === true || isTruthyEnv(env.PLURNK_CLIENT_JSON);
-    const statusStream = parsed.values["status-stream"] === true || isTruthyEnv(env.PLURNK_CLIENT_STATUS_STREAM);
     const debugNoMeta =
         typeof parsed.values["debug-no-meta"] === "boolean"
             ? parsed.values["debug-no-meta"]
@@ -677,7 +673,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         bell,
         repl,
         json,
-        statusStream,
         debugNoMeta,
         ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
         previewLines,

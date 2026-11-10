@@ -116,7 +116,6 @@ export interface CliCommonOptions {
     readonly bell: boolean;
     readonly json: boolean;
     readonly repl?: boolean;
-    readonly statusStream: boolean;
     readonly debugNoMeta?: boolean;
     readonly shareFolder?: string;
     readonly previewLines: number;
@@ -127,6 +126,8 @@ export interface CliCommonOptions {
 
 const isLoopbackHost = (host: string): boolean =>
     host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+
+const DAEMON_POLL_MS = 100;
 
 const resolveServiceCommand = (serviceBin?: string): { readonly file: string; readonly args: string[] } => {
     if (serviceBin !== undefined && serviceBin.trim().length > 0) {
@@ -246,7 +247,7 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
     const deadline = Date.now() + options.daemonTimeoutMs;
     let lastError: unknown;
     while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, DAEMON_POLL_MS));
         try {
             await client.connect();
             return;

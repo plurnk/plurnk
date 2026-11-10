@@ -17,7 +17,7 @@ export interface StoredGrant {
 }
 
 export interface CredentialLoginOptions {
-    readonly signal?: AbortSignal;
+    readonly signal: AbortSignal;
     readonly write?: (message: string) => void;
     readonly openBrowser?: (url: string) => Promise<void>;
     readonly redirectUrl?: string;
@@ -283,9 +283,9 @@ export default class Credential {
         return null;
     }
 
-    async login(acpUrl: string, options?: CredentialLoginOptions): Promise<StoredGrant> {
+    async login(acpUrl: string, options: CredentialLoginOptions): Promise<StoredGrant> {
         const origin = toHttpOrigin(acpUrl);
-        const endpoints = await discoverEndpoints(origin, options?.signal);
+        const endpoints = await discoverEndpoints(origin, options.signal);
         const codeVerifier = randomBytes(32).toString("base64url");
         const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
         const state = randomBytes(24).toString("base64url");
@@ -296,7 +296,7 @@ export default class Credential {
 
         await receiveAuthorization(
             {
-                ...(options?.redirectUrl !== undefined ? { redirectUrl: options.redirectUrl } : {}),
+                ...(options.redirectUrl !== undefined ? { redirectUrl: options.redirectUrl } : {}),
                 begin: async (boundRedirectUrl) => {
                     activeRedirectUri = boundRedirectUrl;
                     const regRes = await fetch(endpoints.registrationEndpoint, {
@@ -313,7 +313,7 @@ export default class Credential {
                             response_types: ["code"],
                             scope: "acp",
                         }),
-                        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+                        signal: options.signal,
                     });
                     if (!regRes.ok) {
                         let detail = `OAuth client registration failed (${regRes.status}).`;
@@ -371,7 +371,7 @@ export default class Credential {
                         accept: "application/json",
                     },
                     body: tokenBody.toString(),
-                    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+                    signal: options.signal,
                 });
                 if (!tokenRes.ok) {
                     let detail = `OAuth token exchange failed (${tokenRes.status}).`;
@@ -417,9 +417,9 @@ export default class Credential {
                 return { status: 200, alias: "plurnk" };
             },
             {
-                signal: options?.signal ?? AbortSignal.timeout(300_000),
-                write: options?.write ?? ((msg) => process.stderr.write(msg)),
-                ...(options?.openBrowser !== undefined ? { openBrowser: options.openBrowser } : {}),
+                signal: options.signal,
+                write: options.write ?? ((msg) => process.stderr.write(msg)),
+                ...(options.openBrowser !== undefined ? { openBrowser: options.openBrowser } : {}),
             },
         );
 

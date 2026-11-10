@@ -1417,9 +1417,8 @@ export const runReplSession = async (
                 }
 
                 if (cmd === "login") {
-                    const timeoutMs = options.oauthTimeoutMs > 0 ? options.oauthTimeoutMs : 300_000;
                     const grant = await options.credential.login(options.url, {
-                        signal: AbortSignal.timeout(timeoutMs),
+                        signal: AbortSignal.timeout(options.oauthTimeoutMs),
                         write: (message) => streams.stdout.write(message),
                     });
                     streams.stdout.write(`authorized: ${grant.issuer} (${options.credential.grantsPath()})\n`);

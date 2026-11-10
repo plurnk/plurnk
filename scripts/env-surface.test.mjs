@@ -48,6 +48,15 @@ const ARGUMENTS = new Map([
     ["width", "an argument of `render`"],
 ]);
 
+// Numeric constants whose names confess duration, size, count, or pacing, and why each is mechanism.
+const CONFESSING = /(?:^|_)(?:MS|SEC|SECONDS|MINUTES|TIMEOUT|DEADLINE|INTERVAL|TTL|GRACE|DELAY|BACKOFF|RETRY|RETRIES|ATTEMPTS|ROUNDS|LIMIT|MAX|MAXIMUM|MIN|MINIMUM|FLOOR|CEILING|CAP|BYTES|SIZE|LINES|CHARS|CODEPOINTS|POINTS|ITEMS|SAMPLE|SAMPLES|PREVIEW|WIDTH|DEPTH|PASSES|FRACTION|MARGIN|TOKENS|PATHS|CONCURRENCY|WINDOW|PAGE)(?:_|$)/u;
+const NUMERIC_CONSTANT = /\b(?:const|static(?:\s+readonly)?)\s+#?([A-Z][A-Z0-9_]*)\s*(?::[^=\n]+)?=\s*-?(?:0x[0-9a-fA-F_]+|\d[\d_]*(?:\.\d+)?)n?(?:\s*\*\s*\d[\d_]*)*\s*;/gu;
+const TIMER_LITERAL = /\b(?:setTimeout|setInterval|delay|sleep|AbortSignal\.timeout)\s*\([^()\n]*?\b\d[\d_]+\s*[,)]/gu;
+const MECHANISM = new Map([
+    ["src/runtime-floor.ts:NODE_MAJOR_FLOOR", "package.json engines.node floor"],
+    ["src/cli-runner.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
+]);
+
 const tracked = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src"], { cwd: ROOT, encoding: "utf8" })
     .split("\0").filter((name) => /\.ts$/u.test(name) && !/\.test\.ts$/u.test(name));
 const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "").replace(/([^:"'`])\/\/.*$/gmu, "$1");
@@ -110,4 +119,31 @@ test("[{§cli-invocation}] a key shared with the daemon is declared by the packa
     assert.deepEqual(SHARED.filter((key) => !declaredThere.has(key)), [], `not declared by @plurnk/plurnk-contracts: ${SHARED_DEFAULTS_PATH}`);
     const floor = parseDefaults(shared);
     for (const key of ["PLURNK_HOST", "PLURNK_PORT"]) assert.ok(floor[key]?.length > 0, `${key} is live on the shared panel, so a client with nothing set still knows where to dial`);
+});
+
+test("[{§cli-invocation}] no DEFAULT_* constants, bare timer literals, or unregistered confessing numeric constants in src/", () => {
+    const defaultConsts = [];
+    const timerLiterals = [];
+    const unregistered = [];
+    const seenMechanism = new Set();
+    for (const { name, code } of sources) {
+        for (const match of code.matchAll(/\b(?:const|let)\s+(DEFAULT_[A-Z0-9_]+)\s*(?::[^=\n]+)?=/gu)) {
+            defaultConsts.push(`${name}:${match[1]}`);
+        }
+        for (const match of code.matchAll(TIMER_LITERAL)) {
+            timerLiterals.push(`${name}:${match[0].trim()}`);
+        }
+        for (const match of code.matchAll(NUMERIC_CONSTANT)) {
+            const constName = match[1];
+            if (!CONFESSING.test(constName)) continue;
+            const id = `${name}:${constName}`;
+            seenMechanism.add(id);
+            if (!MECHANISM.has(id)) unregistered.push(id);
+        }
+    }
+    const staleMechanism = [...MECHANISM.keys()].filter((id) => !seenMechanism.has(id));
+    assert.deepEqual(defaultConsts, [], `DEFAULT_* constants in src/: ${defaultConsts.join(", ")}`);
+    assert.deepEqual(timerLiterals, [], `bare timer literals in src/: ${timerLiterals.join(", ")}`);
+    assert.deepEqual(unregistered, [], `unregistered confessing numeric constants in src/: ${unregistered.join(", ")}`);
+    assert.deepEqual(staleMechanism, [], `stale MECHANISM entries: ${staleMechanism.join(", ")}`);
 });

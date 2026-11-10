@@ -12,6 +12,7 @@ Upgrade this client and `@plurnk/plurnk-service` together to `6.0.0`.
 - Render ACP v2 multi-select (`multiple: true`) and titled question options (`Option { id, title, label }`) in interactive review cards (#250).
 - Deduplicate `engine:configuration` startup notices across session resume and live updates while preserving distinct action and provider notices (#251).
 - Retire the stream `lifetime` field from client status fixtures (#249).
+- Retire the unread `PLURNK_CLIENT_STATUS_STREAM` (`--status-stream`) knob, remove inline magic-number defaults (`DEFAULT_WIDTH` and `300_000` OAuth fallbacks), and enforce zero `DEFAULT_*` constants, bare timer literals, or unregistered confessing numeric constants in `scripts/env-surface.test.mjs` (https://repo.possumtech.com/plurnk/plurnk-service/issues/1441).
 
 ## 5.3.0
 

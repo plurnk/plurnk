@@ -32,7 +32,6 @@ const makeOptions = (url: string, overrides?: Partial<CliCommonOptions>): CliCom
     auto: false,
     bell: false,
     json: true,
-    statusStream: false,
     previewLines: 10,
     historyEntries: 0,
     mermaidTimeoutMs: 1000,

@@ -648,9 +648,8 @@ export const runCliFamily = async (
 };
 
 export const runCliLogin = async (options: CliCommonOptions): Promise<number> => {
-    const timeoutMs = options.oauthTimeoutMs > 0 ? options.oauthTimeoutMs : 300_000;
     const grant = await options.credential.login(options.url, {
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(options.oauthTimeoutMs),
         write: (message) => (options.json ? process.stderr : process.stdout).write(message),
     });
     if (options.json) {

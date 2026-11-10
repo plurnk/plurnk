@@ -604,7 +604,6 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
         auto: false,
         bell: false,
         json: false,
-        statusStream: false,
         previewLines: 5,
         historyEntries: 20,
         mermaidTimeoutMs: 500,

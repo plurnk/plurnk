@@ -464,6 +464,10 @@
         "posture": "native",
         "evidence": ["src/acp-client.ts — AcpClient.sessionStatus"]
       },
+      "session/options": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.sessionOptions"]
+      },
       "session/set_title": {
         "posture": "native",
         "evidence": ["src/acp-client.ts — AcpClient.setSessionTitle"]

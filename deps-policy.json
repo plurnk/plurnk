@@ -13,8 +13,8 @@
         {
             "name": "@agentclientprotocol/sdk",
             "requirement": "caret",
-            "resolved": "2.5.0",
-            "verifiedLatest": "2.5.0",
+            "resolved": "2.6.0",
+            "verifiedLatest": "2.6.0",
             "verifiedAt": "2026-11-10",
             "maxLag": "any version",
             "budgetDays": 14,

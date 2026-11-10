@@ -31,6 +31,8 @@ import {
     type ResumeSessionRequest,
     type ResumeSessionResponse,
     type SessionConfigValueId,
+    type SessionOptionsRequest,
+    type SessionOptionsResponse,
     type SessionStatusResponse,
     type SetSessionConfigOptionResponse,
     type SetSessionTitleResponse,
@@ -1173,6 +1175,18 @@ export class AcpClient {
     async sessionStatus(sessionId: string): Promise<SessionStatusResponse> {
         return await this.#withAutoReconnect((conn) =>
             conn.agent.request(methods.agent.session.status, { sessionId }),
+        );
+    }
+
+    async sessionOptions(
+        cwd: string,
+        extra?: Omit<SessionOptionsRequest, "cwd">,
+    ): Promise<SessionOptionsResponse> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.options, {
+                cwd,
+                ...extra,
+            }),
         );
     }
 

@@ -131,6 +131,8 @@ export const runCliResumeSession = async (
                             process.stdout.write(`  ${contentBlockToText(c.content)}\n`);
                         } else if (ToolCallContent.isDiff(c)) {
                             process.stdout.write(`  [diff]\n`);
+                        } else if (ToolCallContent.isSession(c)) {
+                            process.stdout.write(`  [session] ${c.sessionId}\n`);
                         }
                     }
                     break;

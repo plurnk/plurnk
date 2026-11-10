@@ -254,11 +254,13 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     if (execDone[0]?.kind === "tool_call") {
         assert.deepEqual(execDone[0].contentLines, []);
         assert.deepEqual(execDone[0].outputLines, []);
+        assert.equal(execDone[0].fields, "{query}");
         const renderedExec = renderOperationBlock({
             glyph: execDone[0].glyph,
             op: execDone[0].op,
             target: execDone[0].target,
             scope: execDone[0].scope,
+            fields: execDone[0].fields,
             aside: execDone[0].aside,
             count: execDone[0].count,
             outcome: execDone[0].outcome,
@@ -270,7 +272,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         });
         assert.doesNotMatch(renderedExec, /\{"query":"weather"\}/u);
         assert.doesNotMatch(renderedExec, /Result line 1/u);
-        assert.match(renderedExec, /⚙️\s+brave\s+\(brave_web_search\)/u);
+        assert.match(renderedExec, /⚙️\s+brave\s+\(brave_web_search\)\s+\{query\}/u);
         assert.equal(renderedExec.includes("\n"), false);
     }
     const shDone = presenter.apply({

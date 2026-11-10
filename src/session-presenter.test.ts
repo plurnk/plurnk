@@ -745,6 +745,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(racedFrames[0].toolCallId, "6/2/1");
         assert.equal(racedFrames[0].status, "completed");
         assert.equal(racedFrames[0].statusCode, 200);
+        assert.equal(racedFrames[0].fields, "{page}");
         assert.deepEqual(racedFrames[0].contentLines, []);
         assert.deepEqual(racedFrames[0].outputLines, []);
     }

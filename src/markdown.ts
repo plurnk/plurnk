@@ -189,6 +189,7 @@ export const renderOperationBlock = (opts: {
     readonly scope?: string | null;
     readonly destination?: string | null;
     readonly pattern?: string | null;
+    readonly fields?: string | null;
     readonly count?: number | null;
     readonly aside?: string | null;
     readonly status?: string | null;
@@ -218,6 +219,9 @@ export const renderOperationBlock = (opts: {
     if (opts.pattern) {
         const cleanPat = ModelText.plain(opts.pattern);
         headParts.push(/^[~/&=!]/u.test(cleanPat) ? cleanPat : `/${cleanPat}/`);
+    }
+    if (opts.fields) {
+        headParts.push(ModelText.plain(opts.fields));
     }
     if (typeof opts.count === "number") {
         headParts.push(`{${String(opts.count)}}`);

@@ -16,17 +16,19 @@ through their GitHub profile and request a secure reporting channel. Do not
 send credentials, API keys, private model transcripts, or an unsanitized
 PLURNK database.
 
-A vulnerability in the daemon or its plugins belongs to
+A vulnerability in the daemon or its extensions and modules belongs to
 [`plurnk/plurnk-service`](https://github.com/plurnk/plurnk-service/security/policy),
 which takes reports the same way.
 
 ## Scope
 
-Useful reports include the client exposing credentials or daemon tokens,
-connecting to a daemon other than the one it was configured to use, running a
-proposal or command without the approval the operator configured, writing
-outside its documented locations, and vulnerable release artifacts.
+Useful reports include the client exposing credentials, daemon tokens, or OAuth
+browser-handoff tokens, connecting to a daemon other than the one it was
+configured to use, running a proposal or command without the approval the
+operator configured, writing outside its documented locations, and vulnerable
+release artifacts.
 
 The client relays operator decisions to a daemon that executes local tools by
-design. A report should distinguish a decision the operator made from a bypass
-of the documented approval policy.
+design; see [`ASSURANCE.md`](https://github.com/plurnk/plurnk-service/blob/main/ASSURANCE.md)
+for the shared-responsibility boundary. A report should distinguish a decision
+the operator made from a bypass of the documented approval policy.

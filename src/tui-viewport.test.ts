@@ -30,6 +30,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
     assert.equal(altShortcut("\x1bx"), "/stop");
     assert.equal(altShortcut("plain"), null);
     assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
+    assert.equal(backTabShortcut("\x1b[9;2u"), "/yolo");
     assert.equal(backTabShortcut("other"), null);
 
     const agentApp = createAcpAgent({ name: "viewport-mock-agent" })
@@ -2632,5 +2633,215 @@ test("{§cli-markdown-projection} {§cli-rendering}: outside text never enters C
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer shadow hint disappears on keystroke and Kitty CSI-u Shift-Tab toggles yolo on and approves an open permission gate (#253)", async () => {
+    let permissionOutcome: unknown = null;
+
+    const sessionOpenResponse = {
+        sessionId: "1#user",
+        configOptions: [
+            {
+                type: "select" as const,
+                configId: "model",
+                name: "Model",
+                currentValue: "mocktest/fast",
+                options: [{ value: "mocktest/fast", name: "Fast" }],
+            },
+        ],
+        _meta: {
+            plurnk: {
+                workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                sessionName: "user",
+            },
+        },
+    };
+    const agentApp = createAcpAgent({ name: "viewport-yolo-mock" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {}, resume: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => sessionOpenResponse)
+        .onRequest(methods.agent.session.resume, async () => sessionOpenResponse)
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string },
+            async ({ params }) => {
+                if (params.kind === "workspace.sessions") return { sessions: [{ name: "user", lifecycle: "idle" }] };
+                if (params.kind === "workspace.list") return { workspaces: [{ name: "alpha" }] };
+                if (params.kind === "models.list") return { items: [{ selector: "mocktest/fast" }] };
+                return {};
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            const res = await client.request(methods.client.session.requestPermission, {
+                sessionId: params.sessionId,
+                title: "edit hello.txt",
+                subject: {
+                    type: "command",
+                    command: "edit hello.txt",
+                    cwd: "/tmp",
+                },
+                options: [
+                    { optionId: "allow", name: "Accept", kind: "allow_once" },
+                    { optionId: "deny", name: "Reject", kind: "reject_once" },
+                ],
+                _meta: {
+                    plurnk: {
+                        proposal: { body: "+hello world\n" },
+                    },
+                },
+            });
+            permissionOutcome = res;
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "1/1/2",
+                    content: { type: "text", text: "Proposal approved via Shift-Tab" },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { messageId: "1/1/2" };
+        });
+
+    const termWrites: string[] = [];
+    let inputCallback = null as ((data: string) => void) | null;
+    const fakeTerminal: Terminal = {
+        columns: 120,
+        rows: 30,
+        kittyProtocolActive: true,
+        start(onInput: (data: string) => void) {
+            inputCallback = onInput;
+        },
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    // Unit-verify ComposerEditor shadow hint disappears on first character before starting HTTP server
+    const stripVtAndApc = (s: string): string =>
+        stripVTControlCharacters(s).replace(/\x1b_[^\x07]*\x07/gu, "");
+    const standaloneSurface = new TuiSurface(fakeTerminal);
+    const emptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
+    assert.match(emptyEditorPlain, /Shift-Tab: toggle yolo · \? prefix: force review · \/help/u);
+    standaloneSurface.setInput("a");
+    const nonEmptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
+    assert.doesNotMatch(nonEmptyEditorPlain, /Shift-Tab: toggle yolo/u);
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    termWrites.length = 0;
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+
+    try {
+        const viewportPromise = runTuiViewport(
+            {
+                url: `http://127.0.0.1:${String(addr.port)}/acp`,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port: addr.port,
+                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 2000,
+                cancelGraceMs: 500,
+                workspace: "alpha",
+                sessionId: "user",
+                tuiSession: "user",
+                yolo: false,
+                auto: false,
+                json: false,
+                repl: false,
+                previewLines: 5,
+                historyEntries: 10,
+                mermaidTimeoutMs: 2000,
+                color: "never",
+                bell: false,
+                cwd: "/tmp",
+                env: { PLURNK_SECRET: "test-secret" },
+            },
+            { stdin, stdout, stderr, terminal: fakeTerminal },
+        );
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate(), `Transcript so far:\n${stripVtAndApc(termWrites.join(""))}`);
+        };
+
+        await waitUntil(() =>
+            stripVtAndApc(termWrites.join("")).includes("yolo: off (Shift-Tab)"),
+        );
+        assert.match(
+            stripVtAndApc(termWrites.join("")),
+            /Shift-Tab: toggle yolo · \? prefix: force review · \/help/u,
+        );
+        assert.ok(inputCallback !== null);
+
+        // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle in composer
+        inputCallback!("\x1b[Z");
+        await waitUntil(() => stripVtAndApc(termWrites.join("")).includes("yolo: on"));
+        inputCallback!("\x1b[Z");
+        await waitUntil(() =>
+            /yolo: off\s/u.test(stripVtAndApc(termWrites.join("")).replace("yolo: off (Shift-Tab)", "")),
+        );
+
+        // Submit prompt while yolo: off -> inline permission review card opens
+        inputCallback!("write hello.txt");
+        inputCallback!("\r");
+        await waitUntil(() =>
+            stripVtAndApc(termWrites.join("")).includes("Shift-Tab: yolo on"),
+        );
+
+        // Press Kitty CSI-u Shift-Tab (\x1b[9;2u) while review card is open -> toggles yolo on and approves waiting gate!
+        inputCallback!("\x1b[9;2u");
+        await waitUntil(() =>
+            stripVtAndApc(termWrites.join("")).includes("Proposal approved via Shift-Tab"),
+        );
+        assert.match(stripVtAndApc(termWrites.join("")), /yolo: on/u);
+        assert.deepEqual(permissionOutcome, {
+            outcome: { outcome: "selected", optionId: "allow" },
+            _meta: { plurnk: { outcome: "client_yolo" } },
+        });
+
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
 
 

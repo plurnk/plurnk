@@ -68,7 +68,7 @@ export const altShortcut = (forward: string): string | null => {
 };
 
 export const backTabShortcut = (forward: string): string | null =>
-    forward === "\x1b[Z" ? "/yolo" : null;
+    matchesKey(forward, "shift+tab") || forward === "\x1b[Z" ? "/yolo" : null;
 
 export const runTuiViewport = async (
     options: CliCommonOptions,
@@ -389,8 +389,13 @@ export const runTuiViewport = async (
                 replStdin.write("/quit\n");
                 return { consume: true };
             }
+            const backTab = backTabShortcut(text);
+            if (backTab !== null) {
+                replStdin.write(`${backTab}\n`);
+                return { consume: true };
+            }
             if (surface.reviewing) return undefined;
-            const shortcut = altShortcut(text) ?? backTabShortcut(text);
+            const shortcut = altShortcut(text);
             if (shortcut !== null) {
                 if (shortcut === "/editor") {
                     const draft = surface.editor.getText();

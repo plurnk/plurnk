@@ -648,7 +648,9 @@ export default class Review extends Container implements Focusable {
                             : request.control instanceof SelectList
                               ? request.kind === "elicitation_form" && request.form.multiSelect
                                   ? "↑/↓: move · Space/Enter: toggle/submit · Esc: composer"
-                                  : "↑/↓: choose · Enter: confirm · Esc: composer"
+                                  : request.kind === "permission"
+                                    ? "↑/↓: choose · Enter: confirm · Shift-Tab: yolo on · Esc: composer"
+                                    : "↑/↓: choose · Enter: confirm · Esc: composer"
                               : "Enter: submit · Shift-Enter: newline · Esc: composer",
                         "dim",
                     ),

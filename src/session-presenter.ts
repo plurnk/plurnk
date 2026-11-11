@@ -446,7 +446,7 @@ export class SessionPresenter {
         this.workspaceName = options.workspaceName ?? "default";
         this.sessionName = options.sessionName ?? "user";
         this.model = options.model ?? "default";
-        this.yolo = options.yolo ?? true;
+        this.yolo = options.yolo ?? false;
         this.maxReasoningLines = options.maxReasoningLines ?? 3;
 
         if (options.initialConfigOptions) {

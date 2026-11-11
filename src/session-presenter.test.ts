@@ -1051,6 +1051,26 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(freshPresenter.model, "rtx5070");
     assert.equal(freshPresenter.yolo, true);
 
+    // Client-local `--yolo` / `/yolo` remains true when server `mode` is `"propose"`.
+    const localYoloPresenter = new SessionPresenter({
+        workspaceName: "alpha",
+        sessionName: "user",
+        yolo: true,
+        initialConfigOptions: [
+            {
+                configId: "mode",
+                name: "Approval Policy",
+                type: "select",
+                currentValue: "propose",
+                options: [
+                    { value: "propose", name: "Propose" },
+                    { value: "allow", name: "Allow" },
+                ],
+            },
+        ],
+    });
+    assert.equal(localYoloPresenter.yolo, true);
+
     freshPresenter.ingestMeta({
         plurnk: {
             status: {

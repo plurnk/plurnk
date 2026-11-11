@@ -97,7 +97,8 @@ export class SessionPresenter {
     projectLabel: string | null = null;
     lifecycle: string = "idle";
     lifecycleGlyph: string = "⏹️";
-    yolo: boolean;
+    #localYolo: boolean;
+    #serverAllowMode = false;
     model: string;
     effort: string | null = null;
     effortSource: "default" | "explicit" | null = null;
@@ -156,7 +157,7 @@ export class SessionPresenter {
         this.workspaceName = options.workspaceName ?? "default";
         this.sessionName = options.sessionName ?? "user";
         this.model = options.model ?? "default";
-        this.yolo = options.yolo ?? false;
+        this.#localYolo = options.yolo ?? false;
         this.maxReasoningLines = options.maxReasoningLines ?? 3;
 
         if (options.initialConfigOptions) {
@@ -168,6 +169,14 @@ export class SessionPresenter {
         this.#turnBaseInputTokens = this.inputTokens;
         this.#turnBaseOutputTokens = this.outputTokens;
         this.#turnBaseCostUsd = this.costUsd;
+    }
+
+    get yolo(): boolean {
+        return this.#localYolo || this.#serverAllowMode;
+    }
+
+    set yolo(value: boolean) {
+        this.#localYolo = value;
     }
 
     get reasoningLines(): readonly string[] {
@@ -708,7 +717,7 @@ export class SessionPresenter {
             } else if (opt.configId === "spawn_model" && SessionConfigOption.isSelect(opt)) {
                 this.spawnModel = opt.currentValue.length > 0 && opt.currentValue !== "inherit" ? opt.currentValue : null;
             } else if (opt.configId === "mode" && SessionConfigOption.isSelect(opt)) {
-                this.yolo = opt.currentValue === "allow";
+                this.#serverAllowMode = opt.currentValue === "allow";
             }
         }
     }

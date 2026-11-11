@@ -287,7 +287,7 @@ export const formatComposerHint = (state: ComposerHintState = {}): string => {
     }
     const yoloOn = state.yolo === true || state.mode === "allow";
     if (yoloOn) {
-        segments.push("yolo: on 🔥 (Shift-Tab)", "?review");
+        segments.push("yolo: on (Shift-Tab)");
     } else {
         segments.push("yolo: off (Shift-Tab)");
     }

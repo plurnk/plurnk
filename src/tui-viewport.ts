@@ -166,9 +166,6 @@ export const runTuiViewport = async (
             } else if (opt.configId === "mode") {
                 if (typeof opt.currentValue === "string") {
                     currentMode = opt.currentValue.length > 0 ? opt.currentValue : null;
-                    if (opt.currentValue === "allow") {
-                        presenter.yolo = true;
-                    }
                 }
             }
         }
@@ -228,6 +225,7 @@ export const runTuiViewport = async (
         surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
         const loopNum = presenter.loopSeq ?? 1;
         const turns = presenter.turns > 0 ? presenter.turns : currentTurns;
+        const yoloLead = presenter.yolo || currentMode === "allow" ? "🔥 " : "";
         const place =
             turns > 0
                 ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
@@ -237,7 +235,7 @@ export const runTuiViewport = async (
             presenter.lastStatusLine.length > 0
                 ? presenter.lastStatusLine
                 : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
-        surface.setStatus(`${place} ${activity}`);
+        surface.setStatus(`${yoloLead}${place} ${activity}`);
         surface.setPlaceholder(
             formatComposerHint({
                 yolo: presenter.yolo,

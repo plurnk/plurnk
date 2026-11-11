@@ -1,67 +1,25 @@
 # plurnk terminal design
 
-`plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
-interactive modes use the daemon's ACP v2 surface. It builds on two
-implementation substrates ([`ARCHITECTURE.md` § Standards and substrate](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)): `@agentclientprotocol/sdk` for ACP v2 JSON-RPC framing and
-Streamable HTTP / WebSocket transport, and `@earendil-works/pi-tui` for
-main-screen terminal viewport diffing, scrollback preservation, editor/selection
-widgets, and GFM/table/LaTeX layout. The daemon owns workspaces, sessions, model
-execution, and durable state; the client drives sessions, prompts, and approval
-gates over ACP v2.
-
-The behavioral contract lives in [SPEC.md](SPEC.md). This document records only
-the small set of terminal-design choices that are useful when maintaining the
-client.
+Thin ACP v2 terminal client for [`plurnk-service`](https://github.com/plurnk/plurnk-service), built on `@agentclientprotocol/sdk` (Streamable HTTP / WebSocket JSON-RPC framing) and `@earendil-works/pi-tui` (main-screen viewport diffing, native scrollback preservation, multiline editor, GFM/table/LaTeX layout). Behavioral contract: [`SPEC.md`](SPEC.md).
 
 ## Modes
 
-- `plurnk "prompt"` is a Unix-style one-shot command. The delivered answer goes
-  to stdout and errors go to stderr; when opened, `fd 3` carries NDJSON session
-  events and `fd 4` streams model reasoning.
-- `plurnk` is a readline-style, main-buffer interaction built on pi-tui's
-  main-screen renderer and multiline editor. It preserves normal terminal
-  scrollback rather than taking over the alternate screen.
-- Provider reasoning streams into a 3-line rolling ticker between the transcript and the composer: it advances in whole line chunks (pushing previous lines up as each line completes, with `💭 ` on the first visible line and 3-space indent on lines 2–3), retires when the turn settles, and never enters the transcript; immutable history keeps every turn's reasoning at `reasoning://<session>/L/T` for a READ.
-- Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport (Streamable HTTP by default, WebSocket when `PLURNK_ACP_URL` selects `ws://` or `wss://`).
-- **Pinned Chrome Budget**: Main-screen layout stacks five `pi-tui` containers in order: scrollable `#transcript`, active `#turn` responses, transient `#live` (`TailText` reserving 3 rolling reasoning lines plus 1 active streams/sessions strip `<glyph> <op> (<target>) <elapsed> · ...` directly above the composer while a loop is active, and collapsing to zero height when idle), `#input` composer or inline review (`Editor` / `SelectList`), and the single-line muted `#status` footer (truncated with `…` to terminal width so updates never wrap). Pinned chrome below `#transcript` and `#turn` never exceeds the 3-line reasoning ticker, 1-line active strip, composer/review, and one status line, preserving native terminal scrollback.
+| Invocation | Surface |
+| --- | --- |
+| `plurnk "prompt"` | Unix one-shot: delivered answer on `stdout`, errors on `stderr`; when opened, `fd 3` streams NDJSON session events and `fd 4` streams reasoning. |
+| `plurnk` | Main-buffer interactive TUI preserving terminal scrollback (never alternate screen). Transport defaults to Streamable HTTP (`ws://` / `wss://` when selected by `PLURNK_ACP_URL`). |
 
-## Rendering
+## Main-screen stack (`pi-tui`)
 
-The waterfall is intentionally compact: operation glyphs begin at the
-left edge, with only the fields that identify their action and outcome.
-Runtimes and subsystems retain their names after ⚙️ ({§cli-rendering}).
-Delivered messages render as full response blocks rather than diagnostic rows.
-The status row projects session place and ACP state in place → lifecycle → model →
-elapsed → spend → activity order (`⌛︎` while a loop runs). Indexing and search
-progress update the activity tail (`🧮`, `🔎`) instead of appending an event for
-every milestone.
+| Container | Role & height budget |
+| --- | --- |
+| `#transcript` | Scrollable settled conversation: full reply blocks, compact left-edge operation headings (`⚙️` for runtimes/subsystems, {§cli-rendering}), and indented `🐜 <name>` child rows. Bounded on attach by `PLURNK_CLIENT_HISTORY_ENTRIES` (`/loops` and `/loop <n>` inspect history; past reasoning stays at `reasoning://<session>/L/T`). |
+| `#turn` | Active turn responses. |
+| `#live` | `TailText` while a loop runs (collapses to `0` lines when idle): up to 3 whole-line rolling reasoning lines (`💭 ` on line 1, 3-space indent on lines 2–3, cleared on turn settlement) plus 1 active streams/sessions strip (`<glyph> <op> (<target>) <elapsed> · ...`). |
+| `#input` | Multiline `Editor` composer or inline `SelectList` / `Editor` proposal and question review (`Escape` returns to untouched composer; `/review` reopens, [inline review](SPEC.md#cli-inline-review-5-proposal-review-ownership-tool-acceptance-and-questions)). |
+| `#status` | Single-line muted footer truncated with `…` to terminal width: `place → lifecycle → model → elapsed → spend → activity` (`⌛︎` active, `🧮` indexing, `🔎` search). |
 
-The renderer follows the shared
-[colour selection policy](SPEC.md#cli-color-policy-42-palette-colour-policy-lightdark-grounds-titles-and-attention), including
-`NO_COLOR` and `--color`. Rendering details and exit behavior are specified and
-tested in `SPEC.md`; design history belongs in Git.
+## Controls & colour
 
-## Interaction
-
-pi-tui owns multiline editing, history, completion presentation, paste framing,
-keyboard negotiation, cursor/IME behavior, resize, and scrollback rendering.
-Plurnk owns command and session/loop semantics. `Ctrl-C` cancels an active loop and
-remains the escape hatch from the interactive client when idle.
-
-Opening or switching a workspace or session restores a bounded recent transcript and
-observes any current loop, without resubmitting a prompt. Replies remain whole;
-historical operations are headings, a sub-session's rows are marked `🐜 <name>` and stepped in as they
-are live, and old reasoning is not replayed.
-`PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/loops` lists the session's loops and `/loop <n>`
-prints any of them whole.
-
-Side-effect proposals are rendered for human review unless loop or client
-policy has already resolved them. A transport or resolution failure is shown
-as an error; the client never fabricates success.
-
-Approvals and questions use pi-tui selection lists and multiline editors in
-the composer's place, not floating dialogs. Escape returns to the untouched
-composer; `/review` reopens the pending interaction. Background output keeps
-flowing, and ordinary commands remain available from the composer. See
-[inline review](SPEC.md#cli-inline-review-5-proposal-review-ownership-tool-acceptance-and-questions) for focus and interrupt
-identity rules.
+- `Ctrl-C` cancels an active loop or exits when idle; transport/resolution errors never fabricate success.
+- Honours `NO_COLOR` and `--color` per [`SPEC.md` colour policy](SPEC.md#cli-color-policy-42-palette-colour-policy-lightdark-grounds-titles-and-attention).

@@ -6,39 +6,25 @@
   discards compaction entirely in favor of ongoing, model-driven context
   curation.
 - **Addressable Memory.** Observations, programs and the model's own reasoning
-  keep addresses it can read back, curate or retire; its notes return every
+  keep addresses it can read back and curate; its notes return every
   turn in its own voice.
 - **Universal Patterns.** Your entire repo gets indexed on entry, letting the
   model explore and edit the project by regex, XPath, JSONPath, full text, and
   tree-sitter symbols.
 
-The model should decide what to remember, where to look, when to delegate, and
-how to proceed. Plurnk is an agentic operating system and programming language
-that puts those decisions in the model's hands.
-
-Files, tools, and the agent's own context become an addressable environment.
-Composable operations let it search that environment, make precise changes,
-curate its memory, and build its own delegation topology. The runtime provides
-reliable machinery; the model supplies the strategy.
-
 Plurnk is an agentic virtual machine: each turn the model writes a short
-program, the machine runs it against one address space and journals the
+program, the machine executes it against one address space and journals the
 results, and the model reads the journal and writes the next. Files, tools,
-other sessions and the model's own past all have addresses; one selection
-algebra reaches every one of them; the edges are the ecosystem's standards.
-The argument, and what it costs today:
-[PLURNK.md](https://github.com/plurnk/plurnk-service/blob/main/PLURNK.md).
+delegated sessions, and the model's own past all carry addresses; one selection
+algebra reaches every one of them; the edges speak ACPv2, MCP, Agent Skills,
+and Agent Plugins. Read the full argument in
+[MANIFESTO.md](https://github.com/plurnk/plurnk-service/blob/main/MANIFESTO.md).
 
-Use local or cloud models to build software, investigate a codebase, or automate
-work across tools. Interact from your terminal or editor, or compose Plurnk
-with ordinary shell pipelines.
-
-This repository provides the CLI and interactive terminal client for
-[plurnk-service](https://github.com/plurnk/plurnk-service), its backend.
-
-Workspaces, sessions and their history live in the daemon, independently of the
-client attachment. Choose your model, context limits, tools, and capability
-policies without replacing the environment.
+This repository provides the Unix CLI and interactive TUI for
+[plurnk-service](https://github.com/plurnk/plurnk-service), alongside its
+built-in browser interface ([plurnk-web](https://github.com/plurnk/plurnk-web)).
+Workspaces, sessions, and history live in the daemon independently of any
+attached local or cloud client.
 
 ![A Plurnk session across the Unix CLI, interactive TUI, and Plurnk Web](https://raw.githubusercontent.com/plurnk/plurnk/main/docs/media/session.webp)
 
@@ -50,38 +36,28 @@ runtime under `~/.local/share/plurnk/node` without modifying your system Node):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/plurnk/plurnk/main/install.sh | sh
-plurnk --workspace="myProject"
+plurnk
 ```
 
 If you already have Node.js 26+ and npm installed, you can also install via npm:
 
 ```sh
 npm install -g --ignore-scripts @plurnk/plurnk
-plurnk --workspace="myProject"
+plurnk
 ```
 
 Run from your project directory. Or try it without a global install:
-`npx @plurnk/plurnk --workspace="myProject"`.
-
-Without `--workspace`, the daemon names the workspace after its folder, the
-directory you launch from (for example, `~/projects/myProject`); both CLI and TUI open
-session `user`. Launches in the same folder share that workspace on the same
-daemon/database. Override either identity with `--workspace` or `--session`;
-neither changes an existing workspace's folder.
-
-Starting a new workspace from your home directory asks for a project folder.
-For scripts, select one with `--project-root=/path/to/project`; a redirected
-folder names the workspace after itself. No folder (`--project-root=`) needs
-`--workspace`. Existing workspaces keep their saved folder.
+`npx @plurnk/plurnk`.
 
 Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is configured on an
 interactive terminal, `plurnk` offers `plurnk onboard` to connect a local
 server or provider key and verify a readiness turn, or [choose one below](#models).
 The first launch starts the included service, which keeps running for later
-sessions ([Service](#service)). The TUI returns to session `user` and its
-history; unless `--session` is given, each one-shot prompt runs in a new session
-of its own (reported in `--json` output and on `fd 3` events).
+sessions ([Service](#service)). Each project folder maps to its own persistent
+workspace (`--workspace` and `--session` override). The TUI returns to session
+`user` and its history; unless `--session` is given, each one-shot prompt runs
+in a new session of its own (reported in `--json` output and on `fd 3` events).
 
 Proposals require review by default (`PLURNK_CLIENT_YOLO=0`); press `Shift+Tab`,
 run `/yolo`, or pass `--yolo` to accept them automatically (`? <prompt>` forces
@@ -117,27 +93,22 @@ for local endpoints and tuning.
 and `PLURNK_PORT` move it), starting the installed `plurnk-service` there when
 nothing listens. The service keeps running after the client exits and serves
 every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
-its log in `~/.local/state/plurnk/service.log`. Manage it with
-`plurnk daemon <start|stop|restart|reload|status|config>`, and open the hosted
-browser interface already signed in with `plurnk web` (or `/web` in the TUI).
+its log in `~/.local/state/plurnk/service.log`. Manage it with `plurnk daemon <start|stop|restart|reload|status|config>`, and
+open the hosted browser interface already signed in with `plurnk web` (or `/web`
+in the TUI). Set `PLURNK_ACP_URL` to attach to a remote daemon, and set
+`PLURNK_CLIENT_AUTOSTART=0` to disable local autostart.
 
 To start it at login on Linux, install the service package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
 (`plurnk.service` in `@plurnk/plurnk-service`); its comments cover installation,
 executable paths, and environment setup. The service must receive your provider
 credentials—systemd does not source your interactive shell.
 
-For a client-only installation, use
-`npm install -g --ignore-scripts @plurnk/plurnk --omit=optional`.
-Set `PLURNK_CLIENT_AUTOSTART=0` to require an existing service. No system service
-is installed or enabled automatically. See [service configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
-for other deployments.
-
 ## TUI and CLI
 
 ### Interactive terminal
 
 ```sh
-plurnk --workspace="myProject"
+plurnk
 ```
 
 A scrollback-native TUI with multiline prompts, streaming reasoning when the
@@ -166,26 +137,6 @@ Use `plurnk --help` for CLI options. `plurnk models` lists available model
 routes, `plurnk onboard` bootstraps a model route, `plurnk web` opens the web
 client, and `plurnk daemon` manages the local daemon.
 
-## Patterns that compose
-
-The pattern engine connects discovery and context management. Path globs
-combine with full-text search, regex, JSONPath, XPath, and symbol-graph queries.
-The model can search for phrases, inspect structured data, or follow symbol
-relationships without writing a script for each question.
-
-For example, these model-side operations find TypeScript files matching
-`retry` or `timeout`, then trim older `read` receipts to their first 16 lines:
-
-```js
-plurnk.find({ path: "src/**/*.{ts,tsx}", pattern: "~retry OR timeout" });
-
-plurnk.kill({ path: "log:///1/[1-7]/*/read", range: "17,-1" });
-```
-
-The second operation targets `read` results from turns 1–7 of loop 1. It curates
-the log, not the source files. One expression can manage many entries: the
-agent has bulk operations over its own context, not just over your code.
-
 ## Extend and configure
 
 Plurnk uses **ACPv2** for clients, **MCP** for external tools, and **Agent Skills**
@@ -208,8 +159,9 @@ plurnk daemon config defaults
 
 ## Documentation
 
+- [Manifesto: An Agentic Virtual Machine](https://github.com/plurnk/plurnk-service/blob/main/MANIFESTO.md)
 - [Installation and configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
-- [Why it is built this way](https://github.com/plurnk/plurnk-service/blob/main/PLURNK.md)
+- [Browser interface](https://github.com/plurnk/plurnk-web)
 - [Architecture and extension points](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)
 - [The model-facing language](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/plurnk.md)
 - [Client reference](SPEC.md) and [terminal design](TUI.md)

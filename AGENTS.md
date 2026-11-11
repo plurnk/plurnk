@@ -1,8 +1,5 @@
 # Plurnk Client Agent Guidance
 
-Check for `AGENTS.local.md` (and `../POSSUMTECH.md` when working inside a
-PossumTech workspace) and follow any local guidance present.
-
 This repository owns the open-source PLURNK terminal client. Preserve the
 client boundary: it consumes `plurnk-service` through the public ACP v2
 contract (`@agentclientprotocol/sdk/experimental/v2/unstable`) and does not

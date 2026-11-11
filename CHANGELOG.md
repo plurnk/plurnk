@@ -2,12 +2,15 @@
 
 ## 6.0.0
 
+> Bare `#N` issue citations reference our private development forge rather than public GitHub issues — our apologies for the opaque provenance; open public bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
 ### Upgrade
 
 Upgrade this client and `@plurnk/plurnk-service` together to `6.0.0`.
 
-- Handle ACP v2 `_plurnk_telemetry` notifications (`kind: "notice"` and `kind: "state"`), parse `workspaceName#sessionName` composite session identifiers directly from `sessionId` when `_meta.plurnk` is omitted, and opt into windowed session resume (#252).
-- Add `--debug-no-meta` (`PLURNK_CLIENT_DEBUG_NO_META`) to strip `_meta.plurnk` from inbound ACP notifications for pure ACP v2 fallback verification, and upgrade `@agentclientprotocol/sdk` to `^2.5.0` and `@earendil-works/pi-tui` to `1.5.1` (#252, https://repo.possumtech.com/plurnk/plurnk-service/issues/1439).
+- Ship POSIX `install.sh` with verified Node 26 fallback, add `plurnk daemon`, `plurnk web` (`/web`), `/learn`, `plurnk onboard`, and `/personas` family commands, default `PLURNK_CLIENT_YOLO=0` with CSI-u `Shift+Tab` mode cycling and `!cmd` / `/yolo` / `/thinking` / `/agent` shadow hints, break the CLI connection runtime import cycle (`cli-connection.ts`), modularize REPL command/prompt/watcher seams, decouple standalone `@plurnk/plurnk-spec-check` verification and contributor guidance from sibling monorepo paths, and ship packed `inlineSources: true` sourcemaps with public GitHub `bugs.url` metadata (#253, #254, #255, #257, https://repo.possumtech.com/plurnk/plurnk-service/issues/1451, https://repo.possumtech.com/plurnk/plurnk-service/issues/1452).
+- Adopt `@agentclientprotocol/sdk` `^2.6.0` `session/options` (`initialConfigOptions`) and `@earendil-works/pi-tui` `1.5.2`, gate interactive elicitation capabilities on attended runs, show JSON argument field names on runtime tool headers, handle ACP v2 `_plurnk_telemetry` notifications (`kind: "notice"` and `kind: "state"`), parse `workspaceName#sessionName` composite session identifiers directly from `sessionId` when `_meta.plurnk` is omitted, and opt into windowed session resume (#252, #256, https://repo.possumtech.com/plurnk/plurnk-service/issues/1439, https://repo.possumtech.com/plurnk/plurnk-service/issues/1449).
+- Add `--debug-no-meta` (`PLURNK_CLIENT_DEBUG_NO_META`) to strip `_meta.plurnk` from inbound ACP notifications for pure ACP v2 fallback verification (#252).
 - Render named voice labels on prompts and replies, hydrate `resource_link` reply bodies when inline text is omitted, and route outside-of-operation prose via `agent_thought_chunk` to stderr stream `4` / TUI `💭` instead of stdout (#252).
 - Render ACP v2 multi-select (`multiple: true`) and titled question options (`Option { id, title, label }`) in interactive review cards (#250).
 - Deduplicate `engine:configuration` startup notices across session resume and live updates while preserving distinct action and provider notices (#251).

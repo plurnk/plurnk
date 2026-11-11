@@ -17,6 +17,7 @@ import type {
 import { matchesKey, wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-tui";
 import stringWidth from "string-width";
 import type { CliCommonOptions } from "./cli-runner.ts";
+import { expandLearnCommand } from "./commands.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import {
     extractMessageVoice,
@@ -309,7 +310,7 @@ export const runTuiViewport = async (
                 return;
             }
         }
-        if (!trimmed.startsWith("/") && !trimmed.startsWith("!")) {
+        if ((!trimmed.startsWith("/") || expandLearnCommand(trimmed) !== null) && !trimmed.startsWith("!")) {
             retireLiveReasoning();
             presenter.markTurnStart();
             presenter.buildStatusBar();
@@ -416,7 +417,10 @@ export const runTuiViewport = async (
             const trimmed = rawText.trim();
             if (trimmed.length === 0) return;
             surface.recordPrompt(rawText);
-            if (!trimmed.startsWith("/")) {
+            const expandedLearn = expandLearnCommand(trimmed);
+            if (expandedLearn !== null) {
+                localSubmittedPrompts.push(expandedLearn);
+            } else if (!trimmed.startsWith("/")) {
                 localSubmittedPrompts.push(rawText);
             }
             surface.append("");
@@ -890,7 +894,7 @@ export const runTuiViewport = async (
                             paint(
                                 hasReadyModels
                                     ? "⚠️  No model selected. /models lists ready models and /model <selector> chooses one."
-                                    : "⚠️  No model selected. Supply a provider's API key to the backend (for example, export DEEPSEEK_API_KEY before launching); /models then lists its models and /model <selector> chooses one.",
+                                    : "⚠️  No model selected. Run `plurnk onboard` to configure a local or hosted model, or supply a provider's API key and choose one with /models and /model <selector>.",
                                 "warning",
                             ),
                         );

@@ -24,9 +24,10 @@ import {
     formatConfigOption,
     formatServiceUpdateResult,
     openCliSession,
+    openWebHandoff,
     type CliCommonOptions,
 } from "./cli-runner.ts";
-import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
+import { expandLearnCommand, INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
 import {
     executeFamilyCommand,
     extractChronologicalHistory,
@@ -804,7 +805,9 @@ export const runReplSession = async (
             return "continue";
         }
 
-        if (line.startsWith("/")) {
+        const expandedLearn = expandLearnCommand(line);
+
+        if (expandedLearn === null && line.startsWith("/")) {
             const parts = line.slice(1).split(/\s+/u);
             const cmd = parts[0]?.toLowerCase() ?? "";
             const args = parts.slice(1);
@@ -1453,6 +1456,16 @@ export const runReplSession = async (
                     return "continue";
                 }
 
+                if (cmd === "web") {
+                    const noOpen = args.includes("--no-open");
+                    await openWebHandoff(options, {
+                        noOpen,
+                        write: (message) => streams.stdout.write(message),
+                        json: false,
+                    });
+                    return "continue";
+                }
+
                 writeErrorJsonl(streams.stderr, {
                     type: "https://problems.plurnk.xyz/client/unknown-command",
                     title: "Unknown command",
@@ -1556,8 +1569,8 @@ export const runReplSession = async (
             return "continue";
         }
 
-        let promptText = line;
-        if (line.startsWith("?")) {
+        let promptText = expandedLearn ?? line;
+        if (expandedLearn === null && line.startsWith("?")) {
             forceReviewNextRun = true;
             promptText = line.slice(1).trimStart();
         } else if (rawLine.trimStart().startsWith(": ")) {

@@ -54,7 +54,7 @@ ok(help.code === 0 && /usage: plurnk /.test(help.stdout), "`--help` prints usage
 const refused = runBin(["hello"]);
 ok(refused.code === 1, "no-daemon prompt exits 1");
 ok(/Could not reach the configured service/.test(refused.stderr)
-    && /plurnk-service start/.test(refused.stderr),
+    && /plurnk daemon start/.test(refused.stderr),
     "explicit endpoint failure preserves the service address/availability diagnostic");
 
 // No daemon, json mode → ONE structured error on stdout, stderr silent.

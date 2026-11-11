@@ -11,7 +11,7 @@ export interface PathPartial {
     readonly partial: string;
 }
 
-const DSL_TARGET_PARTIAL = /^await\s+plurnk\.[A-Za-z0-9_]+\s*\(\s*\{\s*(?:path|from|to|target)\s*:\s*["']([^"'\n]*)$/u;
+const DSL_TARGET_PARTIAL = /^(?:await\s+)?plurnk\.[A-Za-z0-9_]+\s*\(\s*\{\s*(?:path|from|to|target)\s*:\s*["']([^"'\n]*)$/u;
 
 export const pathPartial = (line: string): PathPartial | null => {
     const verb = line.match(/^\/(?:import|script)\s+(\S*)$/u);
@@ -33,7 +33,7 @@ export interface DslOpPartial {
 }
 
 export const dslOpPartial = (line: string): DslOpPartial | null => {
-    const match = line.match(/^(await\s+plurnk\.)([A-Za-z]*)$/u);
+    const match = line.match(/^((?:await\s+)?plurnk\.)([A-Za-z]*)$/u);
     return match ? { prefix: match[1]!, typed: match[2]! } : null;
 };
 

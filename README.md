@@ -177,9 +177,9 @@ For example, these model-side operations find TypeScript files matching
 `retry` or `timeout`, then trim older `read` receipts to their first 16 lines:
 
 ```js
-await plurnk.find({ path: "src/**/*.{ts,tsx}", pattern: "~retry OR timeout" });
+plurnk.find({ path: "src/**/*.{ts,tsx}", pattern: "~retry OR timeout" });
 
-await plurnk.kill({ path: "log:///1/[1-7]/*/read", range: "17,-1" });
+plurnk.kill({ path: "log:///1/[1-7]/*/read", range: "17,-1" });
 ```
 
 The second operation targets `read` results from turns 1–7 of loop 1. It curates

@@ -138,7 +138,7 @@ try {
                 return;
             }
             const response = scriptedResponses.shift()
-                ?? `await plurnk.done(${JSON.stringify({ text: `composition ok: ${request.model}` })});`;
+                ?? `plurnk.done(${JSON.stringify({ text: `composition ok: ${request.model}` })})`;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -260,12 +260,12 @@ try {
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "await plurnk.work({ name: \"guesser1\", prompt: \"Create child.txt and conclude.\" });\n\n"
-            + "await plurnk.wait({ text: \"Waiting for guesser1.\" });",
-        "await plurnk.edit({ path: \"child.txt\", content: \"created by packed child\" });\n\n"
-            + "await plurnk.note({ text: \"Confirming the write.\" });",
-        "await plurnk.done({ text: \"Child work complete.\" });",
-        "await plurnk.done({ text: \"packed descendant proposal complete\" });",
+        "plurnk.work({ name: \"guesser1\", prompt: \"Create child.txt and conclude.\" })\n\n"
+            + "plurnk.wait({ text: \"Waiting for guesser1.\" })",
+        "plurnk.edit({ path: \"child.txt\", content: \"created by packed child\" })\n\n"
+            + "plurnk.note({ text: \"Confirming the write.\" })",
+        "plurnk.done({ text: \"Child work complete.\" })",
+        "plurnk.done({ text: \"packed descendant proposal complete\" })",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [

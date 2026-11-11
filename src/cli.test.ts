@@ -157,7 +157,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         title: "read (ops://x3/1/2)",
         status: "completed",
         locations: [{ path: "ops://x3/1/2" }],
-        content: [{ type: "content", content: { type: "text", text: "await plurnk.done({ text: \"Hello\" });" } }],
+        content: [{ type: "content", content: { type: "text", text: "plurnk.done({ text: \"Hello\" })" } }],
         _meta: { plurnk: { op: "read", origin: "_plurnk", attrs: { kind: "emission" } } },
     });
     assert.equal(emittedAnnouncement.length, 0);
@@ -455,13 +455,13 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
         sessionUpdate: "notice",
         severity: "info",
         title: "engine:turn:results_pending",
-        description: "All Open Work resolved, but tool call results received for review. Submit nothing to conclude.",
+        description: "All Open Work resolved, but 1 tool call delivered unread log receipts. Respond with no tool calls if finished.",
         _meta: {
             plurnk: {
                 notice: {
                     source: "engine:turn",
                     kind: "results_pending",
-                    message: "All Open Work resolved, but tool call results received for review. Submit nothing to conclude.",
+                    message: "All Open Work resolved, but 1 tool call delivered unread log receipts. Respond with no tool calls if finished.",
                 },
             },
         },
@@ -693,9 +693,14 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     }
 
     // Completion ({§cli-interactive-command-discovery})
+    assert.deepEqual(dslOpPartial("plurnk.re"), { prefix: "plurnk.", typed: "re" });
+    const [ops] = completeOps({ prefix: "plurnk.", typed: "RE" });
+    assert.ok(ops.includes("plurnk.read"));
     assert.deepEqual(dslOpPartial("await plurnk.re"), { prefix: "await plurnk.", typed: "re" });
-    const [ops] = completeOps({ prefix: "await plurnk.", typed: "RE" });
-    assert.ok(ops.includes("await plurnk.read"));
+    const [toleratedOps] = completeOps({ prefix: "await plurnk.", typed: "RE" });
+    assert.ok(toleratedOps.includes("await plurnk.read"));
+    assert.deepEqual(pathPartial('plurnk.read({ path: "src/'), { kind: "target", partial: "src/" });
+    assert.deepEqual(pathPartial('await plurnk.read({ path: "src/'), { kind: "target", partial: "src/" });
     assert.deepEqual(pathPartial("/import src/"), { kind: "local", partial: "src/" });
     assert.deepEqual(pathPartial("check @README"), { kind: "reference", partial: "README" });
 

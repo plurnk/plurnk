@@ -727,7 +727,7 @@ export const runReplSession = async (
                 });
                 return "continue";
             }
-            const stmt = `await plurnk.sh(${JSON.stringify({ command: shellCmd })});`;
+            const stmt = `plurnk.sh(${JSON.stringify({ command: shellCmd })})`;
             try {
                 const res = await client.action<{
                     readonly results?: ReadonlyArray<{
@@ -753,7 +753,7 @@ export const runReplSession = async (
 
         const isCodeStatement =
             !rawLine.trimStart().startsWith(": ") &&
-            /^await\s+plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
+            /^(?:await\s+)?plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
         if (isCodeStatement) {
             try {
                 const res = await client.action<{

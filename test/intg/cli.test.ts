@@ -940,9 +940,13 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
         const errObj = await waitStderr((e) => e.type === "https://problems.plurnk.xyz/client/unknown-command");
         assert.equal(errObj.status, 400);
 
-        // Executable Code Mode statement on fd 0 -> routes to op.parse
+        // Executable Code Mode statement on fd 0 -> routes to op.parse ({§cli-repl-mode})
+        replChild.stdin!.write('plurnk.read({ path: "file:///tmp/test.txt" })\n');
+        await waitStdout((l) => l === 'OP_PARSE_OK: plurnk.read({ path: "file:///tmp/test.txt" })');
         replChild.stdin!.write('await plurnk.read({ path: "file:///tmp/test.txt" });\n');
         await waitStdout((l) => l === 'OP_PARSE_OK: await plurnk.read({ path: "file:///tmp/test.txt" });');
+        replChild.stdin!.write("!echo hi\n");
+        await waitStdout((l) => l === 'OP_PARSE_OK: plurnk.sh({"command":"echo hi"})');
 
         // Bracketed paste multiline submission on fd 0 -> single prompt with preserved newlines
         replChild.stdin!.write("\x1b[200~Bracketed line 1\nBracketed line 2\x1b[201~\n");

@@ -2744,12 +2744,12 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
     const emptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
     assert.match(emptyEditorPlain, /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u);
     standaloneSurface.setPlaceholder(
-        "persona:architect · child:fast · yolo: on (Shift-Tab) · !cmd · @file · /help",
+        "persona:architect · child:fast · yolo: on (Shift-Tab) · ?review · !cmd · @file · /help",
     );
     const activeModesEditorPlain = stripVtAndApc(standaloneSurface.editor.render(96).join("\n"));
     assert.match(
         activeModesEditorPlain,
-        /persona:architect · child:fast · yolo: on \(Shift-Tab\) · !cmd · @file · \/help/u,
+        /persona:architect · child:fast · yolo: on \(Shift-Tab\) · \?review · !cmd · @file · \/help/u,
     );
     standaloneSurface.setInput("a");
     const nonEmptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
@@ -2818,7 +2818,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle, putting 🔥 at first left of statusline
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
-            stripVtAndApc(termWrites.join("")).includes("yolo: on (Shift-Tab) · !cmd · @file · /help") &&
+            stripVtAndApc(termWrites.join("")).includes("yolo: on (Shift-Tab) · ?review · !cmd · @file · /help") &&
             stripVtAndApc(termWrites.join("")).includes("🔥 [alpha/~user]"),
         );
         assert.match(stripVtAndApc(termWrites.join("")), /yolo: on\s/u);

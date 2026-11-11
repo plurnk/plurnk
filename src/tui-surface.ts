@@ -263,14 +263,56 @@ export class TailText implements Component {
     }
 }
 
-const EMPTY_COMPOSER_HINT = "Shift-Tab: toggle yolo · ? prefix: force review · /help";
+export interface ComposerHintState {
+    readonly yolo?: boolean;
+    readonly mode?: string | null;
+    readonly persona?: string | null;
+    readonly childModel?: string | null;
+}
+
+export const formatComposerHint = (state: ComposerHintState = {}): string => {
+    const segments: string[] = [];
+    if (typeof state.persona === "string" && state.persona.length > 0 && state.persona !== "none") {
+        segments.push(`persona:${state.persona}`);
+    }
+    if (
+        typeof state.childModel === "string" &&
+        state.childModel.length > 0 &&
+        state.childModel !== "inherit"
+    ) {
+        segments.push(`child:${state.childModel}`);
+    }
+    if (state.mode === "deny") {
+        segments.push("mode:deny");
+    }
+    const yoloOn = state.yolo === true || state.mode === "allow";
+    if (yoloOn) {
+        segments.push("yolo: on 🔥 (Shift-Tab)", "?review");
+    } else {
+        segments.push("yolo: off (Shift-Tab)");
+    }
+    segments.push("!cmd", "@file", "/help");
+    return segments.join(" · ");
+};
+
+const EMPTY_COMPOSER_HINT = formatComposerHint();
 
 class ComposerEditor extends Editor {
-    readonly #placeholder: string;
+    #placeholder: string;
 
     constructor(tui: TUI, theme: EditorTheme, options: EditorOptions, placeholder = "") {
         super(tui, theme, options);
         this.#placeholder = placeholder;
+    }
+
+    get placeholder(): string {
+        return this.#placeholder;
+    }
+
+    setPlaceholder(placeholder: string): boolean {
+        if (this.#placeholder === placeholder) return false;
+        this.#placeholder = placeholder;
+        return true;
     }
 
     override render(width: number): string[] {
@@ -279,7 +321,7 @@ class ComposerEditor extends Editor {
             return lines;
         }
         const safeHint = truncateToWidth(this.#placeholder, Math.max(1, width), "…", true);
-        const firstChar = safeHint[0] ?? " ";
+        const firstChar = [...safeHint][0] ?? " ";
         const rest = safeHint.slice(firstChar.length);
         const marker = this.focused ? CURSOR_MARKER : "";
         const lead = `${marker}${renderFakeCursor(styled("dim")(firstChar))}${rest.length > 0 ? styled("dim")(rest) : ""}`;
@@ -304,6 +346,7 @@ export default class TuiSurface {
     readonly #status = new SingleLineText();
     readonly #input = new Container();
     readonly #pending = new SingleLineText();
+    readonly #composer: ComposerEditor;
     readonly editor: Editor;
     #review: Component | null = null;
     #reviewing = false;
@@ -315,7 +358,13 @@ export default class TuiSurface {
     constructor(terminal: Terminal = new ProcessTerminal()) {
         this.#terminal = terminal;
         this.#tui = new TuiMainScreen(terminal, true);
-        this.editor = this.createEditor(EMPTY_COMPOSER_HINT);
+        this.#composer = new ComposerEditor(
+            this.#tui,
+            editorTheme,
+            { paddingX: 0, autocompleteMaxVisible: 8 },
+            EMPTY_COMPOSER_HINT,
+        );
+        this.editor = this.#composer;
         this.#input.addChild(this.editor);
         this.#tui.addChild(this.#transcript);
         this.#tui.addChild(this.#turn);
@@ -681,6 +730,12 @@ export default class TuiSurface {
     setStatus(text: string): void {
         this.#status.setText(text);
         this.#tui.requestRender();
+    }
+
+    setPlaceholder(placeholder: string): void {
+        if (this.#composer.setPlaceholder(placeholder)) {
+            this.#tui.requestRender();
+        }
     }
 
     setInput(text: string): void {

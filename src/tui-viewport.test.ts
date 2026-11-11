@@ -2737,15 +2737,23 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         setProgramStatus() {},
     };
 
-    // Unit-verify ComposerEditor shadow hint disappears on first character before starting HTTP server
+    // Unit-verify ComposerEditor shadow hint disappears on first character and reflects yolo + active modes
     const stripVtAndApc = (s: string): string =>
         stripVTControlCharacters(s).replace(/\x1b_[^\x07]*\x07/gu, "");
     const standaloneSurface = new TuiSurface(fakeTerminal);
     const emptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
-    assert.match(emptyEditorPlain, /Shift-Tab: toggle yolo · \? prefix: force review · \/help/u);
+    assert.match(emptyEditorPlain, /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u);
+    standaloneSurface.setPlaceholder(
+        "persona:architect · child:fast · yolo: on 🔥 (Shift-Tab) · ?review · !cmd · @file · /help",
+    );
+    const activeModesEditorPlain = stripVtAndApc(standaloneSurface.editor.render(96).join("\n"));
+    assert.match(
+        activeModesEditorPlain,
+        /persona:architect · child:fast · yolo: on 🔥 \(Shift-Tab\) · \?review · !cmd · @file · \/help/u,
+    );
     standaloneSurface.setInput("a");
     const nonEmptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
-    assert.doesNotMatch(nonEmptyEditorPlain, /Shift-Tab: toggle yolo/u);
+    assert.doesNotMatch(nonEmptyEditorPlain, /Shift-Tab/u);
 
     const acpServer = new AcpServer({ agent: agentApp });
     const handler = createNodeHttpHandler(acpServer);
@@ -2798,20 +2806,23 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         };
 
         await waitUntil(() =>
-            stripVtAndApc(termWrites.join("")).includes("yolo: off (Shift-Tab)"),
+            stripVtAndApc(termWrites.join("")).includes("yolo: off (Shift-Tab) · !cmd · @file · /help"),
         );
         assert.match(
             stripVtAndApc(termWrites.join("")),
-            /Shift-Tab: toggle yolo · \? prefix: force review · \/help/u,
+            /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u,
         );
         assert.ok(inputCallback !== null);
 
-        // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle in composer
-        inputCallback!("\x1b[Z");
-        await waitUntil(() => stripVtAndApc(termWrites.join("")).includes("yolo: on"));
+        // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle in composer and updates shadow text
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
-            /yolo: off\s/u.test(stripVtAndApc(termWrites.join("")).replace("yolo: off (Shift-Tab)", "")),
+            stripVtAndApc(termWrites.join("")).includes("yolo: on 🔥 (Shift-Tab) · ?review · !cmd · @file · /help"),
+        );
+        assert.match(stripVtAndApc(termWrites.join("")), /yolo: on\s/u);
+        inputCallback!("\x1b[Z");
+        await waitUntil(() =>
+            /yolo: off\s/u.test(stripVtAndApc(termWrites.join("")).replaceAll("yolo: off (Shift-Tab)", "")),
         );
 
         // Submit prompt while yolo: off -> inline permission review card opens

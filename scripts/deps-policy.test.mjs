@@ -4,7 +4,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { evaluateAcpV2Surface, evaluateDepsPolicy, runDepsCheck } from "./deps-check.mjs";
+import {
+    evaluateAcpV2Surface,
+    evaluateDepsPolicy,
+    extractRuntimeRelativeSpecifiers,
+    findRuntimeCycles,
+    runDepsCheck,
+} from "./deps-check.mjs";
 import { evaluateDriftAge, evaluateRegistryDrift } from "./deps-drift.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -140,4 +146,25 @@ test("{§cli-conformance} deps:drift enforces the verification age budget, regis
         driftResult.violations.some((msg) => msg.includes(`@agentclientprotocol/sdk: ${acpResolved} → 99.0.0 [ownerVeto`)),
         `Expected ownerVeto violation, got: ${JSON.stringify(driftResult.violations)}`,
     );
+});
+
+test("{§cli-conformance} deps:check rejects runtime relative import cycles while ignoring type-only imports (#257)", () => {
+    const specs = extractRuntimeRelativeSpecifiers(`
+        // import { nope } from "./commented.ts";
+        import type { OnlyType } from "./type-only.ts";
+        import { type Foo, type Bar } from "./inline-types.ts";
+        import { type Baz, realFn } from "./mixed.ts";
+        export type { ExportedType } from "./reexport-type.ts";
+        export { realExport } from "./reexport-val.ts";
+    `);
+    assert.deepEqual(specs, ["./mixed.ts", "./reexport-val.ts"]);
+
+    const cyclicGraph = new Map([
+        ["src/a.ts", ["src/b.ts"]],
+        ["src/b.ts", ["src/c.ts"]],
+        ["src/c.ts", ["src/a.ts"]],
+        ["src/leaf.ts", []],
+    ]);
+    const cycles = findRuntimeCycles(cyclicGraph);
+    assert.deepEqual(cycles, ["runtime import cycle: src/a.ts -> src/b.ts -> src/c.ts -> src/a.ts"]);
 });

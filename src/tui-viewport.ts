@@ -16,7 +16,7 @@ import type {
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { matchesKey, wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-tui";
 import stringWidth from "string-width";
-import type { CliCommonOptions } from "./cli-runner.ts";
+import type { CliCommonOptions } from "./cli-connection.ts";
 import { expandLearnCommand } from "./commands.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import {
@@ -32,6 +32,7 @@ import TuiSurface, {
     bell,
     buildHeader,
     concluded,
+    formatComposerHint,
     formatLoopMetrics,
     ModelText,
     paint,
@@ -109,6 +110,11 @@ export const runTuiViewport = async (
     let cachedPersonas: string[] = ["none"];
     let cachedSessions: string[] = [];
     let cachedWorkspaces: string[] = [];
+    let currentPersona: string | null =
+        options.persona !== undefined && options.persona.length > 0 && options.persona !== "none"
+            ? options.persona
+            : null;
+    let currentMode: string | null = null;
     let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
 
     const applyConfigOptionsToCache = (rawOptions: readonly unknown[]): void => {
@@ -139,10 +145,30 @@ export const runTuiViewport = async (
                     cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
                 }
             } else if (opt.configId === "persona") {
+                if (typeof opt.currentValue === "string") {
+                    currentPersona =
+                        opt.currentValue.length > 0 && opt.currentValue !== "none"
+                            ? opt.currentValue
+                            : null;
+                }
                 if (Array.isArray(opt.options)) {
                     cachedPersonas = opt.options
                         .map((o) => String(o.value ?? ""))
                         .filter((v) => v.length > 0 && v !== "custom");
+                }
+            } else if (opt.configId === "spawn_model") {
+                if (typeof opt.currentValue === "string") {
+                    presenter.spawnModel =
+                        opt.currentValue.length > 0 && opt.currentValue !== "inherit"
+                            ? opt.currentValue
+                            : null;
+                }
+            } else if (opt.configId === "mode") {
+                if (typeof opt.currentValue === "string") {
+                    currentMode = opt.currentValue.length > 0 ? opt.currentValue : null;
+                    if (opt.currentValue === "allow") {
+                        presenter.yolo = true;
+                    }
                 }
             }
         }
@@ -212,6 +238,14 @@ export const runTuiViewport = async (
                 ? presenter.lastStatusLine
                 : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
         surface.setStatus(`${place} ${activity}`);
+        surface.setPlaceholder(
+            formatComposerHint({
+                yolo: presenter.yolo,
+                mode: currentMode,
+                persona: currentPersona,
+                childModel: presenter.spawnModel,
+            }),
+        );
     };
 
     const ensureSurfaceStarted = (): void => {

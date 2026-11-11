@@ -272,3 +272,87 @@ export const normalizeWorkerKey = (raw: string): string => {
     const clean = trimmed.replace(/^[~/]+/u, "").replace(/\/+$/u, "");
     return clean.length > 0 ? clean : trimmed;
 };
+
+export const extractMessageVoice = (
+    plurnkMeta:
+        | {
+              readonly voice?: unknown;
+              readonly source?: unknown;
+              readonly address?: unknown;
+              readonly target?: unknown;
+              readonly receipt?: {
+                  readonly repliedTo?: unknown;
+                  readonly repliedToSources?: unknown;
+              } | null;
+          }
+        | null
+        | undefined,
+): string | null => {
+    if (!plurnkMeta || typeof plurnkMeta !== "object") return null;
+    if (typeof plurnkMeta.voice === "string" && plurnkMeta.voice.trim().length > 0) {
+        return plurnkMeta.voice.trim();
+    }
+    const candidates: unknown[] = [];
+    if (
+        plurnkMeta.receipt &&
+        typeof plurnkMeta.receipt === "object" &&
+        Array.isArray(plurnkMeta.receipt.repliedToSources)
+    ) {
+        candidates.push(...plurnkMeta.receipt.repliedToSources);
+    }
+    if (
+        plurnkMeta.receipt &&
+        typeof plurnkMeta.receipt === "object" &&
+        Array.isArray(plurnkMeta.receipt.repliedTo)
+    ) {
+        candidates.push(...plurnkMeta.receipt.repliedTo);
+    }
+    candidates.push(plurnkMeta.source, plurnkMeta.target, plurnkMeta.address);
+    for (const candidate of candidates) {
+        if (typeof candidate !== "string" || candidate.length === 0) continue;
+        const acpMatch = /^acp:\/\/([^/?#]+)/u.exec(candidate);
+        if (acpMatch !== null) {
+            try {
+                const principal = decodeURIComponent(acpMatch[1] ?? "").trim();
+                if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                    return principal;
+                }
+            } catch {
+                // fall through
+            }
+            continue;
+        }
+        const sessionMatch = /^session:\/\/([^/?#]+)/u.exec(candidate);
+        if (sessionMatch !== null) {
+            try {
+                const worker = decodeURIComponent(sessionMatch[1] ?? "").trim();
+                if (worker.length > 0) return worker;
+            } catch {
+                // fall through
+            }
+            continue;
+        }
+        const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
+        if (messageMatch !== null) {
+            const principal = (messageMatch[1] ?? "").trim();
+            if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                return principal;
+            }
+        }
+    }
+    return null;
+};
+
+export const extractCoordinateSeqs = (
+    id: unknown,
+): { readonly loopSeq?: number; readonly turnSeq?: number } => {
+    if (typeof id !== "string" || id.length === 0) return {};
+    const m = /^(?:outside-)?(\d+)\/(\d+)\/(?:\d+|reasoning)$/u.exec(id);
+    if (m === null) return {};
+    const loopSeq = Number.parseInt(m[1]!, 10);
+    const turnSeq = Number.parseInt(m[2]!, 10);
+    return {
+        ...(Number.isFinite(loopSeq) && loopSeq > 0 ? { loopSeq } : {}),
+        ...(Number.isFinite(turnSeq) && turnSeq > 0 ? { turnSeq } : {}),
+    };
+};

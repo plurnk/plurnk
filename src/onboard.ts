@@ -10,7 +10,7 @@ import {
     ensureDaemonConnected,
     openCliSession,
     type CliCommonOptions,
-} from "./cli-runner.ts";
+} from "./cli-connection.ts";
 
 const LOCAL_PROBE_TIMEOUT_MS = 1200;
 

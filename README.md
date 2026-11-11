@@ -40,7 +40,7 @@ Workspaces, sessions and their history live in the daemon, independently of the
 client attachment. Choose your model, context limits, tools, and capability
 policies without replacing the environment.
 
-![A Plurnk terminal session: a prompt, the model's operations, and its answer](https://raw.githubusercontent.com/plurnk/plurnk-service/main/docs/media/session.gif)
+![A Plurnk session across the Unix CLI, interactive TUI, and Plurnk Web](https://raw.githubusercontent.com/plurnk/plurnk/main/docs/media/session.webp)
 
 ## Get started
 

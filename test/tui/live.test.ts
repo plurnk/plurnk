@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, constants as fsConstants, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, constants as fsConstants, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -12,11 +12,49 @@ const repoRoot = resolve(__dirname, "..", "..");
 const binPath = join(repoRoot, "bin", "plurnk.js");
 const liveEnabled = process.env.PLURNK_CLIENT_LIVE === "1";
 
-const locateServiceEntry = async (): Promise<string> => {
-    const checkout = resolve(repoRoot, process.env.PLURNK_SERVICE_CHECKOUT ?? "../plurnk-service");
-    const entry = join(checkout, "plurnk-core", "src", "service.ts");
-    await access(entry, fsConstants.R_OK);
-    return await realpath(entry);
+interface ServiceLaunchTarget {
+    command: string[];
+    cwd: string;
+    serviceRequire: NodeJS.Require;
+}
+
+const locateServiceTarget = async (): Promise<ServiceLaunchTarget> => {
+    const explicitCheckout = process.env.PLURNK_SERVICE_CHECKOUT;
+    if (explicitCheckout !== undefined && explicitCheckout.length > 0) {
+        const entry = await realpath(join(resolve(repoRoot, explicitCheckout), "plurnk-core", "src", "service.ts"));
+        await access(entry, fsConstants.R_OK);
+        return {
+            command: [process.execPath, "--conditions=plurnk-dev", entry],
+            cwd: resolve(dirname(entry), ".."),
+            serviceRequire: createRequire(entry),
+        };
+    }
+
+    const siblingEntry = join(resolve(repoRoot, "../plurnk-service"), "plurnk-core", "src", "service.ts");
+    try {
+        await access(siblingEntry, fsConstants.R_OK);
+        const entry = await realpath(siblingEntry);
+        return {
+            command: [process.execPath, "--conditions=plurnk-dev", entry],
+            cwd: resolve(dirname(entry), ".."),
+            serviceRequire: createRequire(entry),
+        };
+    } catch {
+        const repoRequire = createRequire(join(repoRoot, "package.json"));
+        const pkgJsonPath = await realpath(repoRequire.resolve("@plurnk/plurnk-service/package.json"));
+        const pkg = JSON.parse(await readFile(pkgJsonPath, "utf8")) as {
+            bin?: string | Record<string, string>;
+        };
+        const relBin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.["plurnk-service"] ?? "dist/service.js";
+        const pkgDir = dirname(pkgJsonPath);
+        const installedEntry = await realpath(join(pkgDir, relBin));
+        await access(installedEntry, fsConstants.R_OK);
+        return {
+            command: [process.execPath, installedEntry],
+            cwd: pkgDir,
+            serviceRequire: repoRequire,
+        };
+    }
 };
 
 test(
@@ -29,10 +67,9 @@ test(
         const liveModel = process.env.PLURNK_MODEL;
         assert.ok(liveModel && liveModel.length > 0, "test:tui:live requires an explicit PLURNK_MODEL selector");
 
-        const entry = await locateServiceEntry();
-        const serviceRequire = createRequire(entry);
+        const target = await locateServiceTarget();
         const { default: Launch } = (await import(
-            pathToFileURL(serviceRequire.resolve("@plurnk/plurnk-service/launch")).href
+            pathToFileURL(target.serviceRequire.resolve("@plurnk/plurnk-service/launch")).href
         )) as {
             default: {
                 start: (opts: {
@@ -70,8 +107,8 @@ test(
         let term: pty.IPty | undefined;
         try {
             daemon = await Launch.start({
-                command: [process.execPath, "--conditions=plurnk-dev", entry],
-                cwd: resolve(dirname(entry), ".."),
+                command: target.command,
+                cwd: target.cwd,
                 stateRoot: sandbox,
                 host: "127.0.0.1",
                 port: 0,

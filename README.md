@@ -44,11 +44,16 @@ policies without replacing the environment.
 
 ## Get started
 
-Requirements:
+Install with the POSIX installer (`git` plus `curl` or `wget`; reuses Node.js 26+
+on `PATH` when available, or installs an isolated SHA-256-verified Node.js 26
+runtime under `~/.local/share/plurnk/node` without modifying your system Node):
 
-* Node.js 26+
-* npm
-* git
+```sh
+curl -fsSL https://raw.githubusercontent.com/plurnk/plurnk/main/install.sh | sh
+plurnk --workspace="myProject"
+```
+
+If you already have Node.js 26+ and npm installed, you can also install via npm:
 
 ```sh
 npm install -g --ignore-scripts @plurnk/plurnk
@@ -70,23 +75,26 @@ folder names the workspace after itself. No folder (`--project-root=`) needs
 `--workspace`. Existing workspaces keep their saved folder.
 
 Give it a task in ordinary language. The model uses the operation language;
-you do not need to learn it to use Plurnk. If no model is selected, follow the
-startup hint or [choose one below](#models). The first launch starts the
-included service, which keeps running for later sessions ([Service](#service)).
-The TUI returns to session `user` and its history; unless `--session` is given,
-each one-shot prompt runs in a new session of its own (reported in `--json`
-output and on `fd 3` events).
+you do not need to learn it to use Plurnk. If no model is configured on an
+interactive terminal, `plurnk` offers `plurnk onboard` to connect a local
+server or provider key and verify a readiness turn, or [choose one below](#models).
+The first launch starts the included service, which keeps running for later
+sessions ([Service](#service)). The TUI returns to session `user` and its
+history; unless `--session` is given, each one-shot prompt runs in a new session
+of its own (reported in `--json` output and on `fd 3` events).
 
-Proposals are accepted automatically by default (`PLURNK_CLIENT_YOLO=1`);
-set it to `0` or start a prompt with `?` to review them. Neither overrides
-capability restrictions.
+Proposals require review by default (`PLURNK_CLIENT_YOLO=0`); press `Shift+Tab`,
+run `/yolo`, pass `--yolo`, or start a prompt with `!` to accept them
+automatically (`?` forces review for one prompt). Neither overrides capability
+restrictions.
 
 ## Models
 
-Supply your provider's API key to the backend—for example,
-`export DEEPSEEK_API_KEY="your-api-key"` before launching Plurnk. The service
-reads it when it starts, so export it before the first launch, or stop the
-service (`plurnk-service stop`) and launch again.
+Run `plurnk onboard` for guided first-run model setup, or supply your provider's
+API key to the backend—for example, `export DEEPSEEK_API_KEY="your-api-key"`
+before launching Plurnk. The service reads environment credentials when it
+starts, so export them before the first launch, or restart the daemon
+(`plurnk daemon restart`).
 In the TUI, `/models` lists models with configured credentials and
 `/model <provider/model>` selects one. You can also launch with
 `--model=<provider/model>`; aliases are optional.
@@ -98,8 +106,9 @@ To set a default for new sessions, add your chosen route to
 PLURNK_MODEL=deepseek/deepseek-v4-flash
 ```
 
-Restart an already-running daemon to load changed startup settings; existing
-sessions retain their selection. See [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
+Reload `.env` changes with `plurnk daemon reload` (or `plurnk daemon restart`
+for changed startup listener settings); existing sessions retain their
+selection. See [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
 for local endpoints and tuning.
 
 ## Service
@@ -108,8 +117,9 @@ for local endpoints and tuning.
 and `PLURNK_PORT` move it), starting the installed `plurnk-service` there when
 nothing listens. The service keeps running after the client exits and serves
 every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
-its log in `~/.local/state/plurnk/service.log`. Stop it with
-`plurnk-service stop`.
+its log in `~/.local/state/plurnk/service.log`. Manage it with
+`plurnk daemon <start|stop|restart|reload|status|config>`, and open the hosted
+browser interface already signed in with `plurnk web` (or `/web` in the TUI).
 
 To start it at login on Linux, install the service package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
 (`plurnk.service` in `@plurnk/plurnk-service`); its comments cover installation,
@@ -133,7 +143,9 @@ plurnk --workspace="myProject"
 A scrollback-native TUI with multiline prompts, streaming reasoning when the
 provider supplies it, Markdown and Mermaid rendering, and slash commands for
 managing models, sessions, and tools. Run `/help` to explore; `/model` and
-`/child` select the session's model and its delegated model.
+`/child` select the session's model and its delegated model, `/learn` distills
+reusable workflows from the session into a `SKILL.md`, and `/web` opens the
+browser interface.
 
 ### CLI and pipelines
 
@@ -151,7 +163,8 @@ diagnostics, and usage. A lost connection exits with an error while preserving
 received evidence; missing final usage stays unknown. No prompt is replayed.
 
 Use `plurnk --help` for CLI options. `plurnk models` lists available model
-routes.
+routes, `plurnk onboard` bootstraps a model route, `plurnk web` opens the web
+client, and `plurnk daemon` manages the local daemon.
 
 ## Patterns that compose
 
@@ -187,10 +200,10 @@ every tool's schema into every prompt.
 Configuration uses cascading environment variables and `.env` files, including
 the XDG user configuration at `~/.config/plurnk/.env`. Model discovery uses
 [models.dev](https://models.dev). Inspect the complete, documented configuration
-catalog with the separately installed service:
+catalog through the included daemon:
 
 ```sh
-plurnk-service config defaults
+plurnk daemon config defaults
 ```
 
 ## Documentation

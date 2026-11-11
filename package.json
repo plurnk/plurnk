@@ -7,6 +7,14 @@
     "publishConfig": {
         "access": "public"
     },
+    "homepage": "https://github.com/plurnk/plurnk#readme",
+    "bugs": {
+        "url": "https://github.com/plurnk/plurnk/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/plurnk/plurnk.git"
+    },
     "engines": {
         "node": ">=26"
     },
@@ -23,10 +31,10 @@
     "scripts": {
         "deps:check": "node scripts/deps-check.mjs",
         "deps:drift": "node scripts/deps-drift.mjs",
-        "test:lint": "tsc --noEmit && node scripts/deps-check.mjs && node ../plurnk-service/plurnk-spec-check/check.mjs . && npm run test:posix",
+        "test:lint": "tsc --noEmit && node scripts/deps-check.mjs && plurnk-spec-check . && npm run test:posix",
         "pretest:posix": "npm run build:posix",
         "test:posix": "node scripts/check-posix.mjs",
-        "pretest:unit": "npm run build:posix",
+        "pretest:unit": "npm run build",
         "test:unit": "node --env-file-if-exists=.env.defaults --test --test-timeout=30000 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
         "pretest:intg": "npm run build",
         "test:intg": "node --test --test-concurrency=$(node scripts/test-concurrency.mjs) --test-timeout=120000 --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
@@ -51,6 +59,7 @@
         "build:posix": "node scripts/generate-posix.mjs"
     },
     "devDependencies": {
+        "@plurnk/plurnk-spec-check": "^0.2.0",
         "@types/node": "^26.6.6",
         "@xterm/headless": "^6.0.0",
         "node-pty": "^1.1.0",

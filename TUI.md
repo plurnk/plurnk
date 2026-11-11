@@ -2,8 +2,7 @@
 
 `plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
 interactive modes use the daemon's ACP v2 surface. It builds on two
-implementation substrates (`../plurnk-service/ARCHITECTURE.md` § Standards and
-substrate): `@agentclientprotocol/sdk` for ACP v2 JSON-RPC framing and
+implementation substrates ([`ARCHITECTURE.md` § Standards and substrate](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)): `@agentclientprotocol/sdk` for ACP v2 JSON-RPC framing and
 Streamable HTTP / WebSocket transport, and `@earendil-works/pi-tui` for
 main-screen terminal viewport diffing, scrollback preservation, editor/selection
 widgets, and GFM/table/LaTeX layout. The daemon owns workspaces, sessions, model

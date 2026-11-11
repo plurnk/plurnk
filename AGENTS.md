@@ -1,7 +1,7 @@
 # Plurnk Client Agent Guidance
 
-Read `../POSSUMTECH.md` before working in this repository. Stop if it is
-unavailable.
+Check for `AGENTS.local.md` (and `../POSSUMTECH.md` when working inside a
+PossumTech workspace) and follow any local guidance present.
 
 This repository owns the open-source PLURNK terminal client. Preserve the
 client boundary: it consumes `plurnk-service` through the public ACP v2
@@ -11,7 +11,7 @@ absorb daemon or provider responsibilities.
 **ACPv2 is the Schelling point.** Our prerogative is not to maintain a translation layer between
 PLURNK and ACPv2, but to become an ACPv2 agent paradigmatically — aggressively simplifying until the
 only things that aren't ACPv2 are either essential to PLURNK's virtual machine or orthogonal to the
-protocol (`../plurnk-service/ARCHITECTURE.md` § Standards and substrate). When ACPv2 names or shapes a
+protocol ([`ARCHITECTURE.md` § Standards and substrate](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)). When ACPv2 names or shapes a
 concept, it drives a maximal rename across the service and client so the codebase reads as if that was
 always our name and model for it. `_plurnk/action` is a shrinking residual bridge for VM and workspace
 operations ACPv2 cannot yet express, never a permanent bespoke dialect.
@@ -38,18 +38,20 @@ published changelogs.
 
 ## Verification
 
-`npm test` runs lint, unit, integration, and TUI checks. The integration and
-TUI tiers boot the service from the checkout `PLURNK_SERVICE_CHECKOUT` names
-(`../plurnk-service` by default) and borrow its MCP fixtures from there;
-`test/service-checkout.ts` is the one place that path is resolved. Each integration and
-TUI file can start a real daemon and terminal fixtures, so those tiers run as many files
-at once as the host holds: its available cores, bounded by its available memory over a
-file's measured footprint (`scripts/test-concurrency.mjs`). No tier fixes a number for
-one machine. Unit tests retain Node's default.
+`npm test` runs lint, unit, integration, and TUI checks standalone with no
+sibling repository required. Deterministic integration tests (`test/intg/*`)
+drive in-process mock ACP v2 agents, while `test/tui/live.test.ts` (`npm run test:tui:live`)
+boots the service from `PLURNK_SERVICE_CHECKOUT` when set, from `../plurnk-service`
+when present, or from the installed `@plurnk/plurnk-service` dependency.
+Integration and TUI suites run as many files at once as the host holds: its
+available cores, bounded by its available memory over a file's measured footprint
+(`scripts/test-concurrency.mjs`). No tier fixes a number for one machine. Unit
+tests retain Node's default.
 
-The service's pre-push drill drives this checkout's installed CLI and TUI against
-a live daemon and waits for their exact output (`scripts/test-client-conformance.mjs`
-in `plurnk-service`). After a presentation change, run
+When working alongside a sibling `plurnk-service` checkout, the service's
+pre-push drill drives this checkout's installed CLI and TUI against a live
+daemon (`scripts/test-client-conformance.mjs` in `plurnk-service`). After a
+presentation change in a multi-repo workspace, run
 `npm run -s test:client-conformance` in the service checkout before landing; this
 repository's own suite cannot see that coupling.
 
@@ -57,7 +59,7 @@ repository's own suite cannot see that coupling.
 
 The client owns its version and named dependency ranges; it does not share a
 platform version stamp. Prepare and land manifest/lock changes before publication.
-The platform's [release procedure](../plurnk-service/CONTRIBUTING.md#release)
+The platform's [release procedure](https://github.com/plurnk/plurnk-service/blob/main/CONTRIBUTING.md#release)
 can explicitly select this checkout, qualify its packed composition, and publish
 the retained artifact without modifying source. `release:gate` owns the client
 checks beyond `npm test`; `test:composition -- --installed <consumer>` exercises

@@ -84,9 +84,9 @@ history; unless `--session` is given, each one-shot prompt runs in a new session
 of its own (reported in `--json` output and on `fd 3` events).
 
 Proposals require review by default (`PLURNK_CLIENT_YOLO=0`); press `Shift+Tab`,
-run `/yolo`, pass `--yolo`, or start a prompt with `!` to accept them
-automatically (`?` forces review for one prompt). Neither overrides capability
-restrictions.
+run `/yolo`, or pass `--yolo` to accept them automatically (`? <prompt>` forces
+review for one prompt, and `! <command>` runs a shell command directly). Neither
+overrides capability restrictions.
 
 ## Models
 

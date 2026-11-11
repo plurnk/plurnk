@@ -1,6 +1,6 @@
 // Hermetic dependency ledger & ACP v2 SDK surface check ({§cli-conformance}, #232).
 // Runs inside `npm test` (`test:lint`) with zero network access.
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -182,12 +182,197 @@ export const evaluateAcpV2Surface = (conformance, sdk = {
     return violations;
 };
 
+const stripCommentsPreservingStrings = (source) => {
+    let out = "";
+    let i = 0;
+    while (i < source.length) {
+        const ch = source[i];
+        const next = source[i + 1];
+        if (ch === "/" && next === "/") {
+            i += 2;
+            while (i < source.length && source[i] !== "\n") i += 1;
+            continue;
+        }
+        if (ch === "/" && next === "*") {
+            i += 2;
+            while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+                if (source[i] === "\n") out += "\n";
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+        if (ch === "'" || ch === '"' || ch === "`") {
+            const quote = ch;
+            out += ch;
+            i += 1;
+            while (i < source.length && source[i] !== quote) {
+                if (source[i] === "\\") {
+                    out += source.slice(i, i + 2);
+                    i += 2;
+                    continue;
+                }
+                out += source[i];
+                i += 1;
+            }
+            if (i < source.length) {
+                out += source[i];
+                i += 1;
+            }
+            continue;
+        }
+        out += ch;
+        i += 1;
+    }
+    return out;
+};
+
+export const extractRuntimeRelativeSpecifiers = (sourceText) => {
+    const cleaned = stripCommentsPreservingStrings(sourceText);
+    const specifiers = [];
+    const stmtRe = /^[ \t]*(import|export)\s+([\s\S]*?)(?:;|$)/gmu;
+    for (const match of cleaned.matchAll(stmtRe)) {
+        const keyword = match[1];
+        const body = match[2].trim();
+        if (/^type(?:\s|\{|\*)/u.test(body)) continue;
+        if (keyword === "import" && /^["'](\.\.?\/[^"']+)["']/u.test(body)) {
+            const sideEffect = body.match(/^["'](\.\.?\/[^"']+)["']/u);
+            if (sideEffect) specifiers.push(sideEffect[1]);
+            continue;
+        }
+        const fromMatch = body.match(/^([\s\S]*?)\s+from\s+["'](\.\.?\/[^"']+)["']/u);
+        if (!fromMatch) continue;
+        const clause = fromMatch[1].trim();
+        const target = fromMatch[2];
+        const braceMatch = clause.match(/^(.*?)\{([\s\S]*)\}$/u);
+        if (braceMatch) {
+            const prefixBinding = braceMatch[1].replace(/,\s*$/u, "").trim();
+            const namedItems = braceMatch[2]
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            const hasValueNamed = namedItems.some((item) => !/^type\s+/u.test(item));
+            if (prefixBinding.length === 0 && !hasValueNamed) {
+                continue;
+            }
+        }
+        specifiers.push(target);
+    }
+    return specifiers;
+};
+
+export const findRuntimeCycles = (graph) => {
+    const nodes = [...graph.keys()].sort();
+    const indexByNode = new Map();
+    const lowlinkByNode = new Map();
+    const onStack = new Set();
+    const stack = [];
+    let index = 0;
+    const cycles = [];
+
+    const recordCycle = (sccSet) => {
+        const sorted = [...sccSet].sort();
+        const start = sorted[0];
+        const visited = new Set([start]);
+        const pathStack = [start];
+        const dfs = (curr) => {
+            const neighbors = (graph.get(curr) ?? []).filter((n) => sccSet.has(n)).sort();
+            for (const next of neighbors) {
+                if (next === start) {
+                    cycles.push([...pathStack, start]);
+                    return true;
+                }
+                if (!visited.has(next)) {
+                    visited.add(next);
+                    pathStack.push(next);
+                    if (dfs(next)) return true;
+                    pathStack.pop();
+                }
+            }
+            return false;
+        };
+        dfs(start);
+    };
+
+    const strongConnect = (node) => {
+        indexByNode.set(node, index);
+        lowlinkByNode.set(node, index);
+        index += 1;
+        stack.push(node);
+        onStack.add(node);
+
+        for (const neighbor of graph.get(node) ?? []) {
+            if (!graph.has(neighbor)) continue;
+            if (!indexByNode.has(neighbor)) {
+                strongConnect(neighbor);
+                lowlinkByNode.set(node, Math.min(lowlinkByNode.get(node), lowlinkByNode.get(neighbor)));
+            } else if (onStack.has(neighbor)) {
+                lowlinkByNode.set(node, Math.min(lowlinkByNode.get(node), indexByNode.get(neighbor)));
+            }
+        }
+
+        if (lowlinkByNode.get(node) === indexByNode.get(node)) {
+            const scc = new Set();
+            while (stack.length > 0) {
+                const popped = stack.pop();
+                onStack.delete(popped);
+                scc.add(popped);
+                if (popped === node) break;
+            }
+            if (scc.size > 1 || (graph.get(node) ?? []).includes(node)) {
+                recordCycle(scc);
+            }
+        }
+    };
+
+    for (const node of nodes) {
+        if (!indexByNode.has(node)) {
+            strongConnect(node);
+        }
+    }
+
+    return cycles.map((cycle) => `runtime import cycle: ${cycle.join(" -> ")}`);
+};
+
+export const evaluateRuntimeCycles = async (rootDir = DEFAULT_ROOT) => {
+    const srcDir = path.join(rootDir, "src");
+    const entries = await readdir(srcDir, { withFileTypes: true, recursive: true });
+    const files = entries
+        .filter(
+            (e) =>
+                e.isFile() &&
+                e.name.endsWith(".ts") &&
+                !e.name.endsWith(".test.ts") &&
+                !e.name.endsWith(".d.ts"),
+        )
+        .map((e) => path.join(e.parentPath, e.name))
+        .sort();
+
+    const graph = new Map();
+    for (const absFile of files) {
+        const relFile = path.relative(rootDir, absFile).replaceAll(path.sep, "/");
+        const content = await readFile(absFile, "utf8");
+        const specs = extractRuntimeRelativeSpecifiers(content);
+        const resolvedTargets = specs.map((spec) => {
+            const targetAbs = path.resolve(path.dirname(absFile), spec);
+            const normalizedAbs = targetAbs.endsWith(".js")
+                ? `${targetAbs.slice(0, -3)}.ts`
+                : targetAbs;
+            return path.relative(rootDir, normalizedAbs).replaceAll(path.sep, "/");
+        });
+        graph.set(relFile, [...new Set(resolvedTargets)]);
+    }
+
+    return findRuntimeCycles(graph);
+};
+
 export const runDepsCheck = async (rootDir = DEFAULT_ROOT) => {
-    const [policyRaw, manifestRaw, lockfileRaw, conformanceRaw] = await Promise.all([
+    const [policyRaw, manifestRaw, lockfileRaw, conformanceRaw, cycleViolations] = await Promise.all([
         readFile(path.join(rootDir, "deps-policy.json"), "utf8"),
         readFile(path.join(rootDir, "package.json"), "utf8"),
         readFile(path.join(rootDir, "package-lock.json"), "utf8"),
         readFile(path.join(rootDir, "conformance/acp-client.json"), "utf8"),
+        evaluateRuntimeCycles(rootDir),
     ]);
     const piTuiHasNativePrebuilds = await access(
         path.join(rootDir, "node_modules/@earendil-works/pi-tui/native"),
@@ -201,6 +386,7 @@ export const runDepsCheck = async (rootDir = DEFAULT_ROOT) => {
             piTuiHasNativePrebuilds,
         }),
         ...evaluateAcpV2Surface(JSON.parse(conformanceRaw)),
+        ...cycleViolations,
     ];
     return violations;
 };
@@ -212,5 +398,5 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         for (const v of violations) console.error(`  - ${v}`);
         process.exit(1);
     }
-    console.log("deps:check OK (ledger, manifest, lockfile, and ACP v2 SDK surface aligned)");
+    console.log("deps:check OK (ledger, manifest, lockfile, ACP v2 SDK surface, and runtime import DAG aligned)");
 }

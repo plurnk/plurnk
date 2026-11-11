@@ -87,6 +87,7 @@ export {
     concluded,
     default as TuiSurface,
     editorTheme,
+    formatComposerHint,
     isColorMode,
     learnScheme,
     ModelText,
@@ -98,5 +99,6 @@ export {
     withColorOutput,
     type AttentionReason,
     type AttentionSink,
+    type ComposerHintState,
     type Role,
 } from "./tui-surface.ts";

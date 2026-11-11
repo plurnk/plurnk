@@ -18,7 +18,7 @@ import {
     openCliSession,
     resolveServiceCommand,
     type CliCommonOptions,
-} from "./cli-runner.ts";
+} from "./cli-connection.ts";
 import { toHttpOrigin } from "./credential.ts";
 import {
     executeFamilyCommand,

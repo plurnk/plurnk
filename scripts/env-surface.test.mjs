@@ -56,7 +56,7 @@ const NUMERIC_CONSTANT = /\b(?:const|static(?:\s+readonly)?)\s+#?([A-Z][A-Z0-9_]
 const TIMER_LITERAL = /\b(?:setTimeout|setInterval|delay|sleep|AbortSignal\.timeout)\s*\([^()\n]*?\b\d[\d_]+\s*[,)]/gu;
 const MECHANISM = new Map([
     ["src/runtime-floor.ts:NODE_MAJOR_FLOOR", "package.json engines.node floor"],
-    ["src/cli-runner.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
+    ["src/cli-connection.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
     ["src/onboard.ts:LOCAL_PROBE_TIMEOUT_MS", "loopback local-inference discovery timeout during plurnk onboard (#254)"],
 ]);
 

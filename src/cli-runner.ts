@@ -22,9 +22,11 @@ import {
 import {
     formatConfigOption,
     formatServiceUpdateResult,
+    openWebHandoff,
     runCliCapabilities,
     runCliCompletion,
     runCliConfig,
+    runCliDaemon,
     runCliDeleteSession,
     runCliFamily,
     runCliForkSession,
@@ -38,9 +40,11 @@ import {
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
+    runCliWeb,
     runCliWorkspace,
 } from "./cli-subcommands.ts";
 import Credential from "./credential.ts";
+import { checkNeedsAutoOnboard, runCliOnboard } from "./onboard.ts";
 import {
     formatFamilyRows,
     mintGateHash,
@@ -53,6 +57,7 @@ import { runReplSession } from "./repl-session.ts";
 import { runTuiViewport } from "./tui-viewport.ts";
 
 export {
+    checkNeedsAutoOnboard,
     createCliElicitationHandler,
     createCliPermissionHandler,
     formatConfigOption,
@@ -61,9 +66,11 @@ export {
     formatServiceUpdateResult,
     matchesRuntimeAcceptance,
     openProcessStreams,
+    openWebHandoff,
     runCliCapabilities,
     runCliCompletion,
     runCliConfig,
+    runCliDaemon,
     runCliDeleteSession,
     runCliFamily,
     runCliForkSession,
@@ -73,10 +80,12 @@ export {
     runCliLogRead,
     runCliModels,
     runCliNewSession,
+    runCliOnboard,
     runCliReadCoord,
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
+    runCliWeb,
     runCliWorkspace,
     runReplSession,
     runTuiViewport,
@@ -130,28 +139,35 @@ const isLoopbackHost = (host: string): boolean =>
 
 const DAEMON_POLL_MS = 100;
 
-const resolveServiceCommand = (serviceBin?: string): { readonly file: string; readonly args: string[] } => {
+export const resolveServiceCommand = (
+    serviceBin?: string,
+    subcommandArgs: readonly string[] = ["start"],
+): { readonly file: string; readonly args: string[] } => {
     if (serviceBin !== undefined && serviceBin.trim().length > 0) {
         const bin = serviceBin.trim();
         if (bin.endsWith(".js") || bin.endsWith(".mjs") || bin.endsWith(".ts")) {
-            return { file: process.execPath, args: [resolve(bin), "start"] };
+            return { file: process.execPath, args: [resolve(bin), ...subcommandArgs] };
         }
-        return { file: bin, args: ["start"] };
+        return { file: bin, args: [...subcommandArgs] };
     }
     const localBin = join(process.cwd(), "node_modules", ".bin", "plurnk-service");
     if (existsSync(localBin)) {
-        return { file: localBin, args: ["start"] };
+        return { file: localBin, args: [...subcommandArgs] };
     }
     try {
         const pkgPath = require.resolve("@plurnk/plurnk-service/package.json");
         const serviceJs = join(dirname(pkgPath), "dist", "service.js");
         if (existsSync(serviceJs)) {
-            return { file: process.execPath, args: [serviceJs, "start"] };
+            return { file: process.execPath, args: [serviceJs, ...subcommandArgs] };
+        }
+        const serviceTs = join(dirname(pkgPath), "src", "service.ts");
+        if (existsSync(serviceTs)) {
+            return { file: process.execPath, args: [serviceTs, ...subcommandArgs] };
         }
     } catch {
         // fallback to PATH
     }
-    return { file: "plurnk-service", args: ["start"] };
+    return { file: "plurnk-service", args: [...subcommandArgs] };
 };
 
 export class ClientCliError extends Error {
@@ -192,7 +208,7 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
                         type: "https://problems.plurnk.xyz/client/connection/refused",
                         title: "Connection refused",
                         status: 503,
-                        detail: `Could not reach the configured service at ${options.url}. Start it with \`plurnk-service start\` or check PLURNK_ACP_URL.`,
+                        detail: `Could not reach the configured service at ${options.url}. Start it with \`plurnk daemon start\` or check PLURNK_ACP_URL.`,
                     },
                     1,
                 );
@@ -263,7 +279,7 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
             status: 503,
             detail:
                 lastError instanceof Error
-                    ? `Could not reach the configured service at ${options.url} (${lastError.message}). Run \`plurnk-service start\`.`
+                    ? `Could not reach the configured service at ${options.url} (${lastError.message}). Run \`plurnk daemon start\`.`
                     : `Timed out after ${options.daemonTimeoutMs}ms waiting for plurnk-service to start.`,
         },
         1,
@@ -926,6 +942,9 @@ export const runInteractiveSession = async (
 ): Promise<number> => {
     if (options.repl) {
         return await runReplSession(options, customStreams);
+    }
+    if (customStreams === undefined && (await checkNeedsAutoOnboard(options))) {
+        await runCliOnboard(options);
     }
     return await runTuiViewport(options, customStreams);
 };

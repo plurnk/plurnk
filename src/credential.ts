@@ -74,7 +74,7 @@ const writeGrantsStore = (grantsPath: string, store: Record<string, StoredGrant>
     }
 };
 
-const toHttpOrigin = (rawUrl: string): string => {
+export const toHttpOrigin = (rawUrl: string): string => {
     const url = new URL(rawUrl);
     if (url.protocol === "ws:") url.protocol = "http:";
     else if (url.protocol === "wss:") url.protocol = "https:";
@@ -464,5 +464,37 @@ export default class Credential {
     async headers(acpUrl: string): Promise<Record<string, string>> {
         const tok = await this.token(acpUrl);
         return tok !== null ? { authorization: `Bearer ${tok}` } : {};
+    }
+
+    async operatorHeaders(acpUrl: string): Promise<Record<string, string>> {
+        const secret = this.#explicitSecret ?? resolveSecretFromEnv(this.#env);
+        if (secret !== null) {
+            const origin = toHttpOrigin(acpUrl);
+            const body = new URLSearchParams({
+                grant_type: "client_credentials",
+                client_id: "operator",
+                client_secret: secret,
+                scope: "acp",
+            });
+            try {
+                const res = await fetch(`${origin}/oauth/token`, {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                        accept: "application/json",
+                    },
+                    body: body.toString(),
+                });
+                if (res.ok) {
+                    const json = (await res.json()) as { access_token?: string };
+                    if (typeof json.access_token === "string" && json.access_token.length > 0) {
+                        return { authorization: `Bearer ${json.access_token}` };
+                    }
+                }
+            } catch {
+                // fall through to standard headers
+            }
+        }
+        return await this.headers(acpUrl);
     }
 }

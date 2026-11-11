@@ -2,6 +2,7 @@
 // `log read`, `read`, `capabilities`, `script`, `completion`, and family commands)
 // ({§cli-subcommands}, {§cli-configuration-source}, {§cli-interactive-command-discovery}).
 
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,10 +13,13 @@ import {
 import { AcpClient } from "./acp-client.ts";
 import { contentBlockToText } from "./acp-session.ts";
 import {
+    ClientCliError,
     ensureDaemonConnected,
     openCliSession,
+    resolveServiceCommand,
     type CliCommonOptions,
 } from "./cli-runner.ts";
+import { toHttpOrigin } from "./credential.ts";
 import {
     executeFamilyCommand,
     formatLogEntries,
@@ -255,8 +259,8 @@ export const runCliConfig = async (
                 const known = session.configOptions.map((o) => o.configId);
                 const serviceHint =
                     configId === "show" || configId === "check" || configId === "defaults" || configId === "edit"
-                        ? ` To inspect or manage daemon configuration, run: plurnk-service config ${configId}`
-                        : " To inspect daemon configuration, run: plurnk-service config";
+                        ? ` To inspect or manage daemon configuration, run: plurnk daemon config ${configId}`
+                        : " To inspect daemon configuration, run: plurnk daemon config";
                 const detail = `Unknown session config option "${configId}" (available: ${known.join(", ") || "none"}).${serviceHint}`;
                 throw Object.assign(new Error(detail), {
                     exitCode: 64,
@@ -694,5 +698,212 @@ export const runCliLogout = async (options: CliCommonOptions): Promise<number> =
     } else {
         process.stdout.write(revoked ? `logged out: ${origin}\n` : `no stored grant for ${origin}\n`);
     }
+    return 0;
+};
+
+const spawnServiceForeground = async (
+    subcommandArgs: readonly string[],
+    options: CliCommonOptions,
+): Promise<number> => {
+    const cmd = resolveServiceCommand(options.serviceBin, subcommandArgs);
+    return await new Promise<number>((resolveCode, rejectErr) => {
+        const child = spawn(cmd.file, cmd.args, {
+            cwd: options.cwd,
+            env: {
+                ...process.env,
+                ...options.env,
+            },
+            stdio: "inherit",
+        });
+        child.once("error", (err: NodeJS.ErrnoException) => {
+            if (err.code === "ENOENT") {
+                rejectErr(
+                    new ClientCliError(
+                        {
+                            type: "https://problems.plurnk.xyz/client/daemon/not-installed",
+                            title: "Service not installed",
+                            status: 503,
+                            detail: "Could not find `plurnk-service` to run `plurnk daemon`. Install `@plurnk/plurnk-service` (`npm install -g --ignore-scripts @plurnk/plurnk-service`).",
+                        },
+                        127,
+                    ),
+                );
+                return;
+            }
+            rejectErr(err);
+        });
+        child.once("close", (code, signal) => {
+            resolveCode(code ?? (signal ? 1 : 0));
+        });
+    });
+};
+
+export const runCliDaemon = async (
+    daemonArgs: readonly string[],
+    options: CliCommonOptions,
+): Promise<number> => {
+    const sub = daemonArgs[0];
+    if (sub === "restart") {
+        if (daemonArgs.length > 1) {
+            throw new ClientCliError(
+                {
+                    type: "https://problems.plurnk.xyz/client/usage",
+                    title: "Invalid daemon arguments",
+                    status: 400,
+                    detail: "usage: plurnk daemon restart",
+                },
+                64,
+            );
+        }
+        const stopCode = await spawnServiceForeground(["stop"], options);
+        if (stopCode !== 0) return stopCode;
+        const client = new AcpClient({
+            url: options.url,
+            credential: options.credential,
+            env: options.env,
+        });
+        try {
+            await ensureDaemonConnected(client, { ...options, autostart: true });
+        } finally {
+            client.close();
+        }
+        if (options.json) {
+            process.stdout.write(`${JSON.stringify({ status: "restarted", url: options.url }, null, 2)}\n`);
+        } else {
+            process.stdout.write(`daemon: restarted (${options.url})\n`);
+        }
+        return 0;
+    }
+    const normalizedArgs =
+        daemonArgs.length === 0
+            ? ["config"]
+            : sub === "status"
+              ? ["config", ...daemonArgs.slice(1)]
+              : daemonArgs;
+    return await spawnServiceForeground(normalizedArgs, options);
+};
+
+export interface WebHandoffOptions {
+    readonly noOpen?: boolean;
+    readonly openBrowser?: (url: string) => Promise<unknown>;
+    readonly write?: (text: string) => void;
+    readonly json?: boolean;
+}
+
+export const openWebHandoff = async (
+    options: CliCommonOptions,
+    handoffOpts?: WebHandoffOptions,
+): Promise<void> => {
+    const origin = toHttpOrigin(options.url);
+    const authHeaders = await options.credential.operatorHeaders(options.url);
+    const res = await fetch(`${origin}/oauth/handoff`, {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...authHeaders,
+        },
+        body: JSON.stringify({ return: "/" }),
+    });
+
+    let targetUrl: string;
+    if (res.status === 404 && Object.keys(authHeaders).length === 0) {
+        targetUrl = `${origin}/`;
+    } else if (!res.ok) {
+        let detail = `Browser handoff failed (${String(res.status)}).`;
+        try {
+            const errBody = (await res.json()) as {
+                error_description?: string;
+                detail?: string;
+                error?: string;
+            };
+            if (typeof errBody.error_description === "string" && errBody.error_description.length > 0) {
+                detail = errBody.error_description;
+            } else if (typeof errBody.detail === "string" && errBody.detail.length > 0) {
+                detail = errBody.detail;
+            } else if (typeof errBody.error === "string" && errBody.error.length > 0) {
+                detail = errBody.error;
+            }
+        } catch {
+            // keep fallback detail
+        }
+        throw new ClientCliError(
+            {
+                type: "https://problems.plurnk.xyz/client/web/handoff-failed",
+                title: "Web handoff failed",
+                status: res.status,
+                detail,
+            },
+            1,
+        );
+    } else {
+        const body = (await res.json()) as { url?: string };
+        if (typeof body.url !== "string" || body.url.length === 0) {
+            throw new ClientCliError(
+                {
+                    type: "https://problems.plurnk.xyz/client/web/handoff-failed",
+                    title: "Web handoff failed",
+                    status: 502,
+                    detail: "Daemon handoff response did not include a URL.",
+                },
+                1,
+            );
+        }
+        targetUrl = body.url;
+    }
+
+    const write = handoffOpts?.write ?? ((text: string) => process.stdout.write(text));
+    const jsonOut = handoffOpts?.json ?? options.json;
+    if (handoffOpts?.noOpen) {
+        if (jsonOut) {
+            write(`${JSON.stringify({ status: "ready", url: targetUrl }, null, 2)}\n`);
+        } else {
+            write(`${targetUrl}\n`);
+        }
+        return;
+    }
+
+    const openFn =
+        handoffOpts?.openBrowser ??
+        (async (u: string) => {
+            const mod = await import("open");
+            return await mod.default(u);
+        });
+    try {
+        await openFn(targetUrl);
+        if (jsonOut) {
+            write(`${JSON.stringify({ status: "opened" }, null, 2)}\n`);
+        } else {
+            write("Opened Plurnk Web in your browser.\n");
+        }
+    } catch {
+        if (jsonOut) {
+            write(`${JSON.stringify({ status: "fallback", url: targetUrl }, null, 2)}\n`);
+        } else {
+            write(`${targetUrl}\n`);
+        }
+    }
+};
+
+export const runCliWeb = async (
+    noOpen: boolean,
+    options: CliCommonOptions,
+    openBrowser?: (url: string) => Promise<unknown>,
+): Promise<number> => {
+    const client = new AcpClient({
+        url: options.url,
+        credential: options.credential,
+        env: options.env,
+    });
+    try {
+        await ensureDaemonConnected(client, options);
+    } finally {
+        client.close();
+    }
+    await openWebHandoff(options, {
+        noOpen,
+        ...(openBrowser !== undefined ? { openBrowser } : {}),
+        json: options.json,
+    });
     return 0;
 };

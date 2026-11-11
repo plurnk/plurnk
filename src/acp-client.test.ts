@@ -546,7 +546,7 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     assert.deepEqual(sub?.additionalDirectories, ["/workspace/shared"]);
 });
 
-test("{§cli-subcommands}: runCliConfig rejects unknown session config option ids with exitCode 64 and points daemon config queries to plurnk-service config", async () => {
+test("{§cli-subcommands}: runCliConfig rejects unknown session config option ids with exitCode 64 and points daemon config queries to plurnk daemon config", async () => {
     const configOptions = [
         {
             type: "select" as const,
@@ -618,7 +618,7 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
                 assert.ok(err instanceof Error);
                 assert.equal((err as { exitCode?: number }).exitCode, 64);
                 assert.match(err.message, /Unknown session config option "defaults" \(available: model, yolo\)/);
-                assert.match(err.message, /plurnk-service config defaults/);
+                assert.match(err.message, /plurnk daemon config defaults/);
                 return true;
             },
         );
@@ -628,7 +628,7 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
                 assert.ok(err instanceof Error);
                 assert.equal((err as { exitCode?: number }).exitCode, 64);
                 assert.match(err.message, /Unknown session config option "unknown_key" \(available: model, yolo\)/);
-                assert.match(err.message, /plurnk-service config/);
+                assert.match(err.message, /plurnk daemon config/);
                 return true;
             },
         );

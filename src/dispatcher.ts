@@ -9,6 +9,7 @@ import {
     runCliCapabilities,
     runCliCompletion,
     runCliConfig,
+    runCliDaemon,
     runCliDeleteSession,
     runCliFamily,
     runCliForkSession,
@@ -18,11 +19,13 @@ import {
     runCliLogRead,
     runCliModels,
     runCliNewSession,
+    runCliOnboard,
     runCliPrompt,
     runCliReadCoord,
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
+    runCliWeb,
     runCliWorkspace,
     runInteractiveSession,
     type CliCommonOptions,
@@ -77,10 +80,14 @@ export const CLIENT_OPTIONS = {
     all: { type: "boolean" },
     offset: { type: "string" },
     width: { type: "string" },
+    "no-open": { type: "boolean" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
+       plurnk daemon [start|stop|restart|reload|status|config|...]
+       plurnk web [--no-open] [--json]
+       plurnk onboard
        plurnk update [--json]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
@@ -106,7 +113,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
        plurnk login [--json]
        plurnk logout [--json]
 
-Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk-service stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
+Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk daemon stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
      < $XDG_CONFIG_HOME/plurnk/.env.local < repeated --env-file flags (last wins) < shell):
@@ -235,8 +242,12 @@ options:
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
+      --no-open           (web) print the single-use sign-in URL instead of opening a browser
 
 subcommands:
+  daemon [subcommand...]  manage the installed plurnk-service daemon (start, stop, restart, reload, status, config, ...)
+  web [--no-open]         open the Plurnk Web UI signed in via a single-use loopback handoff
+  onboard                 probe local inference or configure one provider API key and verify a live turn
   update                  update the model catalog and show how to update Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
@@ -350,10 +361,12 @@ const collectSessionEnv = (
 export const main = async (argv: readonly string[] = process.argv): Promise<void> => {
     const rawArgs = argv.slice(2);
 
-    // Split before family command if present ({§cli-invocation})
+    // Split before family or daemon command if present ({§cli-invocation})
     let clientArgs = [...rawArgs];
     let familyName: string | undefined;
     let familyArgs: string[] = [];
+    let daemonPassthrough = false;
+    let daemonArgs: string[] = [];
 
     for (let i = 0; i < rawArgs.length; i += 1) {
         const token = rawArgs[i]!;
@@ -373,13 +386,18 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 token !== "--repl" &&
                 token !== "--no-git" &&
                 token !== "--debug-no-meta" &&
-                token !== "--all"
+                token !== "--all" &&
+                token !== "--no-open"
             ) {
                 i += 1;
             }
             continue;
         }
-        if (FAMILY_COMMANDS.has(token)) {
+        if (token === "daemon") {
+            clientArgs = rawArgs.slice(0, i);
+            daemonPassthrough = true;
+            daemonArgs = rawArgs.slice(i + 1);
+        } else if (FAMILY_COMMANDS.has(token)) {
             clientArgs = rawArgs.slice(0, i);
             familyName = token;
             familyArgs = rawArgs.slice(i + 1);
@@ -396,14 +414,14 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     });
 
     const positionals = parsed.positionals;
-    const first = familyName ?? positionals[0];
+    const first = daemonPassthrough ? "daemon" : (familyName ?? positionals[0]);
 
-    if (parsed.values.help === true && familyName === undefined) {
+    if (parsed.values.help === true && familyName === undefined && !daemonPassthrough) {
         process.stdout.write(first === "render" ? RENDER_HELP : USAGE);
         return;
     }
 
-    if (parsed.values.version === true && familyName === undefined) {
+    if (parsed.values.version === true && familyName === undefined && !daemonPassthrough) {
         process.stdout.write(`${readVersion()}\n`);
         return;
     }
@@ -684,8 +702,14 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     try {
         let exitCode = 0;
 
-        if (familyName !== undefined) {
+        if (daemonPassthrough) {
+            exitCode = await runCliDaemon(daemonArgs, common);
+        } else if (familyName !== undefined) {
             exitCode = await runCliFamily(familyName, familyArgs, common);
+        } else if (first === "web") {
+            exitCode = await runCliWeb(parsed.values["no-open"] === true, common);
+        } else if (first === "onboard") {
+            exitCode = await runCliOnboard(common);
         } else if (first === "session") {
             const sub = positionals[1] ?? "list";
             const targetId = positionals[2] ?? common.sessionId;

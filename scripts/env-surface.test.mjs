@@ -24,6 +24,7 @@ const FOREIGN = new Map([
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, beside which the client reads the secret it minted"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
     ["PLURNK_PERSONA", "ambient persona selector shorthand alongside PLURNK_CLIENT_PERSONA (#228)"],
+    ["PLURNK_MODEL", "@plurnk/plurnk-aliases — operator model selector written by plurnk onboard (#254)"],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -46,6 +47,7 @@ const ARGUMENTS = new Map([
     ["provider", "an argument of `models`"],
     ["all", "an argument of `models`"],
     ["width", "an argument of `render`"],
+    ["no-open", "an argument of `web`"],
 ]);
 
 // Numeric constants whose names confess duration, size, count, or pacing, and why each is mechanism.
@@ -55,6 +57,7 @@ const TIMER_LITERAL = /\b(?:setTimeout|setInterval|delay|sleep|AbortSignal\.time
 const MECHANISM = new Map([
     ["src/runtime-floor.ts:NODE_MAJOR_FLOOR", "package.json engines.node floor"],
     ["src/cli-runner.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
+    ["src/onboard.ts:LOCAL_PROBE_TIMEOUT_MS", "loopback local-inference discovery timeout during plurnk onboard (#254)"],
 ]);
 
 const tracked = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src"], { cwd: ROOT, encoding: "utf8" })

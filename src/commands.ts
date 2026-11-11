@@ -42,9 +42,22 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/answer @<id> <json>", summary: "Answer the identified elicitation or question (@<id> optional in TUI)." },
     { usage: "/login", summary: "Sign in to the daemon through the browser and keep the grant." },
     { usage: "/logout", summary: "Revoke the kept grant at the daemon and forget it." },
+    { usage: "/web [--no-open]", summary: "Open the Plurnk Web UI signed in via a single-use loopback handoff." },
+    { usage: "/learn [instructions]", summary: "Distill reusable workflow from this session into a SKILL.md." },
     { usage: "/stop", summary: "Cancel the running loop." },
     { usage: "/quit", summary: "Exit the interactive client." },
 ];
+
+export const expandLearnCommand = (rawLine: string): string | null => {
+    const trimmed = rawLine.trim();
+    const match = /^\/learn(?:\s+([\s\S]*))?$/iu.exec(trimmed);
+    if (match === null) return null;
+    const instructions = (match[1] ?? "").trim();
+    if (instructions.length === 0) {
+        return "Read `skill://plurnk/recipes.md` if needed, then distill the reusable workflow, commands, and non-obvious constraints established in this session into `<project>/.agents/skills/<name>/SKILL.md` (or `$XDG_CONFIG_HOME/plurnk/skills/<name>/SKILL.md` if user-wide) and verify it via `plurnk.skills`.";
+    }
+    return `Read \`skill://plurnk/recipes.md\` if needed, then create or update a reusable \`SKILL.md\` for: ${instructions}, and verify it via \`plurnk.skills\`.`;
+};
 
 export const renderCommandReference = (): string =>
     INTERACTIVE_COMMANDS.map(({ usage, summary }) =>

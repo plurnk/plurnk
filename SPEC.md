@@ -216,12 +216,16 @@ Subcommands inspect or configure daemon state without running a model loop (`--j
 
 | Subcommand | Contract |
 | --- | --- |
+| `plurnk daemon [subcommand...]` | Resolves the installed `@plurnk/plurnk-service` entrypoint (`PLURNK_CLIENT_SERVICE_BIN`, local `node_modules/.bin`, `@plurnk/plurnk-service`, or `PATH`; `127` `client/daemon/not-installed` if absent) and forwards arguments, `stdio`, and exit code (`status` maps to `config`; `restart` stops and autostarts the background daemon). |
+| `plurnk web [--no-open]` / `/web` | Ensures the daemon is connected, exchanges operator credentials to mint a single-use loopback browser handoff (`POST /oauth/handoff`), and opens the returned URL in the local browser (or writes the URL when `--no-open` is passed or browser launch fails). |
+| `plurnk onboard` | Probes local `ollama` (`127.0.0.1:11434`) and `llama-server` (`127.0.0.1:8080`) or prompts for one hosted provider and masked API key, persists `PLURNK_MODEL` / `PLURNK_MODEL_<alias>` to `$XDG_CONFIG_HOME/plurnk/.env` (`0600`), triggers daemon reload via `models.list`, and verifies a 1-turn live readiness prompt (invoked automatically before interactive TUI when `0` ready models are configured and active model is `none`). |
+| `/learn [instructions]` | Interactive prompt-expansion slash command that submits a prompt instructing the model to consult `skill://plurnk/recipes.md`, distill reusable session workflow into a `SKILL.md`, and verify it via `plurnk.skills`. |
 | `plurnk models [search...]` | Queries one bounded page from `models.list` (`--provider`, `--all`, `--offset`, `--limit`) without attaching a workspace; renders `selector / name / context / efforts / readiness`. |
 | `plurnk update` / `/update` | Calls `service.update` (`_plurnk/action`) to refresh the cached model catalog and report package upgrade instructions when `PLURNK_SERVICE_UPDATEABLE=1`. |
 | `plurnk workspace list` | Calls `workspace.list`; renders `name / project_root / created` (`(headless)` for `null` root). |
 | `plurnk workspace sessions <name>` | Attaches existing `<name>` via `workspace.attach` (404 if missing) and lists `workspace.sessions` (`name / created`). |
 | `plurnk log read` | Calls `log.read` (`--session`, `--loop`, `--turn`, `--since`, `--limit`); renders trace lines `[<status>] <origin> <op>[<sub>] <path> <scope>` or JSON `entries`. |
-| `plurnk config [<id> [<value>]]` | Reads or updates session `configOptions` (`mode`, `model`, `thought_level`, `persona`, `spawn_model`); exits `64` (`client/usage`) on an unknown `<id>` (pointing daemon config subcommands to `plurnk-service config`). |
+| `plurnk config [<id> [<value>]]` | Reads or updates session `configOptions` (`mode`, `model`, `thought_level`, `persona`, `spawn_model`); exits `64` (`client/usage`) on an unknown `<id>` (pointing daemon config subcommands to `plurnk daemon config`). |
 | `plurnk effort [level]` | Reads or updates `thought_level` on `configOptions` via `session/set_config_option`. |
 | `plurnk persona [name\|none]` | Reads, selects, or clears `persona` on `configOptions` via `session/set_config_option`. |
 | `plurnk script <file.plk>` | Submits `<file.plk>` via `op.parse` on the resolved workspace/session, retaining binding across proposal resumes; exits `0` on success or `4` on failed operation. |

@@ -186,7 +186,7 @@ options:
                           headless and needs --workspace. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
-                          On by default; Shift-Tab toggles it for the session.
+                          Off by default; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              nobody is attending: the daemon asks nothing, and a loop
                           that would wait for a person concludes instead. Approval
@@ -591,7 +591,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
 
     const yolo = typeof parsed.values.yolo === "boolean"
         ? parsed.values.yolo
-        : env.PLURNK_CLIENT_YOLO !== "0" && env.PLURNK_CLIENT_YOLO !== "false";
+        : isTruthyEnv(env.PLURNK_CLIENT_YOLO);
     const auto = parsed.values.auto === true || isTruthyEnv(env.PLURNK_CLIENT_AUTO);
     const bell = parsed.values.bell === true || isTruthyEnv(env.PLURNK_CLIENT_BELL);
     const repl = parsed.values.repl === true || isTruthyEnv(env.PLURNK_CLIENT_REPL);

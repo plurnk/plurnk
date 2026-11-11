@@ -160,7 +160,7 @@ export const buildHeader = (opts: {
     const session = opts.sessionName !== undefined ? ` · session: ${opts.sessionName}` : "";
     const modelLabel = opts.modelSelector ?? "(daemon default)";
     const effort = opts.effort === undefined || opts.effort === null ? "" : ` · effort: ${opts.effort}`;
-    const yolo = opts.yolo === false ? " · yolo: off" : "";
+    const yolo = opts.yolo === true ? " · yolo: on" : " · yolo: off (Shift-Tab)";
     return `${head} · workspace: ${opts.workspaceName}${session} · model: ${modelLabel}${effort}${yolo} · /help`;
 };
 

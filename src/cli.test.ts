@@ -520,7 +520,11 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     assert.equal(windowTitle("ws", null), "plurnk · ws");
     assert.match(
         buildHeader({ workspaceName: "ws", sessionName: "user", modelSelector: "fast", effort: "high", yolo: false }),
-        /workspace: ws · session: user · model: fast · effort: high · yolo: off · \/help/u,
+        /workspace: ws · session: user · model: fast · effort: high · yolo: off \(Shift-Tab\) · \/help/u,
+    );
+    assert.match(
+        buildHeader({ workspaceName: "ws", sessionName: "user", modelSelector: "fast", effort: "high", yolo: true }),
+        /workspace: ws · session: user · model: fast · effort: high · yolo: on · \/help/u,
     );
     assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
     assert.match(renderSubmittedInput("line 1\nline 2"), /🎤 line 1[\s\S]*line 2/u);
@@ -540,6 +544,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     assert.equal(altShortcut("\x1bk"), "/newer");
     assert.equal(altShortcut("\x1b?"), "/help");
     assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
+    assert.equal(backTabShortcut("\x1b[9;2u"), "/yolo");
 
     // TailText caps reasoning scroll lines ({§cli-markdown-projection})
     const tail = new TailText(() => 2);

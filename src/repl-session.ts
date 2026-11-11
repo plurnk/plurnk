@@ -836,6 +836,22 @@ export const runReplSession = async (
                 if (cmd === "yolo") {
                     currentYolo = !currentYolo;
                     streams.stdout.write(`yolo: ${currentYolo ? "on" : "off"}\n`);
+                    if (currentYolo) {
+                        forceReviewNextRun = false;
+                        for (const gate of [...pendingGates.values()]) {
+                            if (gate.kind !== "permission") continue;
+                            const allowOpt =
+                                gate.request.options.find(
+                                    (o) => o.kind === "allow_once" || o.kind === "allow_always",
+                                ) ?? gate.request.options[0];
+                            gate.resolveGate({
+                                outcome: allowOpt
+                                    ? { outcome: "selected", optionId: allowOpt.optionId }
+                                    : { outcome: "cancelled" },
+                                _meta: { plurnk: { outcome: "client_yolo" } },
+                            } as RequestPermissionResponse);
+                        }
+                    }
                     return "continue";
                 }
 

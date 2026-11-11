@@ -4,17 +4,23 @@
 import { stripVTControlCharacters } from "node:util";
 import {
     Container,
+    CURSOR_MARKER,
     Editor,
     ProcessTerminal,
+    renderFakeCursor,
     Spacer,
     Text,
     truncateToWidth,
     TuiMainScreen,
+    visibleWidth,
     type AutocompleteProvider,
     type Component,
+    type EditorOptions,
+    type EditorTheme,
     type Terminal,
     type TerminalColorScheme,
     type TerminalColors,
+    type TUI,
     type TuiInputListener,
 } from "@earendil-works/pi-tui";
 import {
@@ -257,6 +263,33 @@ export class TailText implements Component {
     }
 }
 
+const EMPTY_COMPOSER_HINT = "Shift-Tab: toggle yolo · ? prefix: force review · /help";
+
+class ComposerEditor extends Editor {
+    readonly #placeholder: string;
+
+    constructor(tui: TUI, theme: EditorTheme, options: EditorOptions, placeholder = "") {
+        super(tui, theme, options);
+        this.#placeholder = placeholder;
+    }
+
+    override render(width: number): string[] {
+        const lines = super.render(width);
+        if (this.#placeholder.length === 0 || this.getText().length > 0 || lines.length < 3 || width <= 2) {
+            return lines;
+        }
+        const safeHint = truncateToWidth(this.#placeholder, Math.max(1, width), "…", true);
+        const firstChar = safeHint[0] ?? " ";
+        const rest = safeHint.slice(firstChar.length);
+        const marker = this.focused ? CURSOR_MARKER : "";
+        const lead = `${marker}${renderFakeCursor(styled("dim")(firstChar))}${rest.length > 0 ? styled("dim")(rest) : ""}`;
+        const pad = " ".repeat(Math.max(0, width - visibleWidth(safeHint)));
+        const copy = [...lines];
+        copy[1] = `${lead}${pad}`;
+        return copy;
+    }
+}
+
 export default class TuiSurface {
     readonly #terminal: Terminal;
     readonly #tui: TuiMainScreen;
@@ -282,7 +315,7 @@ export default class TuiSurface {
     constructor(terminal: Terminal = new ProcessTerminal()) {
         this.#terminal = terminal;
         this.#tui = new TuiMainScreen(terminal, true);
-        this.editor = this.createEditor();
+        this.editor = this.createEditor(EMPTY_COMPOSER_HINT);
         this.#input.addChild(this.editor);
         this.#tui.addChild(this.#transcript);
         this.#tui.addChild(this.#turn);
@@ -313,8 +346,8 @@ export default class TuiSurface {
         return this.#status.render(width);
     }
 
-    createEditor(): Editor {
-        return new Editor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 });
+    createEditor(placeholder = ""): Editor {
+        return new ComposerEditor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 }, placeholder);
     }
 
     get reviewing(): boolean {

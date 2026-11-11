@@ -485,9 +485,38 @@ export const runCliPrompt = async (
                   ? { ...(session.usage ?? {}), ...(terminalMeta.usage as Record<string, unknown>) }
                   : session.usage;
 
+            const terminalProblem = terminalMeta.problem as Record<string, unknown> | undefined;
+            const matchingReportedProblem =
+                reportedProblem !== undefined &&
+                !timedOut &&
+                stopReason !== "cancelled" &&
+                (typeof reportedProblem.status !== "number" || reportedProblem.status === finalStatus)
+                    ? reportedProblem
+                    : undefined;
             const problemRecord =
                 disconnectProblem ??
-                ((terminalMeta.problem as Record<string, unknown> | undefined) ?? reportedProblem ?? null);
+                (finalStatus < 400
+                    ? null
+                    : (terminalProblem ??
+                        matchingReportedProblem ?? {
+                            type:
+                                timedOut || stopReason === "cancelled" || finalStatus === 499
+                                    ? "https://problems.plurnk.xyz/client/cancelled"
+                                    : stopReason === "max_turn_requests" || finalStatus === 429
+                                      ? "https://problems.plurnk.xyz/engine/rail/max-turns"
+                                      : "https://problems.plurnk.xyz/client/prompt-failed",
+                            title: timedOut
+                                ? "Prompt timed out"
+                                : stopReason === "cancelled" || finalStatus === 499
+                                  ? "Prompt cancelled"
+                                  : stopReason === "max_turn_requests" || finalStatus === 429
+                                    ? "Turn limit reached"
+                                    : "Prompt failed",
+                            status: finalStatus,
+                            detail: timedOut
+                                ? "The prompt exceeded the configured client timeout."
+                                : `The turn ended with stop reason '${stopReason}' (status ${finalStatus}).`,
+                        }));
 
             if (options.json) {
                 const payload = {

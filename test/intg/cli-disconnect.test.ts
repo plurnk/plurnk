@@ -48,7 +48,13 @@ const collectStream = (stream: PassThrough): (() => string) => {
     return () => buf;
 };
 
-type CutoffMode = "eof" | "socket" | "reported-problem" | "terminal";
+type CutoffMode =
+    | "eof"
+    | "socket"
+    | "reported-problem"
+    | "terminal"
+    | "recovered-problem"
+    | "settled-cancelled-without-problem";
 
 const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
     let promptCount = 0;
@@ -140,7 +146,11 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
                         },
                     });
 
-                    if (mode === "reported-problem") {
+                    if (
+                        mode === "reported-problem" ||
+                        mode === "recovered-problem" ||
+                        mode === "settled-cancelled-without-problem"
+                    ) {
                         await client.notify(methods.client.session.update, {
                             sessionId: params.sessionId,
                             update: {
@@ -162,28 +172,47 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
                         });
                     }
 
-                    if (mode === "terminal") {
-                        await client.notify(methods.client.session.update, {
-                            sessionId: params.sessionId,
-                            update: {
-                                sessionUpdate: "state_update",
-                                state: "idle",
-                                stopReason: "end_turn",
-                                _meta: {
-                                    plurnk: {
-                                        loopSeq: 1,
-                                        terminal: {
-                                            status: 200,
-                                            turnCount: 1,
-                                            usage: {
-                                                inputTokens: 100,
-                                                outputTokens: 25,
-                                            },
-                                        },
+                    if (
+                        mode === "terminal" ||
+                        mode === "recovered-problem" ||
+                        mode === "settled-cancelled-without-problem"
+                    ) {
+                        const cancelled = mode === "settled-cancelled-without-problem";
+                        const terminalMeta = {
+                            plurnk: {
+                                loopSeq: 1,
+                                terminal: {
+                                    status: cancelled ? 499 : 200,
+                                    turnCount: 1,
+                                    usage: {
+                                        inputTokens: 100,
+                                        outputTokens: 25,
                                     },
                                 },
                             },
-                        });
+                        };
+                        await client.notify(
+                            methods.client.session.update,
+                            cancelled
+                                ? {
+                                      sessionId: params.sessionId,
+                                      update: {
+                                          sessionUpdate: "state_update",
+                                          state: "idle",
+                                          stopReason: "cancelled",
+                                          _meta: terminalMeta,
+                                      },
+                                  }
+                                : {
+                                      sessionId: params.sessionId,
+                                      update: {
+                                          sessionUpdate: "state_update",
+                                          state: "idle",
+                                          stopReason: "end_turn",
+                                          _meta: terminalMeta,
+                                      },
+                                  },
+                        );
                         return;
                     }
 
@@ -282,6 +311,18 @@ test(
                 expectedStatus: 200,
                 expectedProblemType: null,
             },
+            {
+                mode: "recovered-problem",
+                settled: true,
+                expectedStatus: 200,
+                expectedProblemType: null,
+            },
+            {
+                mode: "settled-cancelled-without-problem",
+                settled: true,
+                expectedStatus: 499,
+                expectedProblemType: "https://problems.plurnk.xyz/client/cancelled",
+            },
         ];
 
         for (const c of cases) {
@@ -322,7 +363,7 @@ test(
             );
             assert.equal(record.finalStatus, c.expectedStatus, `${c.mode}: finalStatus`);
 
-            if (c.settled) {
+            if (c.expectedStatus < 400) {
                 assert.equal(code, 0, `${c.mode}: exits 0`);
                 assert.equal(record.problem, null, `${c.mode}: no problem on settled 200`);
             } else {
@@ -330,6 +371,7 @@ test(
                 const problem = record.problem as Record<string, unknown> | null;
                 assert.ok(problem !== null && typeof problem === "object", `${c.mode}: surfaces problem object`);
                 assert.equal(problem.type, c.expectedProblemType, `${c.mode}: problem type`);
+                assert.equal(problem.status, c.expectedStatus, `${c.mode}: problem status matches finalStatus`);
                 if (c.expectedDetail !== undefined) {
                     assert.equal(problem.detail, c.expectedDetail, `${c.mode}: problem detail`);
                 }

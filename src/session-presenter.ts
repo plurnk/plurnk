@@ -1,6 +1,6 @@
 // Unified ACP v2 SessionPresenter pipeline ({§cli-rendering}, {§cli-session-status}, {§cli-markdown-projection}, {§cli-workspaces-and-sessions}).
 // Single state machine between AcpSession and any rendering viewport (CLI stdout/stderr or pi-tui)
-// so that TUI is a pure perspective of the CLI and never makes an independent presentation decision.
+// so that Term is a pure perspective of the CLI and never makes an independent presentation decision.
 
 import {
     ContentBlock,

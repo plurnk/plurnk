@@ -46,7 +46,7 @@ export {
     runCliUpdate,
     runInteractiveSession,
     runReplSession,
-    runTuiViewport,
+    runTermViewport,
     type CliCommonOptions,
     type ClientStreams,
 } from "./cli-runner.ts";
@@ -56,7 +56,7 @@ export {
     ALT_SHORTCUTS,
     altShortcut,
     backTabShortcut,
-} from "./tui-viewport.ts";
+} from "./term-viewport.ts";
 export {
     completeAddressPath,
     completeInput,
@@ -69,14 +69,14 @@ export {
     type CompletionSuggestion,
     type DslOpPartial,
     type PathPartial,
-} from "./tui-completion.ts";
+} from "./term-completion.ts";
 export {
     default as Review,
     QuestionForm,
     type ElicitationGateEvent,
     type PermissionGateEvent,
     type QuestionAnswer,
-} from "./tui-review.ts";
+} from "./term-review.ts";
 export {
     attention,
     backgroundScheme,
@@ -85,7 +85,7 @@ export {
     colorEnabled,
     colorFgBgScheme,
     concluded,
-    default as TuiSurface,
+    default as TermSurface,
     editorTheme,
     formatComposerHint,
     isColorMode,
@@ -101,4 +101,4 @@ export {
     type AttentionSink,
     type ComposerHintState,
     type Role,
-} from "./tui-surface.ts";
+} from "./term-surface.ts";

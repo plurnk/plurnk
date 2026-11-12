@@ -3,7 +3,7 @@
 
 import { Container, Editor, SelectList, Text, type Focusable } from "@earendil-works/pi-tui";
 import { Validator } from "@plurnk/plurnk-contracts";
-import TuiSurface, { ModelText, editorTheme, paint } from "./tui-surface.ts";
+import TermSurface, { ModelText, editorTheme, paint } from "./term-surface.ts";
 
 export type QuestionAnswer =
     | { kind: "next" }
@@ -368,13 +368,13 @@ type GateRequest = {
 );
 
 export default class Review extends Container implements Focusable {
-    readonly #surface: TuiSurface;
+    readonly #surface: TermSurface;
     readonly #actions: ReviewActions;
     readonly #requests = new Map<string, GateRequest>();
     #control: Editor | SelectList | null = null;
     #focused = false;
 
-    constructor(surface: TuiSurface, actions: ReviewActions) {
+    constructor(surface: TermSurface, actions: ReviewActions) {
         super();
         this.#surface = surface;
         this.#actions = actions;

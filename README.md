@@ -20,13 +20,13 @@ algebra reaches every one of them; the edges speak ACPv2, MCP, Agent Skills,
 and Agent Plugins. Read the full argument in
 [MANIFESTO.md](https://github.com/plurnk/plurnk-service/blob/main/MANIFESTO.md).
 
-This repository provides the Unix CLI and interactive TUI for
+This repository provides the Unix CLI and Plurnk Term for
 [plurnk-service](https://github.com/plurnk/plurnk-service), alongside its
 built-in browser interface ([plurnk-web](https://github.com/plurnk/plurnk-web)).
 Workspaces, sessions, and history live in the daemon independently of any
 attached local or cloud client.
 
-![A Plurnk session across the Unix CLI, interactive TUI, and Plurnk Web](https://raw.githubusercontent.com/plurnk/plurnk/main/docs/media/session.webp)
+![A Plurnk session across the Unix CLI, Plurnk Term, and Plurnk Web](https://raw.githubusercontent.com/plurnk/plurnk/main/docs/media/session.webp)
 
 ## Get started
 
@@ -55,7 +55,7 @@ interactive terminal, `plurnk` offers `plurnk onboard` to connect a local
 server or provider key and verify a readiness turn, or [choose one below](#models).
 The first launch starts the included service, which keeps running for later
 sessions ([Service](#service)). Each project folder maps to its own persistent
-workspace (`--workspace` and `--session` override). The TUI returns to session
+workspace (`--workspace` and `--session` override). Plurnk Term returns to session
 `user` and its history; unless `--session` is given, each one-shot prompt runs
 in a new session of its own (reported in `--json` output and on `fd 3` events).
 
@@ -71,7 +71,7 @@ API key to the backend—for example, `export DEEPSEEK_API_KEY="your-api-key"`
 before launching Plurnk. The service reads environment credentials when it
 starts, so export them before the first launch, or restart the daemon
 (`plurnk daemon restart`).
-In the TUI, `/models` lists models with configured credentials and
+In Plurnk Term, `/models` lists models with configured credentials and
 `/model <provider/model>` selects one. You can also launch with
 `--model=<provider/model>`; aliases are optional.
 
@@ -95,7 +95,7 @@ nothing listens. The service keeps running after the client exits and serves
 every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
 its log in `~/.local/state/plurnk/service.log`. Manage it with `plurnk daemon <start|stop|restart|reload|status|config>`, and
 open the hosted browser interface already signed in with `plurnk web` (or `/web`
-in the TUI). Set `PLURNK_ACP_URL` to attach to a remote daemon, and set
+in Plurnk Term). Set `PLURNK_ACP_URL` to attach to a remote daemon, and set
 `PLURNK_CLIENT_AUTOSTART=0` to disable local autostart.
 
 To start it at login on Linux, install the service package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
@@ -103,7 +103,7 @@ To start it at login on Linux, install the service package's example [systemd us
 executable paths, and environment setup. The service must receive your provider
 credentials—systemd does not source your interactive shell.
 
-## TUI and CLI
+## Plurnk Term and CLI
 
 ### Interactive terminal
 
@@ -111,7 +111,7 @@ credentials—systemd does not source your interactive shell.
 plurnk
 ```
 
-A scrollback-native TUI with multiline prompts, streaming reasoning when the
+A scrollback-native interactive terminal (`Plurnk Term`) with multiline prompts, streaming reasoning when the
 provider supplies it, Markdown and Mermaid rendering, and slash commands for
 managing models, sessions, and tools. Run `/help` to explore; `/model` and
 `/child` select the session's model and its delegated model, `/learn` distills
@@ -164,7 +164,7 @@ plurnk daemon config defaults
 - [Browser interface](https://github.com/plurnk/plurnk-web)
 - [Architecture and extension points](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)
 - [The model-facing language](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/plurnk.md)
-- [Client reference](SPEC.md) and [terminal design](TUI.md)
+- [Client reference](SPEC.md) and [terminal design](TERM.md)
 
 ## Contributing
 

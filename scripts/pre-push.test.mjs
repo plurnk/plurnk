@@ -31,13 +31,13 @@ console.log(JSON.stringify({ args: process.argv.slice(2), inherited: ${JSON.stri
 test("{§cli-conformance} conventional branch and commit-message rules forbid direct commits on main (#235)", () => {
     for (const type of CONVENTIONAL_TYPES) {
         assert.deepEqual(validateBranchName(`${type}/client-hygiene`), [], type);
-        assert.deepEqual(validateCommitMessage(`${type}(tui): normalize lifecycle (#235)\n`, { branch: `${type}/client-hygiene` }), [], type);
+        assert.deepEqual(validateCommitMessage(`${type}(term): normalize lifecycle (#235)\n`, { branch: `${type}/client-hygiene` }), [], type);
     }
     assert.deepEqual(validateBranchName("main"), []);
     assert.match(validateBranchName("feature/client-hygiene")[0], /main or type\/kebab-slug/);
-    assert.match(validateCommitMessage("fix(tui): normalize lifecycle (#235)\n", { branch: "main", merging: false })[0], /direct commits on 'main' are forbidden/);
+    assert.match(validateCommitMessage("fix(term): normalize lifecycle (#235)\n", { branch: "main", merging: false })[0], /direct commits on 'main' are forbidden/);
     assert.deepEqual(validateCommitMessage("Merge branch 'fix/client-hygiene' (#235)\n", { branch: "main", merging: true }), []);
-    assert.match(validateCommitMessage("fix(tui): normalize lifecycle (#235)\n", { branch: "feature/bad-branch" })[0], /main or type\/kebab-slug/);
+    assert.match(validateCommitMessage("fix(term): normalize lifecycle (#235)\n", { branch: "feature/bad-branch" })[0], /main or type\/kebab-slug/);
     assert.match(validateCommitMessage("Update lifecycle\n", { branch: "fix/client-hygiene" })[0], /type\(scope\): summary/);
     assert.match(validateCommitMessage(`fix: ${"x".repeat(100)}\n`, { branch: "fix/client-hygiene" })[0], /exceeds 100 characters/);
     assert.match(validateCommitMessage("fix: lifecycle\n\nExplanation.\n", { branch: "fix/client-hygiene" })[0], /one-liner doctrine/);

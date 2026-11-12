@@ -18,7 +18,7 @@ operations ACPv2 cannot yet express, never a permanent bespoke dialect.
 `@earendil-works/pi-tui` (main-screen terminal viewport diffing, scrollback preservation, multiline
 editing, selection widgets, and GFM/table/LaTeX layout). Delegate undifferentiated transport and
 terminal heavy lifting to these substrates instead of hand-rolling plumbing, and keep their internals
-behind their owning boundaries (`src/acp-client.ts`, `src/acp-session.ts`, `src/tui-surface.ts`,
+behind their owning boundaries (`src/acp-client.ts`, `src/acp-session.ts`, `src/term-surface.ts`,
 `src/markdown.ts`).
 
 **A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
@@ -35,18 +35,18 @@ published changelogs.
 
 ## Verification
 
-`npm test` runs lint, unit, integration, and TUI checks standalone with no
+`npm test` runs lint, unit, integration, and Term checks standalone with no
 sibling repository required. Deterministic integration tests (`test/intg/*`)
-drive in-process mock ACP v2 agents, while `test/tui/live.test.ts` (`npm run test:tui:live`)
+drive in-process mock ACP v2 agents, while `test/term/live.test.ts` (`npm run test:term:live`)
 boots the service from `PLURNK_SERVICE_CHECKOUT` when set, from `../plurnk-service`
 when present, or from the installed `@plurnk/plurnk-service` dependency.
-Integration and TUI suites run as many files at once as the host holds: its
+Integration and Term suites run as many files at once as the host holds: its
 available cores, bounded by its available memory over a file's measured footprint
 (`scripts/test-concurrency.mjs`). No tier fixes a number for one machine. Unit
 tests retain Node's default.
 
 When working alongside a sibling `plurnk-service` checkout, the service's
-pre-push drill drives this checkout's installed CLI and TUI against a live
+pre-push drill drives this checkout's installed CLI and Term against a live
 daemon (`scripts/test-client-conformance.mjs` in `plurnk-service`). After a
 presentation change in a multi-repo workspace, run
 `npm run -s test:client-conformance` in the service checkout before landing; this

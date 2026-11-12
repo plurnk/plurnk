@@ -330,9 +330,9 @@ class ComposerEditor extends Editor {
     }
 }
 
-export default class TuiSurface {
+export default class TermSurface {
     readonly #terminal: Terminal;
-    readonly #tui: TuiMainScreen;
+    readonly #screen: TuiMainScreen;
     readonly #transcript = new Container();
     readonly #live = new TailText(() => 3);
     readonly #turn = new Container();
@@ -355,22 +355,22 @@ export default class TuiSurface {
 
     constructor(terminal: Terminal = new ProcessTerminal()) {
         this.#terminal = terminal;
-        this.#tui = new TuiMainScreen(terminal, true);
+        this.#screen = new TuiMainScreen(terminal, true);
         this.#composer = new ComposerEditor(
-            this.#tui,
+            this.#screen,
             editorTheme,
             { paddingX: 0, autocompleteMaxVisible: 8 },
             EMPTY_COMPOSER_HINT,
         );
         this.editor = this.#composer;
         this.#input.addChild(this.editor);
-        this.#tui.addChild(this.#transcript);
-        this.#tui.addChild(this.#turn);
-        this.#tui.addChild(this.#live);
-        this.#tui.addChild(this.#input);
-        this.#tui.addChild(this.#status);
-        this.#tui.setFocus(this.editor);
-        this.#tui.onTerminalColorSchemeChange((scheme) => this.#askScheme(scheme));
+        this.#screen.addChild(this.#transcript);
+        this.#screen.addChild(this.#turn);
+        this.#screen.addChild(this.#live);
+        this.#screen.addChild(this.#input);
+        this.#screen.addChild(this.#status);
+        this.#screen.setFocus(this.editor);
+        this.#screen.onTerminalColorSchemeChange((scheme) => this.#askScheme(scheme));
     }
 
     get columns(): number {
@@ -382,7 +382,7 @@ export default class TuiSurface {
     }
 
     get chromeChildCount(): number {
-        return this.#tui.children.length;
+        return this.#screen.children.length;
     }
 
     renderLiveLines(width = this.#terminal.columns): string[] {
@@ -394,7 +394,7 @@ export default class TuiSurface {
     }
 
     createEditor(placeholder = ""): Editor {
-        return new ComposerEditor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 }, placeholder);
+        return new ComposerEditor(this.#screen, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 }, placeholder);
     }
 
     get reviewing(): boolean {
@@ -406,12 +406,12 @@ export default class TuiSurface {
     }
 
     requestRender(): void {
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     renderNow(): void {
         if (this.#started) {
-            this.#tui.renderNow();
+            this.#screen.renderNow();
         }
     }
 
@@ -465,25 +465,25 @@ export default class TuiSurface {
             }
             this.#input.addChild(this.editor);
         }
-        this.#tui.setFocus(this.#focus);
-        this.#tui.requestRender();
+        this.#screen.setFocus(this.#focus);
+        this.#screen.requestRender();
     }
 
     start(): void {
         if (this.#started) return;
         this.#started = true;
-        this.#tui.start();
-        this.#tui.setFocus(this.#focus);
+        this.#screen.start();
+        this.#screen.setFocus(this.#focus);
         if (colorEnabled()) {
-            this.#tui.setTerminalColorSchemeNotifications(true);
+            this.#screen.setTerminalColorSchemeNotifications(true);
             const apply = ({ background }: TerminalColors): void => {
                 if (background !== undefined) {
                     learnScheme(backgroundScheme(background));
-                    this.#tui.invalidate();
-                    this.#tui.requestRender();
+                    this.#screen.invalidate();
+                    this.#screen.requestRender();
                 }
             };
-            void this.#tui.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
+            void this.#screen.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
         }
     }
 
@@ -504,19 +504,19 @@ export default class TuiSurface {
     #askScheme(reported: TerminalColorScheme): void {
         const apply = ({ background }: TerminalColors): void => {
             learnScheme(background === undefined ? reported : backgroundScheme(background));
-            this.#tui.invalidate();
-            this.#tui.requestRender();
+            this.#screen.invalidate();
+            this.#screen.requestRender();
         };
-        void this.#tui.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
+        void this.#screen.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
     }
 
     stop(): void {
         if (!this.#started) return;
         this.#started = false;
         try {
-            this.#tui.renderNow();
+            this.#screen.renderNow();
         } finally {
-            this.#tui.stop();
+            this.#screen.stop();
             this.clearTitle();
         }
     }
@@ -594,7 +594,7 @@ export default class TuiSurface {
                 this.#lastWasSpacer = existing.trailingBlankLine;
             }
             this.#status.invalidate();
-            this.#tui.requestRender();
+            this.#screen.requestRender();
             return;
         }
         if (text.replace(/\n$/u, "").length === 0) {
@@ -611,7 +611,7 @@ export default class TuiSurface {
         }
         this.#insertSlot(slot);
         this.#status.invalidate();
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     append(text: string): void {
@@ -628,7 +628,7 @@ export default class TuiSurface {
             this.#lastWasSpacer = false;
         }
         this.#status.invalidate();
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     // {§cli-markdown-projection} — Turn responses sit between #transcript and #live during the turn, then archive to #transcript.
@@ -641,7 +641,7 @@ export default class TuiSurface {
         });
         this.#turn.addChild(new Text(normalized, 0, 0));
         this.#status.invalidate();
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     static #isReplyHeaderLine(firstLine: string): boolean {
@@ -652,7 +652,7 @@ export default class TuiSurface {
     static #decorateHamsterHeader(raw: string, summaryAside: string): string | null {
         const nl = raw.indexOf("\n");
         const firstLine = nl >= 0 ? raw.slice(0, nl) : raw;
-        if (!TuiSurface.#isReplyHeaderLine(firstLine)) {
+        if (!TermSurface.#isReplyHeaderLine(firstLine)) {
             return null;
         }
         const decoratedFirst = `${firstLine} ${paint(summaryAside, "dim")}`;
@@ -666,11 +666,11 @@ export default class TuiSurface {
                 const target = this.#lastLoopHamster;
                 this.#lastLoopHamster = null;
                 if (typeof summaryAside === "string" && summaryAside.length > 0) {
-                    const decorated = TuiSurface.#decorateHamsterHeader(target.rawText, summaryAside);
+                    const decorated = TermSurface.#decorateHamsterHeader(target.rawText, summaryAside);
                     if (decorated !== null) {
                         target.setText(decorated, target.trailingBlankLine);
                         this.#status.invalidate();
-                        this.#tui.requestRender();
+                        this.#screen.requestRender();
                         return true;
                     }
                 }
@@ -686,7 +686,7 @@ export default class TuiSurface {
         if (typeof summaryAside === "string" && summaryAside.length > 0) {
             const lastIdx = responses.length - 1;
             const last = responses[lastIdx]!;
-            const decorated = TuiSurface.#decorateHamsterHeader(last.text, summaryAside);
+            const decorated = TermSurface.#decorateHamsterHeader(last.text, summaryAside);
             if (decorated !== null) {
                 responses[lastIdx] = { ...last, text: decorated };
                 attachedSummary = true;
@@ -697,7 +697,7 @@ export default class TuiSurface {
             this.#transcript.addChild(slot);
             this.#lastWasSpacer = false;
             const firstLine = item.text.split("\n", 1)[0] ?? "";
-            if (TuiSurface.#isReplyHeaderLine(firstLine)) {
+            if (TermSurface.#isReplyHeaderLine(firstLine)) {
                 this.#lastLoopHamster = slot;
             }
         }
@@ -705,45 +705,45 @@ export default class TuiSurface {
             this.#lastLoopHamster = null;
         }
         this.#status.invalidate();
-        this.#tui.requestRender();
+        this.#screen.requestRender();
         return attachedSummary;
     }
 
     setLive(text: string | null): void {
         this.#live.setText(text ?? "");
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     setLiveActivity(text: string | null): void {
         this.#live.setActivity(text ?? "");
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     setLoopActive(active: boolean): void {
         if (this.#live.reserved === active) return;
         this.#live.setReserved(active);
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     setStatus(text: string): void {
         this.#status.setText(text);
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     setPlaceholder(placeholder: string): void {
         if (this.#composer.setPlaceholder(placeholder)) {
-            this.#tui.requestRender();
+            this.#screen.requestRender();
         }
     }
 
     setInput(text: string): void {
         this.editor.setText(text);
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     insertInput(text: string): void {
         this.editor.insertTextAtCursor(text);
-        this.#tui.requestRender();
+        this.#screen.requestRender();
     }
 
     recordPrompt(prompt: string): void {
@@ -783,21 +783,21 @@ export default class TuiSurface {
     }
 
     addInputListener(listener: TuiInputListener): () => void {
-        return this.#tui.addInputListener(listener);
+        return this.#screen.addInputListener(listener);
     }
 
     async handOff<T>(work: () => Promise<T> | T): Promise<T> {
         const wasStarted = this.#started;
         if (wasStarted) {
-            this.#tui.stop();
+            this.#screen.stop();
         }
         try {
             return await work();
         } finally {
             if (wasStarted && this.#started) {
-                this.#tui.start();
-                this.#tui.setFocus(this.#focus);
-                this.#tui.requestRender();
+                this.#screen.start();
+                this.#screen.setFocus(this.#focus);
+                this.#screen.requestRender();
             }
         }
     }

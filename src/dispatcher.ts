@@ -40,7 +40,7 @@ export const CLIENT_OPTIONS = {
     json: { type: "boolean" },
     workspace: { type: "string" },
     session: { type: "string" },
-    "tui-session": { type: "string" },
+    "term-session": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
     persona: { type: "string" },
@@ -147,10 +147,10 @@ options:
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --session <name>       resume (or create) the named session within the workspace.
-                          Overrides PLURNK_CLIENT_SESSION. Unset, the TUI binds
-                          --tui-session and a one-shot opens a new session of its own.
-      --tui-session <name> the session the TUI binds when no session is selected.
-                          Overrides PLURNK_CLIENT_TUI_SESSION (user).
+                          Overrides PLURNK_CLIENT_SESSION. Unset, Term binds
+                          --term-session and a one-shot opens a new session of its own.
+      --term-session <name> the session Term binds when no session is selected.
+                          Overrides PLURNK_CLIENT_TERM_SESSION (user).
       --model <selector>  persistently select the session's model
                           before the first loop (session/set_config_option). A selector is
                           a declared alias or exact provider/model route. Without
@@ -203,7 +203,7 @@ options:
                           question waits for you. Overrides PLURNK_CLIENT_BELL.
       --repl              run the interactive line-oriented REPL over the 5-stream
                           contract ([stdin, stdout, stderr, events, reasoning], fd 0..4)
-                          without the TUI viewport. Overrides PLURNK_CLIENT_REPL.
+                          without the Term viewport. Overrides PLURNK_CLIENT_REPL.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -217,7 +217,7 @@ options:
       --preview-lines <n> lines of each operation body and execution output shown
                           beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
-      --history-entries <n> recent entries restored when the TUI opens or switches a
+      --history-entries <n> recent entries restored when Term opens or switches a
                           workspace or session; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
                           Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
@@ -472,9 +472,9 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const sessionId = typeof parsed.values.session === "string"
         ? parsed.values.session
         : env.PLURNK_CLIENT_SESSION;
-    const tuiSession = typeof parsed.values["tui-session"] === "string"
-        ? parsed.values["tui-session"]
-        : env.PLURNK_CLIENT_TUI_SESSION;
+    const termSession = typeof parsed.values["term-session"] === "string"
+        ? parsed.values["term-session"]
+        : env.PLURNK_CLIENT_TERM_SESSION;
     const model = typeof parsed.values.model === "string"
         ? parsed.values.model
         : env.PLURNK_CLIENT_MODEL;
@@ -671,7 +671,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         cwd: process.cwd(),
         ...(workspace !== undefined && workspace.length > 0 ? { workspace } : {}),
         ...(sessionId !== undefined && sessionId.length > 0 ? { sessionId } : {}),
-        tuiSession,
+        termSession,
         ...(model !== undefined && model.length > 0 ? { model } : {}),
         ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
         ...(persona !== undefined && persona.length > 0 ? { persona } : {}),

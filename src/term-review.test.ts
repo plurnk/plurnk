@@ -5,8 +5,8 @@ import Review, {
     isElicitationGateEvent,
     isPermissionGateEvent,
     QuestionForm,
-} from "./tui-review.ts";
-import TuiSurface from "./tui-surface.ts";
+} from "./term-review.ts";
+import TermSurface from "./term-surface.ts";
 
 const makeFakeTerminal = (): { terminal: Terminal; written: string[] } => {
     const written: string[] = [];
@@ -74,7 +74,7 @@ test("{§cli-inline-review}: type guards, QuestionForm multi-field validation, a
 
     // Review URL elicitation and form elicitation
     const { terminal } = makeFakeTerminal();
-    const surface = new TuiSurface(terminal);
+    const surface = new TermSurface(terminal);
     const stdinCommands: string[] = [];
     const review = new Review(surface, {
         sendStdin: (cmd) => stdinCommands.push(cmd),

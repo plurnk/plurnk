@@ -596,7 +596,7 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
         cwd: "/tmp/ws",
         workspace: "ws",
         sessionId: "user",
-        tuiSession: "user",
+        termSession: "user",
         autostart: false,
         daemonTimeoutMs: 500,
         oauthTimeoutMs: 500,

@@ -248,7 +248,7 @@ export const runCliConfig = async (
         await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, {
             ...options,
-            sessionId: options.sessionId ?? options.tuiSession ?? "user",
+            sessionId: options.sessionId ?? options.termSession ?? "user",
             ...(configId === "persona" ? { persona: undefined } : {}),
             ...(configId === "thought_level" ? { effort: undefined } : {}),
             ...(configId === "model" ? { model: undefined } : {}),
@@ -467,7 +467,7 @@ export const runCliLogRead = async (
             },
             {
                 workspace: options.workspace,
-                session: options.sessionId ?? options.tuiSession,
+                session: options.sessionId ?? options.termSession,
                 cwd: options.cwd,
             },
         );
@@ -496,7 +496,7 @@ export const runCliReadCoord = async (coord: string, options: CliCommonOptions):
             { target },
             {
                 workspace: options.workspace,
-                session: options.sessionId ?? options.tuiSession,
+                session: options.sessionId ?? options.termSession,
                 cwd: options.cwd,
             },
         );
@@ -566,7 +566,7 @@ export const runCliScript = async (filePath: string, options: CliCommonOptions):
             { text },
             {
                 workspace: options.workspace,
-                session: options.sessionId ?? options.tuiSession,
+                session: options.sessionId ?? options.termSession,
                 cwd: options.cwd,
             },
         );
@@ -622,7 +622,7 @@ export const runCliFamily = async (
         await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, {
             ...options,
-            sessionId: options.sessionId ?? options.tuiSession,
+            sessionId: options.sessionId ?? options.termSession,
         });
         let hadError = false;
         await executeFamilyCommand(
@@ -632,7 +632,7 @@ export const runCliFamily = async (
             {
                 sessionId: session.sessionId,
                 workspace: options.workspace,
-                session: options.sessionId ?? options.tuiSession,
+                session: options.sessionId ?? options.termSession,
                 cwd: options.cwd,
             },
             options.cwd,

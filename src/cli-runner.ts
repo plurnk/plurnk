@@ -57,7 +57,7 @@ import {
     type ClientStreams,
 } from "./repl-commands.ts";
 import { runReplSession } from "./repl-session.ts";
-import { runTuiViewport } from "./tui-viewport.ts";
+import { runTermViewport } from "./term-viewport.ts";
 
 export {
     checkNeedsAutoOnboard,
@@ -95,7 +95,7 @@ export {
     runCliWeb,
     runCliWorkspace,
     runReplSession,
-    runTuiViewport,
+    runTermViewport,
     type CliCommonOptions,
     type CliPermissionHandlerOptions,
     type ClientStreams,
@@ -570,5 +570,5 @@ export const runInteractiveSession = async (
     if (customStreams === undefined && (await checkNeedsAutoOnboard(options))) {
         await runCliOnboard(options);
     }
-    return await runTuiViewport(options, customStreams);
+    return await runTermViewport(options, customStreams);
 };

@@ -58,14 +58,14 @@ const locateServiceTarget = async (): Promise<ServiceLaunchTarget> => {
 };
 
 test(
-    "[{§cli-repl-mode}] interactive TUI live session completes a real-model prompt over ACP v2",
+    "[{§cli-repl-mode}] interactive Term live session completes a real-model prompt over ACP v2",
     {
         timeout: 600_000,
-        skip: liveEnabled ? false : "real-model tier requires npm run test:tui:live",
+        skip: liveEnabled ? false : "real-model tier requires npm run test:term:live",
     },
     async () => {
         const liveModel = process.env.PLURNK_MODEL;
-        assert.ok(liveModel && liveModel.length > 0, "test:tui:live requires an explicit PLURNK_MODEL selector");
+        assert.ok(liveModel && liveModel.length > 0, "test:term:live requires an explicit PLURNK_MODEL selector");
 
         const target = await locateServiceTarget();
         const { default: Launch } = (await import(
@@ -91,7 +91,7 @@ test(
             };
         };
 
-        const sandbox = await mkdtemp(join(tmpdir(), "plurnk-tui-live-"));
+        const sandbox = await mkdtemp(join(tmpdir(), "plurnk-term-live-"));
         const home = join(sandbox, "home");
         await mkdir(home, { recursive: true });
 
@@ -132,7 +132,7 @@ test(
                     "0",
                     "--yolo",
                     "--workspace",
-                    "live-client-tui",
+                    "live-client-term",
                     "--session",
                     "live-user",
                     "--project-root",
@@ -186,7 +186,7 @@ test(
                     waiters.push({ pattern, resolveWait, timer });
                 });
 
-            await waitFor(/workspace: live-client-tui/u, 30_000);
+            await waitFor(/workspace: live-client-term/u, 30_000);
             term.write("Reply with the single word Pong and nothing else.\r");
             await waitFor(/Pong/iu, 180_000);
             await waitFor(/⏹️/u, 60_000);

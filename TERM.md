@@ -7,7 +7,7 @@ Thin ACP v2 terminal client for [`plurnk-service`](https://github.com/plurnk/plu
 | Invocation | Surface |
 | --- | --- |
 | `plurnk "prompt"` | Unix one-shot: delivered answer on `stdout`, errors on `stderr`; when opened, `fd 3` streams NDJSON session events and `fd 4` streams reasoning. |
-| `plurnk` | Main-buffer interactive TUI preserving terminal scrollback (never alternate screen). Transport defaults to Streamable HTTP (`ws://` / `wss://` when selected by `PLURNK_ACP_URL`). |
+| `plurnk` | Main-buffer interactive Plurnk Term viewport preserving terminal scrollback (never alternate screen). Transport defaults to Streamable HTTP (`ws://` / `wss://` when selected by `PLURNK_ACP_URL`). |
 
 ## Main-screen stack (`pi-tui`)
 

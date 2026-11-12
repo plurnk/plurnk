@@ -23,7 +23,7 @@ export interface CliCommonOptions {
     readonly cwd: string;
     readonly workspace?: string;
     readonly sessionId?: string;
-    readonly tuiSession: string;
+    readonly termSession: string;
     readonly model?: string;
     readonly effort?: string;
     readonly persona?: string;

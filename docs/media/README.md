@@ -21,7 +21,7 @@ scripted answer.
    ```sh
    git diff | plurnk --session audit "Spot the retry bug in one short sentence."
    ```
-2. **Interactive TUI (`--yolo`)** — resumes `audit`, streams the 3-line rolling
+2. **Plurnk Term (`--yolo`)** — resumes `audit`, streams the 3-line rolling
    `💭` reasoning ticker and glyph operation waterfall (`📖`, `🗒️`, `📝`, `⚙️ sh`),
    verifies `node --test`, and runs `/web` to mint a single-use OAuth browser
    handoff URL.
@@ -29,7 +29,7 @@ scripted answer.
    `/oauth/handoff`, visits `/~/~/retry-budget/` and `/~/~/retry-budget@audit/`,
    and submits a follow-up Mermaid prompt from the browser composer so both
    surfaces stream and render the final summary and flowchart simultaneously
-   (Unicode box-drawing in TUI, SVG in Web).
+   (Unicode box-drawing in Term, SVG in Web).
 
 ## Regenerating `session.webp`
 

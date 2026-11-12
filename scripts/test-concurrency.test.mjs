@@ -11,9 +11,9 @@ test("{§cli-conformance} the fixture tiers' concurrency is the host's cores, bo
     assert.equal(testConcurrency(8, 0), 1, "a host always runs one");
 });
 
-test("{§cli-conformance} the integration and TUI tiers take the host's concurrency, never a fixed one", async () => {
+test("{§cli-conformance} the integration and Term tiers take the host's concurrency, never a fixed one", async () => {
     const { scripts } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-    for (const tier of ["test:intg", "test:tui"]) {
+    for (const tier of ["test:intg", "test:term"]) {
         assert.match(scripts[tier], /--test-concurrency=\$\(node scripts\/test-concurrency\.mjs\)/u, tier);
         assert.doesNotMatch(scripts[tier], /--test-concurrency=\d/u, tier);
     }

@@ -17,11 +17,11 @@ import { runCliPrompt, type CliCommonOptions } from "./cli-runner.ts";
 import Credential from "./credential.ts";
 import { extractPromptHistory } from "./repl-commands.ts";
 import { SessionPresenter } from "./session-presenter.ts";
-import { longestCommonPrefix, makeAutocompleteProvider } from "./tui-completion.ts";
-import TuiSurface, { renderActiveLiveLine, renderReasoning } from "./tui-surface.ts";
-import { altShortcut, backTabShortcut, runTuiViewport } from "./tui-viewport.ts";
+import { longestCommonPrefix, makeAutocompleteProvider } from "./term-completion.ts";
+import TermSurface, { renderActiveLiveLine, renderReasoning } from "./term-surface.ts";
+import { altShortcut, backTabShortcut, runTermViewport } from "./term-viewport.ts";
 
-test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed fd 3 events, renders status bar, and exits cleanly on /quit", async () => {
+test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed fd 3 events, renders status bar, and exits cleanly on /quit", async () => {
     assert.equal(altShortcut("\x1bm"), "/models");
     assert.equal(altShortcut("\x1bs"), "/workspaces");
     assert.equal(altShortcut("\x1bR"), "/sessions");
@@ -179,7 +179,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
         cancelGraceMs: 500,
         workspace: "alpha",
         sessionId: "user",
-        tuiSession: "user",
+        termSession: "user",
         yolo: true,
         auto: false,
         json: false,
@@ -194,7 +194,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -211,7 +211,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
         assert.doesNotMatch(rendered, /No model selected/u);
         assert.ok(inputCallback !== null);
 
-        // Send Ctrl-D on empty editor to trigger /quit through the TUI input listener
+        // Send Ctrl-D on empty editor to trigger /quit through the Term input listener
         inputCallback!("\x04");
         const exitCode = await viewportPromise;
         assert.equal(exitCode, 0);
@@ -223,7 +223,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
     }
 });
 
-test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport counts only running inbox items, clears 📨 on publish, and renders Ctrl-C cancellation once with preserved curation metrics", async () => {
+test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport counts only running inbox items, clears 📨 on publish, and renders Ctrl-C cancellation once with preserved curation metrics", async () => {
     const runningNotified = Promise.withResolvers<void>();
     const cancelReceived = Promise.withResolvers<void>();
     let capturedClient = null as { notify: (method: string, params: unknown) => Promise<void> } | null;
@@ -432,7 +432,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport c
         cancelGraceMs: 500,
         workspace: "alpha",
         sessionId: "user",
-        tuiSession: "user",
+        termSession: "user",
         yolo: true,
         auto: false,
         json: false,
@@ -447,7 +447,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport c
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -477,7 +477,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport c
         });
         await waitUntil(() => !termWrites.at(-1)!.includes("📨"));
 
-        // Submit prompt through the TUI editor
+        // Submit prompt through the Term editor
         assert.ok(inputCallback !== null);
         inputCallback!("do work");
         inputCallback!("\r");
@@ -514,7 +514,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport c
     }
 });
 
-test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices}: TUI viewport warns on modelless startup, resets status to ❌ on rejected prompt, and recovers after /model selection", async () => {
+test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices}: Term viewport warns on modelless startup, resets status to ❌ on rejected prompt, and recovers after /model selection", async () => {
     let currentModel: string | null = null;
     const agentApp = createAcpAgent({ name: "viewport-modelless-agent" })
         .onRequest(methods.agent.initialize, async () => ({
@@ -730,7 +730,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         cancelGraceMs: 500,
         workspace: "alpha",
         sessionId: "user",
-        tuiSession: "user",
+        termSession: "user",
         yolo: true,
         auto: false,
         json: false,
@@ -745,7 +745,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -784,7 +784,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         await waitUntil(() => termWrites.join("").includes("No model is selected for this session."));
         await waitUntil(() => termWrites.join("").includes("[alpha/~user] ❌  · none"));
 
-        // 3. Invalid /model granite reports failure in TUI without crashing or freezing
+        // 3. Invalid /model granite reports failure in Term without crashing or freezing
         inputCallback!("/model granite");
         inputCallback!("\r");
         await waitUntil(() => termWrites.join("").includes("Provider alias 'granite' is not declared."));
@@ -808,7 +808,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
     }
 });
 
-test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires live reasoning across silent adaptive turns and preserves aggregate spend on parked loops after 499", async () => {
+test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires live reasoning across silent adaptive turns and preserves aggregate spend on parked loops after 499", async () => {
     const turn1ReasoningShown = Promise.withResolvers<void>();
     const continueAfterTurn1 = Promise.withResolvers<void>();
     const parkedShown = Promise.withResolvers<void>();
@@ -1154,7 +1154,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
         cancelGraceMs: 500,
         workspace: "plurnk-service",
         sessionId: "service",
-        tuiSession: "service",
+        termSession: "service",
         yolo: true,
         auto: false,
         json: false,
@@ -1169,7 +1169,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -1248,7 +1248,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
     }
 });
 
-test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors tool calls at their launch coordinates and preserves 🐹 loop summary aside when background streams finish out of order", async () => {
+test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors tool calls at their launch coordinates and preserves 🐹 loop summary aside when background streams finish out of order", async () => {
     const agentApp = createAcpAgent({ name: "viewport-coordinate-agent" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
@@ -1546,7 +1546,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
         cancelGraceMs: 500,
         workspace: "plurnk-service",
         sessionId: "service",
-        tuiSession: "service",
+        termSession: "service",
         yolo: true,
         auto: false,
         json: false,
@@ -1561,7 +1561,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -1901,7 +1901,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
         cancelGraceMs: 500,
         workspace: "alpha",
         sessionId: "user",
-        tuiSession: "user",
+        termSession: "user",
         yolo: true,
         auto: false,
         json: false,
@@ -1916,7 +1916,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
     };
 
     try {
-        const viewportPromise = runTuiViewport(options, {
+        const viewportPromise = runTermViewport(options, {
             stdin,
             stdout,
             stderr,
@@ -1979,7 +1979,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
     }
 });
 
-test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cli-sessions-topology}: TuiSurface enforces the 5-container pinned chrome budget, 3-line rolling reasoning + 1-line active streams/workers reservation, 0-line idle collapse, and bounded extractPromptHistory (#236, #238)", () => {
+test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cli-sessions-topology}: TermSurface enforces the 5-container pinned chrome budget, 3-line rolling reasoning + 1-line active streams/workers reservation, 0-line idle collapse, and bounded extractPromptHistory (#236, #238)", () => {
     let currentRows = 6;
     const fakeTerminal: Terminal = {
         start: () => {},
@@ -2006,7 +2006,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         onColorScheme: () => () => {},
     } as unknown as Terminal;
 
-    const surface = new TuiSurface(fakeTerminal);
+    const surface = new TermSurface(fakeTerminal);
     assert.equal(surface.chromeChildCount, 5, "TuiMainScreen holds exactly 5 top-level containers");
     assert.deepEqual(surface.renderLiveLines(80), [], "live reasoning region occupies 0 lines when idle");
 
@@ -2321,7 +2321,7 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
     );
     assert.equal(modelEffortForced?.prefix, "h");
 
-    // 10. End-to-end keystroke walk-through on TuiSurface.editor:
+    // 10. End-to-end keystroke walk-through on TermSurface.editor:
     //     Type "/models dee" -> Tab extends to "/models deepseek/deepseek-" -> type "r" -> Tab completes "/models deepseek/deepseek-reasoner"
     let onTermInput = null as ((data: string) => void) | null;
     const fakeTerm: Terminal = {
@@ -2344,7 +2344,7 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
         setProgress() {},
         setProgramStatus() {},
     };
-    const surface = new TuiSurface(fakeTerm);
+    const surface = new TermSurface(fakeTerm);
     surface.setAutocompleteProvider(provider);
     surface.start();
     try {
@@ -2407,7 +2407,7 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
     }
 });
 
-test("{§cli-markdown-projection}: TuiSurface attaches loop summary aside to named voice [scoutproxy] header as well as 🐹", () => {
+test("{§cli-markdown-projection}: TermSurface attaches loop summary aside to named voice [scoutproxy] header as well as 🐹", () => {
     const writes: string[] = [];
     const fakeTerm = {
         start() {},
@@ -2435,7 +2435,7 @@ test("{§cli-markdown-projection}: TuiSurface attaches loop summary aside to nam
         setProgress() {},
         setProgramStatus() {},
     };
-    const surface = new TuiSurface(fakeTerm);
+    const surface = new TermSurface(fakeTerm);
     surface.start();
     try {
         surface.addResponse("[scoutproxy]\n  Reply to proxy", "1/1/1");
@@ -2564,7 +2564,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: outside text never enters C
                 cancelGraceMs: 500,
                 workspace: "alpha",
                 sessionId: "user",
-                tuiSession: "user",
+                termSession: "user",
                 yolo: true,
                 auto: false,
                 json: true,
@@ -2732,7 +2732,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
     // Unit-verify ComposerEditor shadow hint disappears on first character and reflects yolo + active modes
     const stripVtAndApc = (s: string): string =>
         stripVTControlCharacters(s).replace(/\x1b_[^\x07]*\x07/gu, "");
-    const standaloneSurface = new TuiSurface(fakeTerminal);
+    const standaloneSurface = new TermSurface(fakeTerminal);
     const emptyEditorPlain = stripVtAndApc(standaloneSurface.editor.render(80).join("\n"));
     assert.match(emptyEditorPlain, /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u);
     standaloneSurface.setPlaceholder(
@@ -2760,7 +2760,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
     const stderr = new PassThrough();
 
     try {
-        const viewportPromise = runTuiViewport(
+        const viewportPromise = runTermViewport(
             {
                 url: `http://127.0.0.1:${String(addr.port)}/acp`,
                 explicitAcpUrl: true,
@@ -2773,7 +2773,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
                 cancelGraceMs: 500,
                 workspace: "alpha",
                 sessionId: "user",
-                tuiSession: "user",
+                termSession: "user",
                 yolo: false,
                 auto: false,
                 json: false,

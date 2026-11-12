@@ -285,7 +285,7 @@
       "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": [
         "src/cli.test.ts — MCP management",
-        "../plurnk-service/scripts/test-client-conformance.mjs — installed TUI journey"
+        "../plurnk-service/scripts/test-client-conformance.mjs — installed Term journey"
       ],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },

@@ -20,7 +20,7 @@ import {
     SessionPresenter,
     spanLength,
 } from "./session-presenter.ts";
-import { TailText } from "./tui-surface.ts";
+import { TailText } from "./term-surface.ts";
 
 test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionPresenter formatting helpers, disconnection state, and frame projection", () => {
     assert.equal(formatDuration(50), "50ms");

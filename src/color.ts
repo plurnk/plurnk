@@ -46,7 +46,7 @@ export const colorEnabled = (
     return env.CLICOLOR !== "0" && env.TERM !== "dumb" && output.isTTY === true;
 };
 
-// {§cli-color-policy} — the TUI's answer from the terminal itself.
+// {§cli-color-policy} — Term's answer from the terminal itself.
 let learned: TerminalColorScheme | undefined;
 export const learnScheme = (scheme: TerminalColorScheme | undefined): void => {
     learned = scheme;

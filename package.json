@@ -67,6 +67,7 @@
     },
     "allowScripts": {
         "@google/genai@2.21.0": false,
+        "exifreader@4.54.0": false,
         "node-pty@1.1.0": true,
         "protobufjs@7.6.6": false
     },

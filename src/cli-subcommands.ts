@@ -808,6 +808,18 @@ export const openWebHandoff = async (
 
     let targetUrl: string;
     if (res.status === 404 && Object.keys(authHeaders).length === 0) {
+        const rootRes = await fetch(`${origin}/`, { method: "HEAD" });
+        if (!rootRes.ok) {
+            throw new ClientCliError(
+                {
+                    type: "https://problems.plurnk.xyz/client/web/handoff-failed",
+                    title: "Web handoff failed",
+                    status: rootRes.status,
+                    detail: "The web module (@plurnk/plurnk-web) is not mounted on this daemon.",
+                },
+                1,
+            );
+        }
         targetUrl = `${origin}/`;
     } else if (!res.ok) {
         let detail = `Browser handoff failed (${String(res.status)}).`;

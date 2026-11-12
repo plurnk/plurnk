@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Repeatable multi-surface demo recorder (#261):
-// Boots an isolated private `plurnk-service` daemon (`PLURNK_WEB_ENABLED=1`) against
+// Boots an isolated private `plurnk-service` daemon against
 // a local OpenAI-compatible inference server (`127.0.0.1:11435`), drives a real shell
 // pipeline (`CLI`), an interactive `pi-tui` session (`TUI`), and `@plurnk/plurnk-web`
 // (`Web`) in headless Chromium over CDP, and encodes `docs/media/session.webp`.
@@ -730,7 +730,7 @@ export async function main(argv = process.argv.slice(2)) {
     let shellPty = null;
 
     try {
-        process.stdout.write("Starting isolated plurnk-service daemon with PLURNK_WEB_ENABLED=1...\n");
+        process.stdout.write("Starting isolated plurnk-service daemon...\n");
         daemon = await Launch.start({
             command: target.command,
             cwd: target.serviceRoot,
@@ -743,7 +743,6 @@ export async function main(argv = process.argv.slice(2)) {
                 XDG_CONFIG_HOME: join(homeDir, ".config"),
                 XDG_DATA_HOME: join(homeDir, ".local", "share"),
                 XDG_STATE_HOME: join(homeDir, ".local", "state"),
-                PLURNK_WEB_ENABLED: "1",
                 PLURNK_AUTH: "1",
                 OPENAI_BASE_URL: values["openai-base-url"],
                 OPENAI_API_KEY: "local",

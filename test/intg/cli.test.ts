@@ -460,7 +460,7 @@ const createMockAcpServer = async () => {
                     },
                 },
             });
-            if (text.includes("TUI_WATERFALL_CHECK")) {
+            if (text.includes("TERM_WATERFALL_CHECK")) {
                 await client.notify(methods.client.session.update, {
                     sessionId: params.sessionId,
                     update: {
@@ -700,7 +700,7 @@ test("{§cli-model-selection} {§cli-inline-review}: model/effort flags and perm
         assert.equal(badEnvCli.status, 1);
         assert.match(badEnvCli.stderr, /reserved by the PLURNK platform/u);
 
-        // User's exact PTY TUI reproducer: `plurnk --model="granite" --session="granite"` exits 1 cleanly without hanging or writing raw-mode escape queries
+        // User's exact PTY Term reproducer: `plurnk --model="granite" --session="granite"` exits 1 cleanly without hanging or writing raw-mode escape queries
         let badModelPtyOut = "";
         const badModelPty = pty.spawn(
             process.execPath,
@@ -996,12 +996,12 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
         const exitCode = await new Promise<number | null>((resolve) => replChild.on("close", resolve));
         assert.equal(exitCode, 0);
 
-        // Exercise interactive TUI mode in a real PTY + headless xterm and verify waterfall spacing and previews
+        // Exercise interactive Term mode in a real PTY + headless xterm and verify waterfall spacing and previews
         const xterm = new Terminal({ cols: 100, rows: 45, allowProposedApi: true });
         let rawPty = "";
-        const tuiPty = pty.spawn(
+        const termPty = pty.spawn(
             process.execPath,
-            [binPath, "--session=tui01"],
+            [binPath, "--session=term01"],
             {
                 name: "xterm-256color",
                 cols: 100,
@@ -1016,7 +1016,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
             },
         );
         try {
-            tuiPty.onData((chunk) => {
+            termPty.onData((chunk) => {
                 rawPty += chunk;
                 xterm.write(chunk);
             });
@@ -1033,14 +1033,14 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
                             resolveWait();
                         } else if (Date.now() - start > timeoutMs) {
                             clearInterval(iv);
-                            rejectWait(new Error(`Timed out waiting for ${String(re)} in TUI PTY:\n${rawPty}`));
+                            rejectWait(new Error(`Timed out waiting for ${String(re)} in Term PTY:\n${rawPty}`));
                         }
                     }, 25);
                 });
             await waitPty(/workspace: test-ws/u);
             await new Promise((r) => setTimeout(r, 100));
-            tuiPty.write("TUI_WATERFALL_CHECK\r");
-            await waitPty(/Answered: TUI_WATERFALL_CHECK/u);
+            termPty.write("TERM_WATERFALL_CHECK\r");
+            await waitPty(/Answered: TERM_WATERFALL_CHECK/u);
             await new Promise((r) => setTimeout(r, 150));
 
             const buf = xterm.buffer.active;
@@ -1056,26 +1056,26 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
             assert.ok(!screenLines.some((l) => l.includes('[{"path":"workspace:///notes/**"}]')), "FIND result body must not be shown");
             assert.ok(screenLines.some((l) => l === "🗒️"), `Model NOTE must render 🗒️ glyph:\n${screenLines.join("\n")}`);
             assert.ok(screenLines.some((l) => l.startsWith("⚙️  brave (brave_web_search)")), `Runtime execution row must render with two spaces after gear:\n${screenLines.join("\n")}`);
-            assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in TUI");
-            assert.ok(!screenLines.some((l) => l.includes("Sana'a result 1")), "Concluded execution output must not preview in TUI");
+            assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in Term");
+            assert.ok(!screenLines.some((l) => l.includes("Sana'a result 1")), "Concluded execution output must not preview in Term");
             assert.ok(screenLines.some((l) => /^🐹 1 turn · \d+ms/u.test(l)), `Model reply must render with hamster glyph and inline loop summary:\n${screenLines.join("\n")}`);
 
-            // /quit in PTY TUI must exit cleanly with code 0 on its own without kill()
-            const tuiExitCode = await new Promise<number>((resolveExit, rejectExit) => {
+            // /quit in PTY Term must exit cleanly with code 0 on its own without kill()
+            const termExitCode = await new Promise<number>((resolveExit, rejectExit) => {
                 const timer = setTimeout(() => {
-                    tuiPty.kill();
-                    rejectExit(new Error("TUI PTY hung after /quit"));
+                    termPty.kill();
+                    rejectExit(new Error("Term PTY hung after /quit"));
                 }, 4000);
-                tuiPty.onExit(({ exitCode }) => {
+                termPty.onExit(({ exitCode }) => {
                     clearTimeout(timer);
                     resolveExit(exitCode);
                 });
-                tuiPty.write("/quit\r");
+                termPty.write("/quit\r");
             });
-            assert.equal(tuiExitCode, 0);
+            assert.equal(termExitCode, 0);
         } finally {
             try {
-                tuiPty.kill();
+                termPty.kill();
             } catch {
                 // already exited
             }

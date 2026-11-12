@@ -474,7 +474,7 @@ export const dispatchSlashCommand = async (
                 streams.stdout.write(`workspace: ${ctx.getWorkspace()}\n`);
                 return "continue";
             }
-            ctx.setSession(await ctx.bindSession(targetWs, options.tuiSession || "user"));
+            ctx.setSession(await ctx.bindSession(targetWs, options.termSession || "user"));
             streams.stdout.write(`workspace: ${ctx.getWorkspace()}\n`);
             return "continue";
         }

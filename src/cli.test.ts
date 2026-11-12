@@ -19,12 +19,12 @@ import { hyperlink } from "./color.ts";
 import { renderMarkdownDocument, renderMermaid } from "./markdown.ts";
 import { main } from "./dispatcher.ts";
 import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./session-presenter.ts";
-import { altShortcut, backTabShortcut } from "./tui-viewport.ts";
-import { completeInput, completeOps, dslOpPartial, pathPartial } from "./tui-completion.ts";
-import Review, { QuestionForm } from "./tui-review.ts";
+import { altShortcut, backTabShortcut } from "./term-viewport.ts";
+import { completeInput, completeOps, dslOpPartial, pathPartial } from "./term-completion.ts";
+import Review, { QuestionForm } from "./term-review.ts";
 import { AcpSession } from "./acp-session.ts";
 import { extractChronologicalHistory, formatModelsRows, formatWorkspacesRows } from "./repl-commands.ts";
-import TuiSurface, {
+import TermSurface, {
     attention,
     backgroundScheme,
     bell,
@@ -45,7 +45,7 @@ import TuiSurface, {
     TailText,
     windowTitle,
     withColorOutput,
-} from "./tui-surface.ts";
+} from "./term-surface.ts";
 import type { Terminal } from "@earendil-works/pi-tui";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -314,7 +314,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     });
     assert.equal(msg[0]?.kind, "session_message");
 
-    // Rich TUI waterfall formatting: 🐹 model replies, note bodies, operation previews, 💭 reasoning, 🎯 loop summary
+    // Rich Term waterfall formatting: 🐹 model replies, note bodies, operation previews, 💭 reasoning, 🎯 loop summary
     assert.match(renderModelReply("Hello **world**", 80, { op: "done", status: 200 }), /🐹[\s\S]*Hello/);
     assert.match(renderModelReply("Hello **scout**", 80, { op: "done", status: 200, voice: "scoutproxy" }), /\[scoutproxy\][\s\S]*Hello/);
     assert.match(renderModelReply("Cancelled", 80, { op: "fail", status: 200 }), /❌/);
@@ -486,7 +486,7 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
     assert.notEqual(statusRun.status, 0);
 });
 
-test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discovery} {§cli-color-policy}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
+test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discovery} {§cli-color-policy}: pi-tui TermSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
     // ModelText sanitization ({§cli-problems-and-notices})
     assert.equal(ModelText.plain("hello\x1b[31mworld\x1b[0m\x07"), "helloworld");
     assert.deepEqual(ModelText.plainFields({ detail: "a\x1b[2Jb", status: 400 }), { detail: "ab", status: 400 });
@@ -571,7 +571,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     const fixedDone = form.submit("1");
     assert.deepEqual(fixedDone, { kind: "complete", content: { choice: "alpha" } });
 
-    // TuiSurface + Review over fake Terminal ({§cli-inline-review})
+    // TermSurface + Review over fake Terminal ({§cli-inline-review})
     const written: string[] = [];
     const fakeTerminal: Terminal = {
         columns: 80,
@@ -595,7 +595,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         setProgress() {},
         setProgramStatus() {},
     };
-    const surface = new TuiSurface(fakeTerminal);
+    const surface = new TermSurface(fakeTerminal);
     const stdinCommands: string[] = [];
     const review = new Review(surface, {
         sendStdin: (cmd) => stdinCommands.push(cmd),

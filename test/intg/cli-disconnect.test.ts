@@ -10,7 +10,7 @@ import {
     methods,
     PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
-import { runCliPrompt, runTuiViewport, type CliCommonOptions } from "../../src/cli-runner.ts";
+import { runCliPrompt, runTermViewport, type CliCommonOptions } from "../../src/cli-runner.ts";
 import Credential from "../../src/credential.ts";
 
 const makeOptions = (url: string, overrides?: Partial<CliCommonOptions>): CliCommonOptions => ({
@@ -23,7 +23,7 @@ const makeOptions = (url: string, overrides?: Partial<CliCommonOptions>): CliCom
     cwd: "/tmp",
     workspace: "ws",
     sessionId: "user",
-    tuiSession: "user",
+    termSession: "user",
     autostart: false,
     daemonTimeoutMs: 2000,
     oauthTimeoutMs: 2000,
@@ -381,11 +381,11 @@ test(
 );
 
 test(
-    "{§cli-session-status} {§cli-rendering}: TUI viewport surfaces 🔌 on disconnect, diagnoses a stopping daemon once, and preserves a completed loop summary without duplication",
+    "{§cli-session-status} {§cli-rendering}: Term viewport surfaces 🔌 on disconnect, diagnoses a stopping daemon once, and preserves a completed loop summary without duplication",
     async () => {
         for (const phase of ["active", "idle"] as const) {
             const phaseReached = Promise.withResolvers<void>();
-            const agentApp = createAcpAgent({ name: `tui-disconnect-${phase}` })
+            const agentApp = createAcpAgent({ name: `term-disconnect-${phase}` })
                 .onRequest(methods.agent.initialize, async () => ({
                     protocolVersion: PROTOCOL_VERSION,
                     info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
@@ -484,7 +484,7 @@ test(
                             // Ignore disconnect error
                         }
                     });
-                    return { stopReason: "end_turn", messageId: "msg-tui-1" };
+                    return { stopReason: "end_turn", messageId: "msg-term-1" };
                 });
 
             const acpServer = new AcpServer({ agent: agentApp });
@@ -507,7 +507,7 @@ test(
             const getStderr = collectStream(stderr);
 
             try {
-                const runPromise = runTuiViewport(makeOptions(url, { json: false }), {
+                const runPromise = runTermViewport(makeOptions(url, { json: false }), {
                     stdin,
                     stdout,
                     stderr,

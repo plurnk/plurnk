@@ -1,4 +1,4 @@
-// Pure TUI viewport composed atop the 5-stream contract ([stdin, stdout, stderr, events, reasoning]).
+// Pure Term viewport composed atop the 5-stream contract ([stdin, stdout, stderr, events, reasoning]).
 // Holds no reference to AcpClient or AcpSession ({§cli-repl-mode}, {§cli-output-channels}).
 
 import { spawnSync } from "node:child_process";
@@ -24,9 +24,9 @@ import {
     SessionPresenter,
     type PresentationFrame,
 } from "./session-presenter.ts";
-import { makeAutocompleteProvider } from "./tui-completion.ts";
-import Review, { isElicitationGateEvent, isPermissionGateEvent } from "./tui-review.ts";
-import TuiSurface, {
+import { makeAutocompleteProvider } from "./term-completion.ts";
+import Review, { isElicitationGateEvent, isPermissionGateEvent } from "./term-review.ts";
+import TermSurface, {
     attention,
     bell,
     buildHeader,
@@ -43,7 +43,7 @@ import TuiSurface, {
     renderReasoning,
     renderSubmittedInput,
     windowTitle,
-} from "./tui-surface.ts";
+} from "./term-surface.ts";
 
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models",
@@ -70,7 +70,7 @@ export const altShortcut = (forward: string): string | null => {
 export const backTabShortcut = (forward: string): string | null =>
     matchesKey(forward, "shift+tab") || forward === "\x1b[Z" ? "/yolo" : null;
 
-export const runTuiViewport = async (
+export const runTermViewport = async (
     options: CliCommonOptions,
     outerStreams?: Partial<Pick<ClientStreams, "stdin" | "stdout" | "stderr">> & {
         readonly terminal?: Terminal;
@@ -89,13 +89,13 @@ export const runTuiViewport = async (
     const useSurface =
         outerStreams?.terminal !== undefined ||
         (outerStreams === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true);
-    const surface = useSurface ? new TuiSurface(outerStreams?.terminal) : null;
+    const surface = useSurface ? new TermSurface(outerStreams?.terminal) : null;
 
     const attend = attention(options.bell ? [bell(termOut as { readonly isTTY?: boolean; write(chunk: string): unknown })] : []);
 
     const presenter = new SessionPresenter({
         workspaceName: options.workspace ?? "default",
-        sessionName: options.sessionId ?? options.tuiSession ?? "user",
+        sessionName: options.sessionId ?? options.termSession ?? "user",
         model: options.model ?? "default",
         yolo: options.yolo,
     });
@@ -178,7 +178,7 @@ export const runTuiViewport = async (
 
     const editInExternalEditor = (initialText: string): string | null => {
         const editorCmd = options.env.VISUAL || options.env.EDITOR || "vi";
-        const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-tui-editor-"));
+        const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-term-editor-"));
         const tmpFile = join(tmpDir, "buffer.md");
         try {
             writeFileSync(tmpFile, initialText, "utf8");
@@ -1163,7 +1163,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "terminal_output":
-                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-rendering}).
+                        // Stream telemetry never writes directly to the Term waterfall ({§cli-rendering}).
                         if (surface === null) {
                             termOut.write(`${frame.rawData}\n`);
                         }

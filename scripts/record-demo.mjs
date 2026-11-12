@@ -2,7 +2,7 @@
 // Repeatable multi-surface demo recorder (#261):
 // Boots an isolated private `plurnk-service` daemon against
 // a local OpenAI-compatible inference server (`127.0.0.1:11435`), drives a real shell
-// pipeline (`CLI`), an interactive `pi-tui` session (`TUI`), and `@plurnk/plurnk-web`
+// pipeline (`CLI`), an interactive `pi-tui` session (`Term`), and `@plurnk/plurnk-web`
 // (`Web`) in headless Chromium over CDP, and encodes `docs/media/session.webp`.
 
 import { execFileSync, spawn } from "node:child_process";
@@ -518,11 +518,11 @@ function buildStageShellHtml() {
     <div class="topbar">
       <div class="brand">
         <span class="brand-dot"></span>
-        <span id="caption">Plurnk — One daemon, shared live session across CLI, TUI, and Web</span>
+        <span id="caption">Plurnk — One daemon, shared live session across CLI, Plurnk Term, and Plurnk Web</span>
       </div>
       <div class="pills">
         <span class="pill" id="pill-cli">1 · CLI Pipeline</span>
-        <span class="pill" id="pill-tui">2 · Interactive TUI</span>
+        <span class="pill" id="pill-term">2 · Plurnk Term</span>
         <span class="pill" id="pill-web">3 · Live Web Sync</span>
       </div>
     </div>
@@ -547,7 +547,7 @@ function buildStageShellHtml() {
     window.updateStage = async (state) => {
       document.getElementById("caption").textContent = state.caption;
       document.getElementById("pill-cli").className = "pill" + (state.act === "cli" ? " active" : "");
-      document.getElementById("pill-tui").className = "pill" + (state.act === "tui" ? " active" : "");
+      document.getElementById("pill-term").className = "pill" + (state.act === "term" ? " active" : "");
       document.getElementById("pill-web").className = "pill" + (state.act === "web" ? " active" : "");
       document.getElementById("term-title").textContent = state.termTitle;
       const grid = document.getElementById("term-grid");
@@ -911,10 +911,10 @@ export async function main(argv = process.argv.slice(2)) {
         );
         await captureFrame(1400);
 
-        // ── ACT II: Interactive TUI (--yolo) Waterfall + 💭 Ticker + /web ──
-        process.stdout.write("Act II: Recording interactive TUI (--yolo) session...\n");
-        stageState.act = "tui";
-        stageState.caption = "2/3 · Interactive TUI — resume session, live 💭 reasoning ticker & operation waterfall";
+        // ── ACT II: Plurnk Term (--yolo) Waterfall + 💭 Ticker + /web ──
+        process.stdout.write("Act II: Recording Plurnk Term (--yolo) session...\n");
+        stageState.act = "term";
+        stageState.caption = "2/3 · Plurnk Term — resume session, live 💭 reasoning ticker & operation waterfall";
         da1Answered = false;
         await typeText("plurnk --yolo --session audit", 5, 42);
         await captureFrame(300);
@@ -926,9 +926,9 @@ export async function main(argv = process.argv.slice(2)) {
         });
         await captureFrame(800);
 
-        const tuiPrompt =
+        const termPrompt =
             "Fix src/retry.js so jitter is 0.5 + Math.random() * 0.5, run node --test, and confirm in one short sentence.";
-        await typeText(tuiPrompt, 8, 38);
+        await typeText(termPrompt, 8, 38);
         await captureFrame(350);
         shellPty.write("\r");
 
@@ -966,7 +966,7 @@ export async function main(argv = process.argv.slice(2)) {
         await sleep(500);
 
         stageState.act = "web";
-        stageState.caption = "3/3 · Plurnk Web — /web opens the live workspace & session alongside the TUI";
+        stageState.caption = "3/3 · Plurnk Web — /web opens the live workspace & session alongside Plurnk Term";
         stageState.split = true;
         shellPty.resize(SPLIT_COLS, TERM_ROWS);
         xterm.resize(SPLIT_COLS, TERM_ROWS);
@@ -998,7 +998,7 @@ export async function main(argv = process.argv.slice(2)) {
         await captureFrame(900, true, true);
 
         // Enable YOLO in Web if not pressed and submit a follow-up Mermaid prompt from the browser composer!
-        stageState.caption = "3/3 · Live Multi-Client Sync — prompt in Web streams into both Web and TUI simultaneously";
+        stageState.caption = "3/3 · Live Multi-Client Sync — prompt in Web streams into both Web and Term simultaneously";
         const webPrompt =
             "Summarize the fix in 2 short bullets and a 3-node ```mermaid flowchart LR``` using short 1-word node labels (Zero --> Jitter --> Pass).";
         await webPage.eval(`(() => {
@@ -1021,7 +1021,7 @@ export async function main(argv = process.argv.slice(2)) {
             if (form) form.requestSubmit();
         })()`);
 
-        // Wait for loop 3 to start in TUI, then capture both TUI and Web streaming live until settled (`(3/` with `⏹️`)!
+        // Wait for loop 3 to start in Term, then capture both Term and Web streaming live until settled (`(3/` with `⏹️`)!
         await waitForScreen((s) => (s.includes("(3/") && !s.includes("⏹️")) || s.includes("💭"), {
             timeoutMs: 30_000,
             sampleMs: 220,
@@ -1043,7 +1043,7 @@ export async function main(argv = process.argv.slice(2)) {
         await scrollWebMainToBottom();
         await sleep(300);
 
-        stageState.caption = "Plurnk — Perpetual context & shared live state across CLI, TUI, and Web";
+        stageState.caption = "Plurnk — Perpetual context & shared live state across CLI, Plurnk Term, and Plurnk Web";
         await captureFrame(5200, true, true);
         const manifestPath = join(sandbox, "manifest.json");
         const totalDurationMs = frames.reduce((acc, f) => acc + f.durationMs, 0);

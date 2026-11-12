@@ -25,7 +25,7 @@ import {
 } from "./cli-runner.ts";
 import { expandLearnCommand } from "./commands.ts";
 import Credential from "./credential.ts";
-import { completeInput } from "./tui-completion.ts";
+import { completeInput } from "./term-completion.ts";
 
 const makeCommon = (overrides: Partial<CliCommonOptions>): CliCommonOptions => ({
     url: "http://127.0.0.1:9/acp",
@@ -35,7 +35,7 @@ const makeCommon = (overrides: Partial<CliCommonOptions>): CliCommonOptions => (
     credential: new Credential({ PLURNK_SECRET: "test-operator-secret" }),
     env: { PLURNK_SECRET: "test-operator-secret" },
     cwd: "/tmp",
-    tuiSession: "user",
+    termSession: "user",
     autostart: false,
     daemonTimeoutMs: 2000,
     oauthTimeoutMs: 2000,

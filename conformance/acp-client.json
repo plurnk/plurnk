@@ -573,12 +573,12 @@
         "evidence": ["src/session-presenter.ts — live base64 terminal_output streaming"]
       },
       "isPlanUpdate": {
-        "posture": "native",
-        "evidence": ["src/session-presenter.ts — loop-scoped plan_update projection of newly opened 🚧 items at the end of each turn"]
+        "posture": "ignored",
+        "evidence": ["src/acp-session.ts — AcpSession.applyUpdate retains plan state; SessionPresenter omits duplicate waterfall rows because tool_call_update asides already render inline"]
       },
       "isPlanRemoved": {
-        "posture": "native",
-        "evidence": ["src/session-presenter.ts — clears #live plan list when loop TODO rows are retired"]
+        "posture": "ignored",
+        "evidence": ["src/acp-session.ts — AcpSession.applyUpdate removes plan state; SessionPresenter omits duplicate waterfall rows"]
       },
       "isAvailableCommandsUpdate": {
         "posture": "ignored",

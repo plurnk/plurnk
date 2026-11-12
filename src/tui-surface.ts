@@ -60,7 +60,6 @@ import {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
-    renderPlanLines,
     renderReasoning,
 } from "./markdown.ts";
 
@@ -90,7 +89,6 @@ export {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
-    renderPlanLines,
     renderReasoning,
     renderSubmittedInput,
     resumeCommand,

@@ -4,7 +4,6 @@
 
 import {
     ContentBlock,
-    PlanUpdateContent,
     SessionConfigOption,
     SessionUpdate,
     ToolCallContent,
@@ -45,7 +44,6 @@ import {
     type ActiveStreamState,
     type ActiveWorkerState,
     type PendingToolCallState,
-    type PlanEntryItem,
     type PresentationFrame,
     type SearchActivityState,
     type SessionDoing,
@@ -82,7 +80,6 @@ export {
     TOOL_CALL_CONTENT_GUARDS,
     WORKER_OPS,
     type ActiveLiveEntry,
-    type PlanEntryItem,
     type PresentationFrame,
     type SearchActivityState,
     type SessionDoing,
@@ -123,7 +120,6 @@ export class SessionPresenter {
     doing: SessionDoing | null = null;
     preparation: WorkspacePreparationState | null = null;
     activity: SearchActivityState | null = null;
-    planEntries: PlanEntryItem[] = [];
     disconnected = false;
     lastLoopStatus: number | null = null;
     lastStatusLine = "";
@@ -131,10 +127,6 @@ export class SessionPresenter {
     readonly maxReasoningLines: number;
     #reasoningBuffer = "";
     #reasoningLines: string[] = [];
-    readonly #settledPlanStatus = new Map<string, "pending" | "completed">();
-    #latestPlanEntries: PlanEntryItem[] = [];
-    #planTurnKey: string | null = null;
-    readonly #planSlotIds = new Set<string>();
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
     #turnBaseInputTokens = 0;
@@ -242,7 +234,6 @@ export class SessionPresenter {
         this.#concludedStreams.clear();
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
-        this.#clearPlanState();
     }
 
     isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
@@ -253,33 +244,12 @@ export class SessionPresenter {
         return false;
     }
 
-    #clearPlanState(): void {
-        this.#settledPlanStatus.clear();
-        this.#latestPlanEntries = [];
-        this.#planTurnKey = null;
-        this.#planSlotIds.clear();
-        this.planEntries = [];
-    }
-
-    #settlePriorPlanTurn(): void {
-        if (this.#planTurnKey === null) return;
-        for (const entry of this.#latestPlanEntries) {
-            this.#settledPlanStatus.set(
-                entry.content,
-                entry.status === "completed" ? "completed" : "pending",
-            );
-        }
-        this.#latestPlanEntries = [];
-        this.#planTurnKey = null;
-    }
-
     #resetLoopTurns(): void {
         this.turns = 0;
         this.#awaitingTurnCount = 0;
         this.#loopConcluded = false;
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
-        this.#clearPlanState();
     }
 
     #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
@@ -295,9 +265,6 @@ export class SessionPresenter {
                 this.#resetLoopTurns();
             }
             if (turnSeq > this.turns) {
-                if (this.turns > 0) {
-                    this.#settlePriorPlanTurn();
-                }
                 this.#loopConcluded = false;
             }
             this.turns = Math.max(this.turns, turnSeq);
@@ -327,7 +294,6 @@ export class SessionPresenter {
         this.doing = null;
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
-        this.#clearPlanState();
         return this.buildStatusBar();
     }
 
@@ -411,9 +377,6 @@ export class SessionPresenter {
                 this.#resetLoopTurns();
             }
             if (typeof status.packetCount === "number" && status.packetCount > 0) {
-                if (status.packetCount > this.turns && this.turns > 0) {
-                    this.#settlePriorPlanTurn();
-                }
                 this.turns = Math.max(this.turns, status.packetCount);
             }
             if (
@@ -424,7 +387,6 @@ export class SessionPresenter {
                 (this.loopId !== null || this.loopSeq !== null)
             ) {
                 this.#loopConcluded = true;
-                this.#clearPlanState();
             }
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
@@ -884,9 +846,6 @@ export class SessionPresenter {
                     this.#resetLoopTurns();
                 }
                 this.lastLoopStatus = null;
-                if (this.turns > 0 && this.#awaitingTurnCount + 1 > this.turns) {
-                    this.#settlePriorPlanTurn();
-                }
                 this.#awaitingTurnCount += 1;
                 this.turns = Math.max(this.turns, this.#awaitingTurnCount);
                 this.#promoteSurvivingStreams(this.turns, true);
@@ -986,9 +945,6 @@ export class SessionPresenter {
                 this.#bindingsWithLoops.add(`${this.workspaceName}#${this.sessionName}`);
             }
             if (typeof rawNotice.packetCount === "number" && rawNotice.packetCount > 0) {
-                if (rawNotice.packetCount > this.turns && this.turns > 0) {
-                    this.#settlePriorPlanTurn();
-                }
                 this.turns = Math.max(this.turns, rawNotice.packetCount);
             } else if (rawNotice.status === 102 && this.turns === 0) {
                 this.turns = 1;
@@ -1184,76 +1140,7 @@ export class SessionPresenter {
             return frames;
         }
 
-        if (SessionUpdate.isPlanUpdate(update)) {
-            const incomingPlurnk = (
-                update._meta as
-                    | {
-                          plurnk?: {
-                              loopSeq?: number;
-                              turnSeq?: number;
-                              turn?: number;
-                          };
-                      }
-                    | undefined
-            )?.plurnk;
-            const incomingTurn =
-                typeof incomingPlurnk?.turnSeq === "number"
-                    ? incomingPlurnk.turnSeq
-                    : typeof incomingPlurnk?.turn === "number"
-                      ? incomingPlurnk.turn
-                      : undefined;
-            this.#syncLoopAndTurn(incomingPlurnk?.loopSeq, incomingTurn);
-            const effectiveLoopSeq =
-                typeof incomingPlurnk?.loopSeq === "number" && incomingPlurnk.loopSeq > 0
-                    ? incomingPlurnk.loopSeq
-                    : Math.max(1, this.loopSeq ?? 1);
-            const eventTurn =
-                typeof incomingTurn === "number" && incomingTurn > 0
-                    ? incomingTurn
-                    : Math.max(1, this.turns);
-            const turnKey = `${String(effectiveLoopSeq)}/${String(eventTurn)}`;
-            if (this.#planTurnKey !== null && this.#planTurnKey !== turnKey) {
-                this.#settlePriorPlanTurn();
-            }
-            this.#planTurnKey = turnKey;
-            if (PlanUpdateContent.isItems(update.plan)) {
-                this.#latestPlanEntries = update.plan.entries.map((entry) => ({
-                    content: entry.content,
-                    status: entry.status,
-                }));
-                this.planEntries = this.#latestPlanEntries.filter((entry) => {
-                    if (entry.status === "completed") return false;
-                    return this.#settledPlanStatus.get(entry.content) !== "pending";
-                });
-            }
-            const toolCallId = `${turnKey}/${String(Number.MAX_SAFE_INTEGER)}`;
-            this.#planSlotIds.add(toolCallId);
-            frames.push({
-                kind: "plan_update",
-                toolCallId,
-                entries: [...this.planEntries],
-            });
-            return frames;
-        }
-
-        if (SessionUpdate.isPlanRemoved(update)) {
-            const slotIds = [...this.#planSlotIds];
-            this.#clearPlanState();
-            if (slotIds.length === 0) {
-                frames.push({
-                    kind: "plan_update",
-                    toolCallId: `${String(Math.max(1, this.loopSeq ?? 1))}/${String(Math.max(1, this.turns))}/${String(Number.MAX_SAFE_INTEGER)}`,
-                    entries: [],
-                });
-            } else {
-                for (const toolCallId of slotIds) {
-                    frames.push({
-                        kind: "plan_update",
-                        toolCallId,
-                        entries: [],
-                    });
-                }
-            }
+        if (SessionUpdate.isPlanUpdate(update) || SessionUpdate.isPlanRemoved(update)) {
             return frames;
         }
 
@@ -1359,7 +1246,7 @@ export class SessionPresenter {
                 extractTitleTarget(effectiveTitle);
 
             // Suppress internal _plurnk emission announcements, entry materializations,
-            // synthesized kill distillation notes, and todo waterfall rows ({§cli-rendering}).
+            // and synthesized kill distillation notes ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "read" &&
@@ -1380,12 +1267,6 @@ export class SessionPresenter {
                 typeof metaPlurnk.attrs?.distilled === "string" &&
                 metaPlurnk.attrs.distilled.trim().length > 0
             ) {
-                return frames;
-            }
-            if (opName === "todo") {
-                this.#pendingToolCalls.delete(update.toolCallId);
-                this.#renderedToolCalls.add(update.toolCallId);
-                this.#retireReasoning(frames);
                 return frames;
             }
 
@@ -1969,7 +1850,6 @@ export class SessionPresenter {
                 this.#lastStreamTarget = "";
                 this.doing = null;
                 this.activity = null;
-                this.#clearPlanState();
                 this.waitUntil = null;
                 this.inboxCount = 0;
                 const termMeta = (

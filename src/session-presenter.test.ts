@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { renderOperationBlock, renderPlanLines } from "./markdown.ts";
+import { renderOperationBlock } from "./markdown.ts";
 import {
     abbreviatedCount,
     addDecimal,
@@ -822,19 +822,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(noteFrames[0].noteBody, "Body for note");
     }
 
-    // todo tool_call_update rows are suppressed from the waterfall; plan_update projects only newly opened pending
-    // (🚧) items at the end of the turn in the waterfall, ignoring completed items ({§cli-rendering}, {§cli-session-status}).
-    const todoFrames = presenter.apply({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "6/2/todo-1",
-        name: "todo",
-        title: "todo",
-        status: "completed",
-        rawInput: { aside: null, body: "- Step 1\n- Step 2" },
-        _meta: { plurnk: { op: "todo", status: 200 } },
-    });
-    assert.equal(todoFrames.length, 0);
-
+    // ACP plan_update / plan_removed notifications emit no duplicate waterfall frames ({§cli-rendering}).
     const planFrames = presenter.apply({
         sessionUpdate: "plan_update",
         plan: {
@@ -842,20 +830,18 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             planId: "plan",
             entries: [
                 { content: "Step 1", priority: "medium", status: "completed" },
-                { content: "Step 2", priority: "medium", status: "pending" },
+                { content: "Step 2", priority: "medium", status: "in_progress" },
             ],
         },
         _meta: { plurnk: { loopSeq: 6, turnSeq: 2 } },
     });
-    assert.equal(planFrames[0]?.kind, "plan_update");
-    if (planFrames[0]?.kind === "plan_update") {
-        assert.equal(planFrames[0].toolCallId, `6/2/${String(Number.MAX_SAFE_INTEGER)}`);
-    }
-    assert.deepEqual(presenter.planEntries, [
-        { content: "Step 2", status: "pending" },
-    ]);
-    const renderedPlan = stripVTControlCharacters(renderPlanLines(presenter.planEntries, 80));
-    assert.equal(renderedPlan, "🚧 Step 2");
+    assert.deepEqual(planFrames, []);
+
+    const removedFrames = presenter.apply({
+        sessionUpdate: "plan_removed",
+        planId: "plan",
+    });
+    assert.deepEqual(removedFrames, []);
 
     // #live reserves strictly 3 reasoning lines + 1 activity line ({§cli-rendering}, {§cli-session-status}).
     const tail = new TailText(() => 3);
@@ -869,127 +855,6 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         "",
         "⚙️  sh (stream://1) 2s",
     ]);
-
-    const removedFrames = presenter.apply({
-        sessionUpdate: "plan_removed",
-        planId: "plan",
-    });
-    assert.equal(removedFrames[0]?.kind, "plan_update");
-    if (removedFrames[0]?.kind === "plan_update") {
-        assert.equal(removedFrames[0].toolCallId, `6/2/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(removedFrames[0].entries, []);
-    }
-    assert.deepEqual(presenter.planEntries, []);
-
-    // Per-turn diff across turns: only newly added pending (🚧) items are emitted for each turn;
-    // completed items and unchanged pending items are never printed ({§cli-rendering}, {§cli-session-status}).
-    const diffPresenter = new SessionPresenter({
-        workspaceName: "ws",
-        sessionName: "main",
-        model: "fast",
-    });
-    // Turn 1 (e.g. initialization turn with opening and closing TODO):
-    diffPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Survey the environment.", priority: "medium", status: "pending" },
-                { content: "Resolve all Open Work.", priority: "medium", status: "pending" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
-    });
-    const t1Final = diffPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Survey the environment.", priority: "medium", status: "completed" },
-                { content: "Resolve all Open Work.", priority: "medium", status: "pending" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 1 } },
-    });
-    assert.equal(t1Final[0]?.kind, "plan_update");
-    if (t1Final[0]?.kind === "plan_update") {
-        assert.equal(t1Final[0].toolCallId, `1/1/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(t1Final[0].entries, [
-            { content: "Resolve all Open Work.", status: "pending" },
-        ]);
-    }
-
-    // Turn 2: model replaces TODO with Step A and Step B -> completed items are ignored, Step A & Step B are newly opened.
-    const t2Frames = diffPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Survey the environment.", priority: "medium", status: "completed" },
-                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
-                { content: "Step A", priority: "medium", status: "pending" },
-                { content: "Step B", priority: "medium", status: "pending" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 2 } },
-    });
-    assert.equal(t2Frames[0]?.kind, "plan_update");
-    if (t2Frames[0]?.kind === "plan_update") {
-        assert.equal(t2Frames[0].toolCallId, `1/2/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(t2Frames[0].entries, [
-            { content: "Step A", status: "pending" },
-            { content: "Step B", status: "pending" },
-        ]);
-    }
-
-    // Turn 3: Step A is completed (ignored), Step B remains pending (unchanged -> not reprinted), Step C is newly opened.
-    const t3Frames = diffPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Survey the environment.", priority: "medium", status: "completed" },
-                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
-                { content: "Step A", priority: "medium", status: "completed" },
-                { content: "Step B", priority: "medium", status: "pending" },
-                { content: "Step C", priority: "medium", status: "pending" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 3 } },
-    });
-    assert.equal(t3Frames[0]?.kind, "plan_update");
-    if (t3Frames[0]?.kind === "plan_update") {
-        assert.equal(t3Frames[0].toolCallId, `1/3/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(t3Frames[0].entries, [
-            { content: "Step C", status: "pending" },
-        ]);
-    }
-
-    // Turn 4: All items completed before DONE -> no pending items remain.
-    const t4Frames = diffPresenter.apply({
-        sessionUpdate: "plan_update",
-        plan: {
-            type: "items",
-            planId: "plan",
-            entries: [
-                { content: "Survey the environment.", priority: "medium", status: "completed" },
-                { content: "Resolve all Open Work.", priority: "medium", status: "completed" },
-                { content: "Step A", priority: "medium", status: "completed" },
-                { content: "Step B", priority: "medium", status: "completed" },
-                { content: "Step C", priority: "medium", status: "completed" },
-            ],
-        },
-        _meta: { plurnk: { loopSeq: 1, turnSeq: 4 } },
-    });
-    assert.equal(t4Frames[0]?.kind, "plan_update");
-    if (t4Frames[0]?.kind === "plan_update") {
-        assert.equal(t4Frames[0].toolCallId, `1/4/${String(Number.MAX_SAFE_INTEGER)}`);
-        assert.deepEqual(t4Frames[0].entries, []);
-    }
 
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).

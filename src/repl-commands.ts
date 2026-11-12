@@ -138,12 +138,6 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
                 ) {
                     return false;
                 }
-                if (op === "todo") {
-                    return false;
-                }
-                return true;
-            }
-            if (item.kind === "plan") {
                 return true;
             }
             return false;

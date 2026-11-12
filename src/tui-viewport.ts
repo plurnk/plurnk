@@ -8,7 +8,6 @@ import { join, resolve } from "node:path";
 import * as readline from "node:readline";
 import { PassThrough } from "node:stream";
 import type {
-    PlanUpdateContent,
     SessionUpdate,
     ToolCallContent,
     ToolCallLocation,
@@ -41,7 +40,6 @@ import TuiSurface, {
     renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
-    renderPlanLines,
     renderReasoning,
     renderSubmittedInput,
     windowTitle,
@@ -297,12 +295,6 @@ export const runTuiViewport = async (
             });
             surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
         }
-    };
-
-    const renderPlanToSurface = (frame: Extract<PresentationFrame, { kind: "plan_update" }>): void => {
-        if (surface === null) return;
-        const rendered = renderPlanLines(frame.entries, surface.columns);
-        surface.upsertToolCall(frame.toolCallId, rendered);
     };
 
     const statusTicker =
@@ -851,19 +843,6 @@ export const runTuiViewport = async (
                         voice: isOutsideHistory ? null : extractMessageVoice(plurnkMeta),
                     }),
                 );
-            } else if (rec.kind === "plan" && rec.plan && typeof rec.plan === "object") {
-                const planFrames = presenter.apply({
-                    sessionUpdate: "plan_update",
-                    plan: rec.plan as PlanUpdateContent,
-                    ...(rec.meta !== undefined && typeof rec.meta === "object" && rec.meta !== null
-                        ? { _meta: rec.meta as Record<string, unknown> }
-                        : {}),
-                });
-                for (const f of planFrames) {
-                    if (f.kind === "plan_update") {
-                        renderPlanToSurface(f);
-                    }
-                }
             }
         }
         } finally {
@@ -1100,9 +1079,7 @@ export const runTuiViewport = async (
                 surface !== null &&
                 event.sessionUpdate === "tool_call_update" &&
                 typeof event.toolCallId === "string" &&
-                (event.status === "pending" || event.status === "in_progress") &&
-                event.name !== "todo" &&
-                (event._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op !== "todo"
+                (event.status === "pending" || event.status === "in_progress")
             ) {
                 surface.reserveToolCall(event.toolCallId);
             }
@@ -1123,14 +1100,6 @@ export const runTuiViewport = async (
             for (const frame of frames) {
                 switch (frame.kind) {
                     case "reasoning_tail":
-                        break;
-                    case "plan_update":
-                        retireLiveReasoning();
-                        currentTurns = presenter.turns;
-                        if (surface !== null) {
-                            renderPlanToSurface(frame);
-                            updateSurfaceStatus();
-                        }
                         break;
                     case "subagent":
                         if (surface !== null) {

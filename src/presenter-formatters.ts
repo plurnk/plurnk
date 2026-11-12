@@ -3,7 +3,6 @@
 
 export const OPERATION_GLYPH_MAP: Readonly<Record<string, string>> = {
     note: "🗒️",
-    todo: "🚧",
     find: "🔎",
     read: "📖",
     edit: "📝",
@@ -240,7 +239,6 @@ export const NO_PREVIEW_VERBS = new Set([
     "bare",
     "wait",
     "note",
-    "todo",
 ]);
 
 export const WORKER_OPS = new Set(["work", "fork", "bare"]);

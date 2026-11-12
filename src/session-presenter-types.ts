@@ -62,11 +62,6 @@ export const SESSION_CONFIG_OPTION_GUARDS = {
     isCustom: true,
 } as const satisfies Record<keyof typeof SessionConfigOption, true>;
 
-export interface PlanEntryItem {
-    readonly content: string;
-    readonly status: string;
-}
-
 export interface ActiveLiveEntry {
     readonly key: string;
     readonly kind: "stream" | "worker";
@@ -128,11 +123,6 @@ export type PresentationFrame =
       }
     | {
           readonly kind: "reasoning_retired";
-      }
-    | {
-          readonly kind: "plan_update";
-          readonly toolCallId: string;
-          readonly entries: readonly PlanEntryItem[];
       }
     | {
           readonly kind: "tool_call";

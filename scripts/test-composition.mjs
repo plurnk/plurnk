@@ -260,7 +260,7 @@ try {
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "plurnk.work({ name: \"guesser1\", prompt: \"Create child.txt and conclude.\" })\n\n"
+        "plurnk.work({ session: \"guesser1\", prompt: \"Create child.txt and conclude.\" })\n\n"
             + "plurnk.wait({ text: \"Waiting for guesser1.\" })",
         "plurnk.edit({ path: \"child.txt\", content: \"created by packed child\" })\n\n"
             + "plurnk.note({ text: \"Confirming the write.\" })",

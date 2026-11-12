@@ -291,6 +291,49 @@ test("{§cli-subcommands} {§cli-repl-mode}: runCliWeb and REPL /web + /learn mi
         });
         assert.match(noOpenPrinted.trim(), /\/oauth\/handoff\?ticket=secret-ticket-2$/u);
 
+        // Verify unauthenticated daemon (404 /oauth/handoff) probes HEAD / before returning root URL
+        let rootMounted = false;
+        const noAuthServer = http.createServer((req, res) => {
+            if (req.url === "/" && req.method === "HEAD") {
+                res.writeHead(rootMounted ? 200 : 404);
+                res.end();
+                return;
+            }
+            res.writeHead(404, { "content-type": "application/json" });
+            res.end(JSON.stringify({ status: 404, title: "Not found" }));
+        });
+        await new Promise<void>((r) => noAuthServer.listen(0, "127.0.0.1", r));
+        try {
+            const noAuthAddr = noAuthServer.address();
+            assert.ok(noAuthAddr && typeof noAuthAddr === "object");
+            const noAuthCommon = makeCommon({
+                url: `http://127.0.0.1:${String(noAuthAddr.port)}/acp`,
+                port: noAuthAddr.port,
+                credential: new Credential({
+                    XDG_STATE_HOME: join(tmp, "empty-state"),
+                    XDG_DATA_HOME: join(tmp, "empty-data"),
+                }),
+                env: {},
+            });
+            await assert.rejects(
+                openWebHandoff(noAuthCommon, { noOpen: true, write: () => {} }),
+                (err: unknown) =>
+                    err instanceof Error &&
+                    /not mounted on this daemon/u.test(err.message),
+            );
+            rootMounted = true;
+            let noAuthPrinted = "";
+            await openWebHandoff(noAuthCommon, {
+                noOpen: true,
+                write: (t) => {
+                    noAuthPrinted += t;
+                },
+            });
+            assert.equal(noAuthPrinted.trim(), `http://127.0.0.1:${String(noAuthAddr.port)}/`);
+        } finally {
+            await new Promise<void>((r) => noAuthServer.close(() => r()));
+        }
+
         // Verify runCliWeb entrypoint with browser fallback
         const code = await runCliWeb(false, common, async () => {
             throw new Error("no xdg-open");

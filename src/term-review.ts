@@ -1,7 +1,7 @@
 // Inline proposal review and elicitation forms on `@earendil-works/pi-tui`
 // ({§cli-inline-review}).
 
-import { Container, Editor, SelectList, Text, type Focusable } from "@earendil-works/pi-tui";
+import { Container, decodeKittyPrintable, Editor, SelectList, Text, type Focusable } from "@earendil-works/pi-tui";
 import { Validator } from "@plurnk/plurnk-contracts";
 import TermSurface, { ModelText, editorTheme, paint } from "./term-surface.ts";
 
@@ -649,7 +649,7 @@ export default class Review extends Container implements Focusable {
                               ? request.kind === "elicitation_form" && request.form.multiSelect
                                   ? "↑/↓: move · Space/Enter: toggle/submit · Esc: composer"
                                   : request.kind === "permission"
-                                    ? "↑/↓: choose · Enter: confirm · Shift-Tab: yolo on · Esc: composer"
+                                    ? "↑/↓ or y/e/n: choose · Enter: confirm · Shift-Tab: yolo on · Esc: composer"
                                     : "↑/↓: choose · Enter: confirm · Esc: composer"
                               : "Enter: submit · Shift-Enter: newline · Esc: composer",
                         "dim",
@@ -674,6 +674,24 @@ export default class Review extends Container implements Focusable {
             const item = this.#control.getSelectedItem();
             if (item !== null && item.value.startsWith("toggle:")) {
                 this.#control.onSelect?.(item);
+                return;
+            }
+        }
+        if (current?.kind === "permission" && this.#control instanceof SelectList) {
+            const ch = (data.length === 1 ? data : decodeKittyPrintable(data))?.toLowerCase();
+            const shortcutIndex =
+                ch === "y" || ch === "a"
+                    ? 0
+                    : ch === "e"
+                      ? 1
+                      : ch === "n" || ch === "r"
+                        ? 2
+                        : ch === "c"
+                          ? 3
+                          : undefined;
+            if (shortcutIndex !== undefined) {
+                this.#control.setSelectedIndex(shortcutIndex);
+                this.#surface.requestRender();
                 return;
             }
         }

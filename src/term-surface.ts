@@ -6,6 +6,7 @@ import {
     Container,
     CURSOR_MARKER,
     Editor,
+    getKeybindings,
     ProcessTerminal,
     renderFakeCursor,
     Spacer,
@@ -354,6 +355,10 @@ export default class TermSurface {
     #lastWasSpacer = false;
 
     constructor(terminal: Terminal = new ProcessTerminal()) {
+        getKeybindings().setUserBindings({
+            "tui.input.submit": ["enter", "ctrl+enter", "super+enter"],
+            "tui.select.confirm": ["enter", "ctrl+enter", "super+enter"],
+        });
         this.#terminal = terminal;
         this.#screen = new TuiMainScreen(terminal, true);
         this.#composer = new ComposerEditor(

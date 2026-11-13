@@ -26,7 +26,6 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
     assert.equal(altShortcut("\x1bs"), "/workspaces");
     assert.equal(altShortcut("\x1bR"), "/sessions");
     assert.equal(altShortcut("\x1bL"), "/loops");
-    assert.equal(altShortcut("\x1bY"), "/yolo");
     assert.equal(altShortcut("\x1bx"), "/stop");
     assert.equal(altShortcut("plain"), null);
     assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
@@ -2839,6 +2838,199 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         assert.deepEqual(permissionOutcome, {
             outcome: { outcome: "selected", optionId: "allow" },
             _meta: { plurnk: { outcome: "client_yolo" } },
+        });
+
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
+test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter submit, Shift+Enter and Ctrl+J insert newlines, and y/n select permission review options (#263)", async () => {
+    const outcomes: unknown[] = [];
+    const prompts: string[] = [];
+    const agentApp = createAcpAgent({ name: "viewport-shortcuts-agent" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {}, resume: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                    sessionName: "user",
+                    status: { model: null, spawnModel: null },
+                    providers: [],
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.resume, async () => ({
+            configOptions: [],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                    sessionName: "user",
+                    status: { model: null, spawnModel: null },
+                    providers: [],
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            const firstBlock = params.prompt[0];
+            prompts.push(firstBlock?.type === "text" && typeof firstBlock.text === "string" ? firstBlock.text : "");
+            const res = await client.request(methods.client.session.requestPermission, {
+                sessionId: params.sessionId,
+                title: "edit shortcut.txt",
+                subject: {
+                    type: "command",
+                    command: "edit shortcut.txt",
+                    cwd: "/tmp",
+                },
+                options: [
+                    { optionId: "allow", name: "Accept", kind: "allow_once" },
+                    { optionId: "deny", name: "Reject", kind: "reject_once" },
+                ],
+                _meta: {
+                    plurnk: {
+                        proposal: { body: "+shortcut\n" },
+                    },
+                },
+            });
+            outcomes.push(res);
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: `1/${String(prompts.length)}/2`,
+                    content: { type: "text", text: `Settled ${String(prompts.length)}` },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { messageId: `1/${String(prompts.length)}/2` };
+        });
+
+    const termWrites: string[] = [];
+    let inputCallback = null as ((data: string) => void) | null;
+    const fakeTerminal: Terminal = {
+        columns: 120,
+        rows: 30,
+        kittyProtocolActive: true,
+        start(onInput: (data: string) => void) {
+            inputCallback = onInput;
+        },
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const stripVtAndApc = (s: string): string =>
+        stripVTControlCharacters(s).replace(/\x1b_[^\x07]*\x07/gu, "");
+
+    try {
+        const viewportPromise = runTermViewport(
+            {
+                url: `http://127.0.0.1:${String(addr.port)}/acp`,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port: addr.port,
+                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 2000,
+                cancelGraceMs: 500,
+                workspace: "alpha",
+                sessionId: "user",
+                termSession: "user",
+                yolo: false,
+                auto: false,
+                json: false,
+                repl: false,
+                previewLines: 5,
+                historyEntries: 10,
+                mermaidTimeoutMs: 2000,
+                color: "never",
+                bell: false,
+                cwd: "/tmp",
+                env: { PLURNK_SECRET: "test-secret" },
+            },
+            { stdin, stdout, stderr, terminal: fakeTerminal },
+        );
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate(), `Timed out waiting for condition; writes:\n${stripVtAndApc(termWrites.join(""))}`);
+        };
+
+        await waitUntil(() => inputCallback !== null && stripVtAndApc(termWrites.join("")).includes("[alpha/~user]"));
+
+        // Shift+Enter (\x1b[13;2u) and Ctrl+J (\x1b[106;5u) insert newlines; CSI-u Ctrl+Enter (\x1b[13;5u) submits!
+        inputCallback!("line1");
+        inputCallback!("\x1b[13;2u");
+        inputCallback!("line2");
+        inputCallback!("\x1b[106;5u");
+        inputCallback!("line3");
+        inputCallback!("\x1b[13;5u");
+
+        await waitUntil(() => stripVtAndApc(termWrites.join("")).includes("y/e/n: choose"));
+        assert.deepEqual(prompts, ["line1\nline2\nline3"]);
+
+        // Select Reject with 'n' and confirm with CSI-u Ctrl+Enter (\x1b[13;5u)
+        inputCallback!("n");
+        inputCallback!("\x1b[13;5u");
+        await waitUntil(() => stripVtAndApc(termWrites.join("")).includes("Settled 1"));
+        assert.deepEqual(outcomes[0], {
+            outcome: { outcome: "selected", optionId: "deny" },
+        });
+
+        // Submit second prompt with Super+Enter (\x1b[13;9u), move to Reject with 'r', back to Accept with 'y', confirm with Enter
+        inputCallback!("second prompt");
+        inputCallback!("\x1b[13;9u");
+        await waitUntil(() => prompts.length === 2 && stripVtAndApc(termWrites.slice(-10).join("")).includes("edit shortcut.txt"));
+        inputCallback!("r");
+        inputCallback!("y");
+        inputCallback!("\r");
+        await waitUntil(() => stripVtAndApc(termWrites.join("")).includes("Settled 2"));
+        assert.deepEqual(outcomes[1], {
+            outcome: { outcome: "selected", optionId: "allow" },
         });
 
         inputCallback!("\x04");

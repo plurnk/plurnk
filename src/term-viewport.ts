@@ -50,7 +50,6 @@ export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     s: "/workspaces",
     R: "/sessions",
     L: "/loops",
-    Y: "/yolo",
     N: "/workspace",
     M: "/members",
     x: "/stop",

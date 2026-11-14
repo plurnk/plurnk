@@ -58,12 +58,12 @@ test("{§cli-interactive-command-discovery} {§cli-subcommands}: expandLearnComm
 
     const bare = expandLearnCommand("/learn");
     assert.ok(bare !== null);
-    assert.match(bare, /skill:\/\/plurnk\/recipes\.md/u);
+    assert.match(bare, /mcp:\/\/\/plurnk\/skills\.json/u);
     assert.match(bare, /plurnk\.skills/u);
 
     const targeted = expandLearnCommand("  /learn   deploy staging safely  ");
     assert.ok(targeted !== null);
-    assert.match(targeted, /skill:\/\/plurnk\/recipes\.md/u);
+    assert.match(targeted, /mcp:\/\/\/plurnk\/skills\.json/u);
     assert.match(targeted, /deploy staging safely/u);
     assert.match(targeted, /plurnk\.skills/u);
 
@@ -367,7 +367,7 @@ test("{§cli-subcommands} {§cli-repl-mode}: runCliWeb and REPL /web + /learn mi
         assert.equal(replCode, 0);
         assert.match(replOut, /\/oauth\/handoff\?ticket=secret-ticket-4/u);
         assert.equal(receivedPrompts.length, 1);
-        assert.match(receivedPrompts[0]!, /skill:\/\/plurnk\/recipes\.md/u);
+        assert.match(receivedPrompts[0]!, /mcp:\/\/\/plurnk\/skills\.json/u);
         assert.match(receivedPrompts[0]!, /write release notes/u);
     } finally {
         rmSync(tmp, { recursive: true, force: true });

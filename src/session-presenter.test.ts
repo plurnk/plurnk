@@ -1180,4 +1180,54 @@ test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresen
     }
 });
 
+test("{§cli-conformance} {§cli-repl-mode} {§cli-sessions-topology}: SessionPresenter handles replay_complete boundary and projects prompt_suggestions_update lifecycle", () => {
+    const presenter = new SessionPresenter({
+        workspaceName: "alpha",
+        sessionName: "user",
+        model: "fast",
+    });
+
+    presenter.setHistoryReplay(true);
+    const ignoredDuringReplay = presenter.apply({
+        sessionUpdate: "prompt_suggestions_update",
+        suggestions: [{ prompt: [{ type: "text", text: "Stale replay suggestion" }] }],
+    });
+    assert.deepEqual(ignoredDuringReplay, []);
+    assert.deepEqual(presenter.promptSuggestions, []);
+
+    const replayDoneFrames = presenter.apply({
+        sessionUpdate: "replay_complete",
+    });
+    assert.deepEqual(replayDoneFrames, []);
+
+    const liveSuggestionFrames = presenter.apply({
+        sessionUpdate: "prompt_suggestions_update",
+        suggestions: [
+            {
+                prompt: [
+                    { type: "text", text: "Run " },
+                    { type: "skill", name: "triage" },
+                    { type: "text", text: " now" },
+                ],
+            },
+            {
+                prompt: [{ type: "text", text: "Explain failure" }],
+            },
+        ],
+    });
+    assert.deepEqual(liveSuggestionFrames, [
+        {
+            kind: "prompt_suggestions",
+            suggestions: ["Run $triage now", "Explain failure"],
+        },
+    ]);
+    assert.deepEqual(presenter.promptSuggestions, ["Run $triage now", "Explain failure"]);
+
+    presenter.apply({
+        sessionUpdate: "state_update",
+        state: "running",
+    });
+    assert.deepEqual(presenter.promptSuggestions, []);
+});
+
 

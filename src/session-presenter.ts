@@ -36,7 +36,9 @@ import {
     WORKER_OPS,
 } from "./presenter-formatters.ts";
 import {
+    AVAILABLE_COMMAND_GUARDS,
     CONTENT_BLOCK_GUARDS,
+    PLAN_UPDATE_CONTENT_GUARDS,
     SESSION_CONFIG_OPTION_GUARDS,
     SESSION_UPDATE_GUARDS,
     TOOL_CALL_CONTENT_GUARDS,
@@ -55,6 +57,7 @@ import {
 export {
     abbreviatedCount,
     addDecimal,
+    AVAILABLE_COMMAND_GUARDS,
     compactTarget,
     CONTENT_BLOCK_GUARDS,
     extractMessageVoice,
@@ -73,6 +76,7 @@ export {
     normalizeWorkerKey,
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
+    PLAN_UPDATE_CONTENT_GUARDS,
     receiptCountFor,
     SESSION_CONFIG_OPTION_GUARDS,
     SESSION_UPDATE_GUARDS,
@@ -144,6 +148,7 @@ export class SessionPresenter {
     #pendingHistoryLost = false;
     #awaitingTurnCount = 0;
     #loopConcluded = false;
+    #promptSuggestions: readonly string[] = [];
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
@@ -173,6 +178,14 @@ export class SessionPresenter {
 
     get reasoningLines(): readonly string[] {
         return this.#reasoningLines;
+    }
+
+    get promptSuggestions(): readonly string[] {
+        return this.#promptSuggestions;
+    }
+
+    setPromptSuggestions(suggestions: readonly string[]): void {
+        this.#promptSuggestions = suggestions.filter((t) => t.trim().length > 0);
     }
 
     get activeLiveEntries(): readonly ActiveLiveEntry[] {
@@ -234,6 +247,7 @@ export class SessionPresenter {
         this.#concludedStreams.clear();
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
+        this.#promptSuggestions = [];
     }
 
     isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
@@ -276,6 +290,7 @@ export class SessionPresenter {
         if (this.#loopConcluded) {
             this.#resetLoopTurns();
         }
+        this.#promptSuggestions = [];
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
         this.#turnStartedAt = now;
@@ -1005,6 +1020,26 @@ export class SessionPresenter {
 
     apply(update: SessionUpdate): PresentationFrame[] {
         const frames: PresentationFrame[] = [];
+
+        if (SessionUpdate.isReplayComplete(update)) {
+            this.#replayingHistory = false;
+            return frames;
+        }
+
+        if (SessionUpdate.isPromptSuggestionsUpdate(update)) {
+            if (this.#replayingHistory) {
+                return frames;
+            }
+            const next = update.suggestions
+                .map((s) => (s.prompt ?? []).map(contentBlockToText).join(""))
+                .filter((t) => t.trim().length > 0);
+            this.#promptSuggestions = next;
+            frames.push({
+                kind: "prompt_suggestions",
+                suggestions: next,
+            });
+            return frames;
+        }
 
         if (SessionUpdate.isSessionInfoUpdate(update)) {
             this.ingestMeta(update._meta as MetaRecord | undefined);
@@ -1809,6 +1844,7 @@ export class SessionPresenter {
                 update._meta as { plurnk?: { status?: { lifecycle?: unknown } } } | undefined
             )?.plurnk?.status?.lifecycle;
             if (update.state === "running") {
+                this.#promptSuggestions = [];
                 if (this.#loopConcluded) {
                     this.#resetLoopTurns();
                 }

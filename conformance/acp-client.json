@@ -581,8 +581,12 @@
         "evidence": ["src/acp-session.ts — AcpSession.applyUpdate removes plan state; SessionPresenter omits duplicate waterfall rows"]
       },
       "isAvailableCommandsUpdate": {
-        "posture": "ignored",
-        "evidence": ["src/commands.ts — slash commands derive from the static client command inventory"]
+        "posture": "native",
+        "evidence": [
+          "src/acp-session.ts — AcpSession.applyUpdate availableCommands sync",
+          "src/term-completion.ts — $skill tab completion",
+          "src/repl-commands.ts — buildPromptBlocks inline skill reference blocks"
+        ]
       },
       "isConfigOptionUpdate": {
         "posture": "native",
@@ -619,6 +623,21 @@
       "isSessionMessageChunk": {
         "posture": "native",
         "evidence": ["src/session-presenter.ts — inter-session message chunk projection"]
+      },
+      "isReplayComplete": {
+        "posture": "native",
+        "evidence": [
+          "src/acp-session.ts — AcpSession.applyUpdate replayComplete boundary",
+          "src/session-presenter.ts — replay_complete ends history suppression"
+        ]
+      },
+      "isPromptSuggestionsUpdate": {
+        "posture": "native",
+        "evidence": [
+          "src/acp-session.ts — AcpSession.applyUpdate promptSuggestions sync",
+          "src/session-presenter.ts — prompt_suggestions frame projection",
+          "src/term-viewport.ts — idle composer suggestion placeholder and Tab completion"
+        ]
       },
       "isCustom": {
         "posture": "ignored",

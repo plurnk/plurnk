@@ -109,10 +109,13 @@ test("{§cli-conformance} deps:check verifies conformance/acp-client.json agains
 test("{§cli-conformance} deps:drift enforces the verification age budget, registry latest alignment, and ownerVeto (#232)", async () => {
     const { policy } = await loadRepoInputs();
 
-    const withinBudgetNow = Date.parse("2026-11-10T00:00:00Z");
+    const maxVerifiedMs = Math.max(...policy.watched.map((w) => Date.parse(`${w.verifiedAt}T00:00:00Z`)));
+    const minVerifiedMs = Math.min(...policy.watched.map((w) => Date.parse(`${w.verifiedAt}T00:00:00Z`)));
+    const maxBudgetDays = Math.max(...policy.watched.map((w) => w.budgetDays));
+    const withinBudgetNow = minVerifiedMs + 2 * 86_400_000;
     assert.deepEqual(evaluateDriftAge(policy, withinBudgetNow), []);
 
-    const expiredNow = Date.parse("2026-11-25T00:00:00Z");
+    const expiredNow = maxVerifiedMs + (maxBudgetDays + 2) * 86_400_000;
     const ageViolations = evaluateDriftAge(policy, expiredNow);
     assert.equal(ageViolations.length, 2);
     assert.ok(ageViolations[0].includes("budget: 14d"));

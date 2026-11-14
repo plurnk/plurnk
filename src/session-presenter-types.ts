@@ -2,7 +2,9 @@
 // ({§cli-conformance}, {§cli-rendering}, {§cli-session-status}, #232).
 
 import {
+    AvailableCommand,
     ContentBlock,
+    PlanUpdateContent,
     SessionConfigOption,
     SessionUpdate,
     ToolCallContent,
@@ -36,6 +38,8 @@ export const SESSION_UPDATE_GUARDS = {
     isSubagentUpdate: true,
     isSessionMessage: true,
     isSessionMessageChunk: true,
+    isReplayComplete: true,
+    isPromptSuggestionsUpdate: true,
     isCustom: true,
 } as const satisfies Record<keyof typeof SessionUpdate, true>;
 
@@ -45,8 +49,21 @@ export const CONTENT_BLOCK_GUARDS = {
     isAudio: true,
     isResourceLink: true,
     isResource: true,
+    isSkill: true,
     isCustom: true,
 } as const satisfies Record<keyof typeof ContentBlock, true>;
+
+export const AVAILABLE_COMMAND_GUARDS = {
+    isCommand: true,
+    isSkill: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof AvailableCommand, true>;
+
+export const PLAN_UPDATE_CONTENT_GUARDS = {
+    isItems: true,
+    isMarkdown: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof PlanUpdateContent, true>;
 
 export const TOOL_CALL_CONTENT_GUARDS = {
     isContent: true,
@@ -198,6 +215,10 @@ export type PresentationFrame =
           readonly loopInputTokens?: number;
           readonly loopOutputTokens?: number;
           readonly loopCostUsd?: string | null;
+      }
+    | {
+          readonly kind: "prompt_suggestions";
+          readonly suggestions: readonly string[];
       };
 
 export interface SessionPresenterOptions {

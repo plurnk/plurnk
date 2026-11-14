@@ -19,6 +19,7 @@ import {
 import { matchesRuntimeAcceptance } from "./cli-permission.ts";
 import { expandLearnCommand } from "./commands.ts";
 import {
+    buildPromptBlocks,
     executeFamilyCommand,
     extractChronologicalHistory,
     extractOpenPaths,
@@ -124,6 +125,8 @@ export const runReplSession = async (
             session: currentSessionName,
             cwd: currentProjectRoot,
             configOptions: session.configOptions,
+            availableCommands: session.availableCommands,
+            promptSuggestions: session.promptSuggestions,
             history,
             prompts,
             ...(extra?.sessions !== undefined ? { sessions: extra.sessions } : {}),
@@ -782,7 +785,7 @@ export const runReplSession = async (
             const injected = line.slice(3).trimStart();
             if (injected.length === 0) return "continue";
             void client
-                .prompt(session.sessionId, [{ type: "text", text: injected }], {
+                .prompt(session.sessionId, buildPromptBlocks(injected, session.availableCommands), {
                     plurnk: {
                         interactive: !options.auto,
                         tools: !options.auto ? ["question", "mcp_input_required"] : [],
@@ -820,7 +823,7 @@ export const runReplSession = async (
         const openPaths = extractOpenPaths(promptText, currentProjectRoot);
         currentLifecycle = "running";
         void client
-            .prompt(session.sessionId, [{ type: "text", text: promptText }], {
+            .prompt(session.sessionId, buildPromptBlocks(promptText, session.availableCommands), {
                 plurnk: {
                     interactive: !options.auto,
                     tools: !options.auto ? ["question", "mcp_input_required"] : [],

@@ -49,6 +49,7 @@ import {
 } from "./cli-subcommands.ts";
 import { checkNeedsAutoOnboard, runCliOnboard } from "./onboard.ts";
 import {
+    buildPromptBlocks,
     formatFamilyRows,
     mintGateHash,
     openProcessStreams,
@@ -276,6 +277,7 @@ export const runCliPrompt = async (
                     : (options.sessionId ?? "user"),
             cwd: typeof wsInit?.projectRoot === "string" ? wsInit.projectRoot : (options.projectRoot ?? options.cwd),
             configOptions: session.configOptions,
+            availableCommands: session.availableCommands,
             ...(session.meta !== undefined ? { _meta: session.meta } : {}),
         });
         for (const item of session.items) {
@@ -353,7 +355,11 @@ export const runCliPrompt = async (
                     ...(options.auto ? { envelope: { auto: true } } : {}),
                 },
             };
-            const promptRes = await client.prompt(session.sessionId, promptText, promptMeta);
+            const promptRes = await client.prompt(
+                session.sessionId,
+                buildPromptBlocks(promptText, session.availableCommands),
+                promptMeta,
+            );
             await Promise.race([
                 turnIdlePromise,
                 client.closed,

@@ -112,12 +112,23 @@ export const runCliPrompt = async (
     const effectiveYolo = isQuestionPrompt ? false : options.yolo;
     let gateSeq = 0;
     let activeSessionId = options.sessionId ?? "user";
+    const stdinIsTTY = Boolean((streams.stdin as { isTTY?: boolean }).isTTY);
+    const canElicit = !options.auto && !options.json && stdinIsTTY;
     const basePermHandler = createCliPermissionHandler(effectiveYolo, {
         env: options.env,
         forceReview: isQuestionPrompt,
         auto: options.auto,
+        stdin: streams.stdin,
+        stderr: streams.stderr,
+        isTTY: stdinIsTTY,
     });
-    const baseElicitHandler = createCliElicitationHandler();
+    const baseElicitHandler = canElicit
+        ? createCliElicitationHandler({
+              stdin: streams.stdin,
+              stderr: streams.stderr,
+              isTTY: stdinIsTTY,
+          })
+        : undefined;
 
     const client = new AcpClient({
         url: options.url,
@@ -140,27 +151,31 @@ export const runCliPrompt = async (
             });
             return res;
         },
-        onElicitationRequest: async (request, signal) => {
-            gateSeq += 1;
-            const id = mintGateHash(activeSessionId, "elicitation", gateSeq);
-            writeEventJsonl(streams.events, {
-                sessionUpdate: "elicitation_request",
-                id,
-                sessionId: activeSessionId,
-                mode: CreateElicitationRequest.isUrl(request) ? "url" : "form",
-                message: request.message,
-                ...(CreateElicitationRequest.isForm(request) ? { requestedSchema: request.requestedSchema } : {}),
-                ...(CreateElicitationRequest.isUrl(request) ? { url: request.url } : {}),
-                ...(request._meta !== undefined ? { _meta: request._meta } : {}),
-            });
-            const res = await baseElicitHandler(request, signal);
-            writeEventJsonl(streams.events, {
-                sessionUpdate: "gate_resolved",
-                id,
-                outcome: res,
-            });
-            return res;
-        },
+        ...(baseElicitHandler !== undefined
+            ? {
+                  onElicitationRequest: async (request, signal) => {
+                      gateSeq += 1;
+                      const id = mintGateHash(activeSessionId, "elicitation", gateSeq);
+                      writeEventJsonl(streams.events, {
+                          sessionUpdate: "elicitation_request",
+                          id,
+                          sessionId: activeSessionId,
+                          mode: CreateElicitationRequest.isUrl(request) ? "url" : "form",
+                          message: request.message,
+                          ...(CreateElicitationRequest.isForm(request) ? { requestedSchema: request.requestedSchema } : {}),
+                          ...(CreateElicitationRequest.isUrl(request) ? { url: request.url } : {}),
+                          ...(request._meta !== undefined ? { _meta: request._meta } : {}),
+                      });
+                      const res = await baseElicitHandler(request, signal);
+                      writeEventJsonl(streams.events, {
+                          sessionUpdate: "gate_resolved",
+                          id,
+                          outcome: res,
+                      });
+                      return res;
+                  },
+              }
+            : {}),
     });
 
     try {
@@ -371,11 +386,39 @@ export const runCliPrompt = async (
                 const resolvedShare = options.shareFolder.startsWith("~/")
                     ? join(options.env.HOME || homedir(), options.shareFolder.slice(2))
                     : resolve(options.cwd, options.shareFolder);
-                await client.action(
-                    "workspace.share",
-                    { folder: resolvedShare },
-                    { sessionId: session.sessionId, workspace: options.workspace },
-                ).catch(() => undefined);
+                try {
+                    await client.action(
+                        "workspace.share",
+                        { folder: resolvedShare },
+                        { sessionId: session.sessionId, workspace: options.workspace },
+                    );
+                } catch (shareErr) {
+                    if (shareErr instanceof ClientCliError) {
+                        throw shareErr;
+                    }
+                    const errData = (shareErr as { readonly data?: Record<string, unknown> } | undefined)?.data;
+                    const detail =
+                        typeof errData?.detail === "string"
+                            ? errData.detail
+                            : shareErr instanceof Error
+                              ? shareErr.message
+                              : String(shareErr);
+                    throw new ClientCliError(
+                        {
+                            type:
+                                typeof errData?.type === "string"
+                                    ? errData.type
+                                    : "https://problems.plurnk.xyz/client/share-failed",
+                            title:
+                                typeof errData?.title === "string"
+                                    ? errData.title
+                                    : "Workspace share failed",
+                            status: typeof errData?.status === "number" ? errData.status : 500,
+                            detail,
+                        },
+                        1,
+                    );
+                }
             }
 
             const disconnectProblem: Record<string, unknown> | undefined = !turnSettled
@@ -562,6 +605,9 @@ export const runCliPrompt = async (
             process.removeListener("SIGTERM", onSigTerm);
         }
     } finally {
+        if (streams.stdin === process.stdin) {
+            process.stdin.pause();
+        }
         client.close();
     }
 };

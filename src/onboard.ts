@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import readline from "node:readline";
+import { SessionUpdate } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
 import {
     ClientCliError,
@@ -283,6 +284,7 @@ export const runCliOnboard = async (
         const configPath = resolveOperatorConfigPath(options.env);
         let chosenAlias = "";
         let chosenSelector = "";
+        let submittedSecret: string | undefined;
 
         if (choiceNum < firstHostedIdx) {
             const loc = locals[choiceNum - 1]!;
@@ -310,9 +312,15 @@ export const runCliOnboard = async (
                     64,
                 );
             }
+            submittedSecret = apiKey;
             upsertOperatorEnv(configPath, {
                 [hp.envKey]: apiKey,
             });
+            if (Boolean(process.env[hp.envKey])) {
+                write(
+                    `Note: ${hp.envKey} is already exported in your current shell environment, which overrides ${configPath} until unset or updated.\n`,
+                );
+            }
             const catalog = await client.action<{
                 readonly items?: ReadonlyArray<{ readonly selector?: string }>;
             }>("models.list", { provider: hp.id, limit: 100 });
@@ -339,6 +347,11 @@ export const runCliOnboard = async (
             await client.action("models.list", { provider: hp.id, limit: 1 });
         }
 
+        const redactSecret = (text: string): string =>
+            submittedSecret !== undefined && submittedSecret.length > 0
+                ? text.replaceAll(submittedSecret, "[REDACTED]")
+                : text;
+
         write(`Verifying ${chosenSelector}...\n`);
         const checkSession = await openCliSession(client, {
             ...options,
@@ -346,18 +359,153 @@ export const runCliOnboard = async (
             model: chosenAlias,
         });
         try {
-            await client.prompt(
-                checkSession.sessionId,
-                [{ type: "text", text: "Reply with OK." }],
-                {
-                    plurnk: {
-                        interactive: false,
-                        maxTurns: 1,
-                        envelope: { auto: true },
+            let errorProblem:
+                | {
+                      readonly type: string;
+                      readonly title: string;
+                      readonly status: number;
+                      readonly detail: string;
+                  }
+                | undefined;
+            let settleResolve: (() => void) | null = null;
+            let settleReject: ((err: Error) => void) | null = null;
+            const settledPromise = new Promise<void>((resolveSettle, rejectSettle) => {
+                settleResolve = resolveSettle;
+                settleReject = rejectSettle;
+            });
+
+            const offCheckUpdate = checkSession.onUpdate((update) => {
+                if (SessionUpdate.isNotice(update) && update.severity === "error") {
+                    const noticeProblem = (
+                        update._meta as
+                            | { plurnk?: { problem?: Record<string, unknown> } }
+                            | undefined
+                    )?.plurnk?.problem;
+                    const rawDetail =
+                        typeof noticeProblem?.detail === "string" && noticeProblem.detail.length > 0
+                            ? noticeProblem.detail
+                            : (update.description ?? update.title ?? "Verification turn emitted an error notice.");
+                    errorProblem = {
+                        type:
+                            typeof noticeProblem?.type === "string"
+                                ? noticeProblem.type
+                                : "https://problems.plurnk.xyz/client/onboard/verification-failed",
+                        title:
+                            typeof noticeProblem?.title === "string"
+                                ? noticeProblem.title
+                                : (update.title || "Model verification failed"),
+                        status: typeof noticeProblem?.status === "number" ? noticeProblem.status : 502,
+                        detail: redactSecret(rawDetail),
+                    };
+                    return;
+                }
+                if (SessionUpdate.isStateUpdate(update) && update.state === "idle") {
+                    const terminalMeta = (
+                        (update._meta as Record<string, unknown> | undefined)?.plurnk as
+                            | { terminal?: { status?: unknown; problem?: Record<string, unknown> } }
+                            | undefined
+                    )?.terminal;
+                    const terminalProblem = terminalMeta?.problem;
+                    const terminalStatus =
+                        typeof terminalMeta?.status === "number" ? terminalMeta.status : undefined;
+                    const stopReason = typeof update.stopReason === "string" ? update.stopReason : "end_turn";
+                    if (
+                        errorProblem !== undefined ||
+                        terminalProblem !== undefined ||
+                        (terminalStatus !== undefined && terminalStatus >= 400) ||
+                        stopReason === "error" ||
+                        stopReason === "refusal" ||
+                        stopReason === "cancelled"
+                    ) {
+                        const chosenProblem = errorProblem ?? {
+                            type:
+                                typeof terminalProblem?.type === "string"
+                                    ? terminalProblem.type
+                                    : "https://problems.plurnk.xyz/client/onboard/verification-failed",
+                            title:
+                                typeof terminalProblem?.title === "string"
+                                    ? terminalProblem.title
+                                    : "Model verification failed",
+                            status:
+                                typeof terminalProblem?.status === "number"
+                                    ? terminalProblem.status
+                                    : (terminalStatus ?? 502),
+                            detail: redactSecret(
+                                typeof terminalProblem?.detail === "string" && terminalProblem.detail.length > 0
+                                    ? terminalProblem.detail
+                                    : `Verification turn ended with stop reason '${stopReason}'${terminalStatus !== undefined ? ` (status ${String(terminalStatus)})` : ""}.`,
+                            ),
+                        };
+                        settleReject?.(new ClientCliError(chosenProblem, 1));
+                        return;
+                    }
+                    settleResolve?.();
+                }
+            });
+            const offCheckDisconnect = client.onDisconnect(() => {
+                settleReject?.(
+                    new ClientCliError(
+                        {
+                            type: "https://problems.plurnk.xyz/client/onboard/verification-failed",
+                            title: "Verification disconnected",
+                            status: 502,
+                            detail: "Daemon connection closed before the verification turn settled.",
+                        },
+                        1,
+                    ),
+                );
+            });
+            const verifyTimeout = setTimeout(() => {
+                void client.cancel(checkSession.sessionId).catch(() => undefined);
+                settleReject?.(
+                    new ClientCliError(
+                        {
+                            type: "https://problems.plurnk.xyz/client/onboard/verification-timeout",
+                            title: "Verification timed out",
+                            status: 504,
+                            detail: `Timed out after ${String(options.daemonTimeoutMs)}ms waiting for ${chosenSelector} verification turn to settle.`,
+                        },
+                        1,
+                    ),
+                );
+            }, options.daemonTimeoutMs);
+            // Prevent unhandled rejection if `settledPromise` rejects before `client.prompt` resolves.
+            settledPromise.catch(() => undefined);
+
+            try {
+                await client.prompt(
+                    checkSession.sessionId,
+                    [{ type: "text", text: "Reply with OK." }],
+                    {
+                        plurnk: {
+                            interactive: false,
+                            maxTurns: 1,
+                            envelope: { auto: true },
+                        },
                     },
-                },
-            );
+                );
+                await settledPromise;
+            } catch (verifyErr) {
+                if (verifyErr instanceof ClientCliError) {
+                    throw verifyErr;
+                }
+                const rawDetail = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+                throw new ClientCliError(
+                    {
+                        type: "https://problems.plurnk.xyz/client/onboard/verification-failed",
+                        title: "Model verification failed",
+                        status: 502,
+                        detail: redactSecret(rawDetail),
+                    },
+                    1,
+                );
+            } finally {
+                clearTimeout(verifyTimeout);
+                offCheckUpdate();
+                offCheckDisconnect();
+            }
         } finally {
+            checkSession.dispose();
             await client.deleteSession(checkSession.sessionId).catch(() => undefined);
         }
         write(`Saved to ${configPath} and verified ${chosenSelector}.\n`);

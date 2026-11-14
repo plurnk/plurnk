@@ -2,19 +2,35 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
+import { createNodeHttpHandler } from "@agentclientprotocol/sdk/experimental/node";
+import { AcpServer } from "@agentclientprotocol/sdk/experimental/server";
+import {
+    agent as createAcpAgent,
+    methods,
+    PROTOCOL_VERSION,
+    RequestError,
+} from "@agentclientprotocol/sdk/experimental/v2/unstable";
+import { AcpClient } from "./acp-client.ts";
 import { assembleClientEnv } from "./envdefaults.ts";
 import { refuseBelowFloor } from "./runtime-floor.ts";
 import {
+    createCliElicitationHandler,
     createCliPermissionHandler,
+    ensureDaemonConnected,
     formatProposalDiffPreview,
     formatServiceUpdateResult,
     matchesRuntimeAcceptance,
     openCliSession,
+    runCliPrompt,
+    runReplSession,
+    type CliCommonOptions,
 } from "./cli-runner.ts";
+import Credential from "./credential.ts";
 import { hyperlink } from "./color.ts";
 import { renderMarkdownDocument, renderMermaid } from "./markdown.ts";
 import { main } from "./dispatcher.ts";
@@ -954,4 +970,646 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
         2,
     );
     opened.dispose();
+});
+
+test("{§cli-invocation} {§cli-configuration-source} {§cli-color-policy} {§cli-output-channels}: CLI dispatcher rejects unknown flags, empty non-TTY stdin, missing --env-file, invalid switches, and invalid --color with exit 64", () => {
+    const runBin = (args: readonly string[], extraEnv: Record<string, string> = {}, stdin = "") =>
+        spawnSync(process.execPath, ["--", binPath, ...args], {
+            cwd: repoRoot,
+            input: stdin,
+            encoding: "utf8",
+            env: {
+                ...process.env,
+                PLURNK_ACP_URL: "http://127.0.0.1:9/acp",
+                PLURNK_CLIENT_AUTOSTART: "0",
+                ...extraEnv,
+            },
+        });
+
+    // Unknown flags exit 64 (both standalone and before subcommands/families without swallowing the subcommand)
+    for (const badArgs of [
+        ["--bogus-flag", "hello"],
+        ["-x", "hello"],
+        ["--bogus-flag", "models"],
+        ["--bogus-flag", "daemon", "status"],
+        ["--bogus-flag", "mcp", "list"],
+    ]) {
+        const res = runBin(badArgs);
+        assert.equal(res.status, 64, `Expected exit 64 for ${badArgs.join(" ")}, got ${String(res.status)}`);
+        assert.match(res.stderr, /plurnk:/u);
+    }
+
+    const unknownJson = runBin(["--json", "--bogus-flag", "hello"]);
+    assert.equal(unknownJson.status, 64);
+    const unknownDoc = JSON.parse(unknownJson.stdout) as { schemaVersion: number; problem: { type: string; status: number } };
+    assert.equal(unknownDoc.schemaVersion, 6);
+    assert.equal(unknownDoc.problem.type, "https://problems.plurnk.xyz/client/usage");
+    assert.equal(unknownDoc.problem.status, 400);
+
+    // Empty non-TTY stdin with no positional prompt exits 64 instead of printing USAGE and exiting 0
+    const emptyStdin = runBin([]);
+    assert.equal(emptyStdin.status, 64);
+    assert.equal(emptyStdin.stdout, "");
+    assert.match(emptyStdin.stderr, /No prompt provided/u);
+
+    const emptyStdinJson = runBin(["--json"]);
+    assert.equal(emptyStdinJson.status, 64);
+    assert.equal(
+        (JSON.parse(emptyStdinJson.stdout) as { problem: { type: string } }).problem.type,
+        "https://problems.plurnk.xyz/client/usage",
+    );
+
+    // Missing --env-file exits 64 cleanly (and JSON on --json) instead of raw ENOENT exit 1
+    const missingEnvFile = runBin(["--json", "--env-file", "/nonexistent/plurnk-missing.env", "hello"]);
+    assert.equal(missingEnvFile.status, 64);
+    const envFileDoc = JSON.parse(missingEnvFile.stdout) as { problem: { type: string; detail: string } };
+    assert.equal(envFileDoc.problem.type, "https://problems.plurnk.xyz/client/usage");
+    assert.match(envFileDoc.problem.detail, /Environment file not found/u);
+
+    // Switch parsing matrix: invalid switch tokens exit 64; 1/true/yes/on and 0/false/no/off are accepted
+    for (const [envKey, val] of [
+        ["PLURNK_CLIENT_YOLO", "maybe"],
+        ["PLURNK_CLIENT_AUTOSTART", "2"],
+        ["PLURNK_CLIENT_NO_GIT", "invalid"],
+        ["PLURNK_CLIENT_JSON", "sometimes"],
+    ] as const) {
+        const res = runBin(["hello"], { [envKey]: val });
+        assert.equal(res.status, 64, `Expected 64 for ${envKey}=${val}`);
+    }
+    assert.equal(runBin(["--autostart=invalid", "hello"]).status, 64);
+
+    // Valid falsy switch spellings ("off", "no") pass switch validation (proceeding to connection refusal exit 1, not 64)
+    const validSwitch = runBin(["--autostart=off", "hello"], {
+        PLURNK_CLIENT_YOLO: "yes",
+        PLURNK_CLIENT_NO_GIT: "on",
+        PLURNK_CLIENT_BELL: "no",
+    });
+    assert.equal(validSwitch.status, 1);
+
+    // --color validation: accepts always|auto|never, rejects anything else with exit 64
+    assert.equal(runBin(["--color=rainbow", "hello"]).status, 64);
+    assert.equal(runBin(["hello"], { PLURNK_CLIENT_COLOR: "1" }).status, 64);
+    assert.equal(runBin(["--color=never", "hello"]).status, 1);
+});
+
+test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {§cli-output-channels} {§cli-problems-and-notices}: --no-git sends settings.git=false, unattended runCliPrompt omits elicitation capability, interactive TTY uses custom stderr, and --share propagates workspace.share errors", async () => {
+    const observedInitCapabilities: Array<Record<string, unknown>> = [];
+    const observedNewSessionMetas: Array<Record<string, unknown>> = [];
+    const observedShareActions: Array<Record<string, unknown>> = [];
+    let failShare = false;
+    let askElicitation = false;
+
+    const agentApp = createAcpAgent({ name: "cli-runner-defects-mock" })
+        .onRequest(methods.agent.initialize, async ({ params }) => {
+            observedInitCapabilities.push((params.capabilities ?? {}) as Record<string, unknown>);
+            return {
+                protocolVersion: PROTOCOL_VERSION,
+                info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+                capabilities: { session: { prompt: {} } },
+            };
+        })
+        .onRequest(methods.agent.session.new, async ({ params }) => {
+            observedNewSessionMetas.push((params._meta ?? {}) as Record<string, unknown>);
+            return {
+                sessionId: "1#user",
+                configOptions: [],
+            };
+        })
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string; params?: Record<string, unknown> },
+            async ({ params }) => {
+                if (params.kind === "workspace.share") {
+                    observedShareActions.push(params.params ?? {});
+                    if (failShare) {
+                        throw new RequestError(-32000, "Share destination already exists", {
+                            type: "https://problems.plurnk.xyz/service/share-exists",
+                            title: "Share destination exists",
+                            status: 409,
+                            detail: "Target share directory is non-empty.",
+                        });
+                    }
+                    return { folder: String(params.params?.folder ?? "") };
+                }
+                return {};
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            let replyText = "Done";
+            if (askElicitation) {
+                const res = await client.request(methods.client.elicitation.create, {
+                    sessionId: params.sessionId,
+                    mode: "form",
+                    message: "Provide deployment tag",
+                    requestedSchema: {
+                        type: "object",
+                        properties: {
+                            tag: { type: "string", title: "Release tag" },
+                        },
+                    },
+                });
+                const acceptedContent =
+                    res.action === "accept" ? (res.content as Record<string, unknown> | undefined) : undefined;
+                replyText = `Elicited:${res.action}:${String(acceptedContent?.tag ?? "")}`;
+            }
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "m-1",
+                    content: { type: "text", text: replyText },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { stopReason: "end_turn", messageId: "m-1" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const httpServer = http.createServer(createNodeHttpHandler(acpServer));
+    await new Promise<void>((r) => httpServer.listen(0, "127.0.0.1", r));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const baseOptions = (overrides: Partial<CliCommonOptions> = {}): CliCommonOptions => ({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        explicitAcpUrl: true,
+        host: "127.0.0.1",
+        port: addr.port,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        env: { PLURNK_SECRET: "test-secret", HOME: "/tmp/mock-home" },
+        cwd: "/tmp",
+        termSession: "user",
+        autostart: false,
+        daemonTimeoutMs: 2000,
+        oauthTimeoutMs: 2000,
+        cancelGraceMs: 500,
+        yolo: true,
+        auto: false,
+        bell: false,
+        json: false,
+        previewLines: 5,
+        historyEntries: 5,
+        mermaidTimeoutMs: 1000,
+        color: "never",
+        ...overrides,
+    });
+
+    try {
+        // 1. --no-git via main() sends settings.git = false (never settings.noGit)
+        const prevExit = process.exitCode;
+        process.exitCode = 0;
+        const origWrite = process.stdout.write.bind(process.stdout);
+        let capturedStdout = "";
+        process.stdout.write = ((chunk: unknown) => {
+            capturedStdout += String(chunk);
+            return true;
+        }) as typeof process.stdout.write;
+        const prevAcpUrl = process.env.PLURNK_ACP_URL;
+        const prevSecret = process.env.PLURNK_SECRET;
+        const prevStdinIsTTY = process.stdin.isTTY;
+        process.env.PLURNK_ACP_URL = `http://127.0.0.1:${String(addr.port)}/acp`;
+        process.env.PLURNK_SECRET = "test-secret";
+        Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+        try {
+            await main(["node", "plurnk", "--no-git", "--json", "check no-git"]);
+        } finally {
+            Object.defineProperty(process.stdin, "isTTY", { value: prevStdinIsTTY, configurable: true });
+            process.stdin.pause();
+            process.stdout.write = origWrite;
+            if (prevAcpUrl === undefined) delete process.env.PLURNK_ACP_URL;
+            else process.env.PLURNK_ACP_URL = prevAcpUrl;
+            if (prevSecret === undefined) delete process.env.PLURNK_SECRET;
+            else process.env.PLURNK_SECRET = prevSecret;
+            assert.equal(process.exitCode ?? 0, 0);
+            process.exitCode = prevExit;
+        }
+        assert.match(capturedStdout, /"response":"Done"/u);
+        const sentPlurnkMeta = (observedNewSessionMetas[0]?.plurnk ?? {}) as { settings?: Record<string, unknown> };
+        assert.equal(sentPlurnkMeta.settings?.noGit, undefined);
+        assert.deepEqual(sentPlurnkMeta.settings, { git: false });
+        // --json run must NOT advertise elicitation capability
+        assert.equal(observedInitCapabilities[0]?.elicitation, undefined);
+
+        // 2. Non-TTY stdin and --auto runs also omit elicitation capability
+        const nonTtyStdin = new PassThrough();
+        const nonTtyStdout = new PassThrough();
+        await runCliPrompt("hello", baseOptions(), {
+            stdin: nonTtyStdin,
+            stdout: nonTtyStdout,
+            stderr: new PassThrough(),
+            events: new PassThrough(),
+            reasoning: new PassThrough(),
+        });
+        assert.equal(observedInitCapabilities[1]?.elicitation, undefined);
+
+        const ttyStdinAuto = Object.assign(new PassThrough(), { isTTY: true });
+        await runCliPrompt("hello", baseOptions({ auto: true }), {
+            stdin: ttyStdinAuto,
+            stdout: new PassThrough(),
+            stderr: new PassThrough(),
+            events: new PassThrough(),
+            reasoning: new PassThrough(),
+        });
+        assert.equal(observedInitCapabilities[2]?.elicitation, undefined);
+
+        // 3. Interactive TTY (isTTY=true, !auto, !json) advertises elicitation: { form: {} } and writes prompt to streams.stderr
+        askElicitation = true;
+        const ttyStdin = Object.assign(new PassThrough(), { isTTY: true });
+        const customStderr = new PassThrough();
+        const customStdout = new PassThrough();
+        let stderrText = "";
+        let stdoutText = "";
+        customStderr.setEncoding("utf8");
+        customStderr.on("data", (c: string) => {
+            stderrText += c;
+            if (stderrText.includes("Release tag:")) {
+                ttyStdin.write("v6.1.0\n");
+            }
+        });
+        customStdout.setEncoding("utf8");
+        customStdout.on("data", (c: string) => {
+            stdoutText += c;
+        });
+        const elicitCode = await runCliPrompt("deploy", baseOptions(), {
+            stdin: ttyStdin,
+            stdout: customStdout,
+            stderr: customStderr,
+            events: new PassThrough(),
+            reasoning: new PassThrough(),
+        });
+        askElicitation = false;
+        assert.equal(elicitCode, 0);
+        assert.deepEqual(observedInitCapabilities[3]?.elicitation, { form: {} });
+        assert.match(stderrText, /\[elicitation\] Provide deployment tag/u);
+        assert.equal(stdoutText.trim(), "Elicited:accept:v6.1.0");
+
+        // Direct createCliElicitationHandler returns { action: "cancel" } when !isTTY
+        const cancelHandler = createCliElicitationHandler({
+            stdin: new PassThrough(),
+            stderr: new PassThrough(),
+            isTTY: false,
+        });
+        const cancelledRes = await cancelHandler(
+            {
+                sessionId: "1#user",
+                mode: "form",
+                message: "Unattended question",
+                requestedSchema: { type: "object", properties: {} },
+            },
+            new AbortController().signal,
+        );
+        assert.deepEqual(cancelledRes, { action: "cancel" });
+
+        // 4. --share sends { folder } and propagates errors when workspace.share fails
+        const shareOkCode = await runCliPrompt("share ok", baseOptions({ shareFolder: "~/out-share" }), {
+            stdin: new PassThrough(),
+            stdout: new PassThrough(),
+            stderr: new PassThrough(),
+            events: new PassThrough(),
+            reasoning: new PassThrough(),
+        });
+        assert.equal(shareOkCode, 0);
+        assert.deepEqual(observedShareActions[0], { folder: "/tmp/mock-home/out-share" });
+
+        failShare = true;
+        await assert.rejects(
+            () =>
+                runCliPrompt("share fail", baseOptions({ shareFolder: "/tmp/existing-share" }), {
+                    stdin: new PassThrough(),
+                    stdout: new PassThrough(),
+                    stderr: new PassThrough(),
+                    events: new PassThrough(),
+                    reasoning: new PassThrough(),
+                }),
+            (err: unknown) => {
+                const cliErr = err as { exitCode?: number; problem?: { type?: string; status?: number; detail?: string } };
+                assert.equal(cliErr.exitCode, 1);
+                assert.equal(cliErr.problem?.type, "https://problems.plurnk.xyz/service/share-exists");
+                assert.equal(cliErr.problem?.status, 409);
+                assert.match(String(cliErr.problem?.detail), /non-empty/u);
+                return true;
+            },
+        );
+    } finally {
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((r) => httpServer.close(() => r()));
+    }
+});
+
+test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _meta.plurnk.sessionName and binds directly to the forked session without calling session/new or session/delete", async () => {
+    let newSessionCalls = 0;
+    let deleteSessionCalls = 0;
+    const forkCalls: Array<Record<string, unknown>> = [];
+    const promptSessionIds: string[] = [];
+
+    const agentApp = createAcpAgent({ name: "repl-fork-mock" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+            capabilities: { session: { fork: {}, delete: {}, resume: {}, prompt: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => {
+            newSessionCalls += 1;
+            return {
+                sessionId: "1#user",
+                configOptions: [],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 1, name: "ws-fork", projectRoot: "/tmp" },
+                        sessionName: "user",
+                    },
+                },
+            };
+        })
+        .onRequest(methods.agent.session.resume, async () => ({
+            configOptions: [],
+        }))
+        .onRequest(methods.agent.session.delete, async () => {
+            deleteSessionCalls += 1;
+            return {};
+        })
+        .onRequest(methods.agent.session.fork, async ({ params }) => {
+            forkCalls.push(params as unknown as Record<string, unknown>);
+            const plurnk = (params._meta?.plurnk ?? undefined) as { sessionName?: string } | undefined;
+            const targetName = plurnk?.sessionName ?? "auto-fork";
+            return {
+                sessionId: `1#${targetName}`,
+                configOptions: [],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 1, name: "ws-fork", projectRoot: "/tmp" },
+                        sessionName: targetName,
+                    },
+                },
+            };
+        })
+        .onRequest("_plurnk/action", (raw) => raw as { kind: string }, async () => ({}))
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            promptSessionIds.push(params.sessionId);
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "m-fork",
+                    content: { type: "text", text: `Reply on ${params.sessionId}` },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { stopReason: "end_turn", messageId: "m-fork" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const httpServer = http.createServer(createNodeHttpHandler(acpServer));
+    await new Promise<void>((r) => httpServer.listen(0, "127.0.0.1", r));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    try {
+        const stdin = new PassThrough();
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const events = new PassThrough();
+        const reasoning = new PassThrough();
+
+        let outText = "";
+        let eventsText = "";
+        stdout.setEncoding("utf8");
+        stdout.on("data", (c: string) => {
+            outText += c;
+        });
+        events.setEncoding("utf8");
+        events.on("data", (c: string) => {
+            eventsText += c;
+        });
+
+        const replPromise = runReplSession(
+            {
+                url: `http://127.0.0.1:${String(addr.port)}/acp`,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port: addr.port,
+                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                env: { PLURNK_SECRET: "test-secret" },
+                cwd: "/tmp",
+                termSession: "user",
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 2000,
+                cancelGraceMs: 500,
+                yolo: true,
+                auto: false,
+                bell: false,
+                json: false,
+                repl: true,
+                previewLines: 5,
+                historyEntries: 5,
+                mermaidTimeoutMs: 1000,
+                color: "never",
+            },
+            { stdin, stdout, stderr, events, reasoning },
+        );
+
+        const waitUntil = async (pred: () => boolean) => {
+            const deadline = Date.now() + 3000;
+            while (!pred() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 15));
+            }
+            assert.ok(pred(), `stdout:\n${outText}\nevents:\n${eventsText}`);
+        };
+
+        await waitUntil(() => outText.includes("workspace: ws-fork"));
+        assert.equal(newSessionCalls, 1);
+
+        stdin.write("/fork feature-branch\n");
+        await waitUntil(() => outText.includes("session: feature-branch (forked)"));
+
+        // Must NOT call session/new or session/delete when forking!
+        assert.equal(newSessionCalls, 1);
+        assert.equal(deleteSessionCalls, 0);
+        assert.equal(forkCalls.length, 1);
+        assert.deepEqual(forkCalls[0], {
+            sessionId: "1#user",
+            cwd: "/tmp",
+            _meta: { plurnk: { sessionName: "feature-branch" } },
+        });
+
+        // Verify session_bound event updated sessionName and subsequent prompt hits the forked session!
+        const boundEvents = eventsText
+            .trim()
+            .split("\n")
+            .map((l) => JSON.parse(l) as Record<string, unknown>)
+            .filter((e) => e.sessionUpdate === "session_bound");
+        assert.equal(boundEvents.at(-1)?.sessionId, "1#feature-branch");
+        assert.equal(boundEvents.at(-1)?.session, "feature-branch");
+
+        stdin.write("Hello forked session\n");
+        await waitUntil(() => outText.includes("Reply on 1#feature-branch"));
+        assert.deepEqual(promptSessionIds, ["1#feature-branch"]);
+
+        stdin.write("/quit\n");
+        assert.equal(await replPromise, 0);
+    } finally {
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((r) => httpServer.close(() => r()));
+    }
+});
+
+test("{§cli-invocation} {§cli-subcommands} {§cli-conformance}: ensureDaemonConnected rejects PLURNK_PORT=0 autostart with 64 port-unshareable, polls 503 service-starting without duplicate spawns, and install-sandbox packs outside repo root", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "plurnk-conn-sandbox-test-"));
+    try {
+        const markerPath = path.join(tmp, "spawned.txt");
+        const fakeServiceBin = path.join(tmp, "fake-service.mjs");
+        fs.writeFileSync(
+            fakeServiceBin,
+            `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(markerPath)}, "spawned");\n`,
+            "utf8",
+        );
+
+        const baseOpts = (overrides: Partial<CliCommonOptions>): CliCommonOptions => ({
+            url: "http://127.0.0.1:0/acp",
+            explicitAcpUrl: false,
+            host: "127.0.0.1",
+            port: 0,
+            credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+            env: { PLURNK_SECRET: "test-secret", XDG_STATE_HOME: tmp },
+            cwd: tmp,
+            termSession: "user",
+            autostart: true,
+            daemonTimeoutMs: 1500,
+            oauthTimeoutMs: 1000,
+            cancelGraceMs: 500,
+            serviceBin: fakeServiceBin,
+            yolo: false,
+            auto: false,
+            bell: false,
+            json: false,
+            previewLines: 5,
+            historyEntries: 5,
+            mermaidTimeoutMs: 1000,
+            color: "never",
+            ...overrides,
+        });
+
+        // 1. Missing serviceBin on port 0 exits 127 not-installed; installed serviceBin on port 0 exits 64 port-unshareable
+        const missingClient = new AcpClient({ url: "http://127.0.0.1:0/acp", token: "t" });
+        await assert.rejects(
+            () => ensureDaemonConnected(missingClient, baseOpts({ serviceBin: path.join(tmp, "missing-service.mjs") })),
+            (err: unknown) => {
+                assert.equal((err as { exitCode?: number }).exitCode, 127);
+                assert.equal(
+                    (err as { problem?: { type?: string } }).problem?.type,
+                    "https://problems.plurnk.xyz/client/daemon/not-installed",
+                );
+                return true;
+            },
+        );
+        missingClient.close();
+
+        const portZeroClient = new AcpClient({ url: "http://127.0.0.1:0/acp", token: "t" });
+        await assert.rejects(
+            () => ensureDaemonConnected(portZeroClient, baseOpts({})),
+            (err: unknown) => {
+                assert.equal((err as { exitCode?: number }).exitCode, 64);
+                assert.equal(
+                    (err as { problem?: { type?: string } }).problem?.type,
+                    "https://problems.plurnk.xyz/client/daemon/port-unshareable",
+                );
+                return true;
+            },
+        );
+        portZeroClient.close();
+        assert.equal(fs.existsSync(markerPath), false);
+
+        // 2. 503 service-starting polls until ready for BOTH !autostart and autostart without spawning a duplicate daemon
+        const agentApp = createAcpAgent({ name: "starting-daemon-mock" }).onRequest(
+            methods.agent.initialize,
+            async () => ({
+                protocolVersion: PROTOCOL_VERSION,
+                info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+                capabilities: {},
+            }),
+        );
+        const acpServer = new AcpServer({ agent: agentApp });
+        const acpHandler = createNodeHttpHandler(acpServer);
+        let startingRemaining = 2;
+        const httpServer = http.createServer((req, res) => {
+            if (startingRemaining > 0) {
+                startingRemaining -= 1;
+                res.writeHead(503, { "content-type": "application/problem+json" });
+                res.end(
+                    JSON.stringify({
+                        type: "https://problems.plurnk.xyz/service/service-starting",
+                        title: "Service starting",
+                        status: 503,
+                        detail: "Booting modules",
+                    }),
+                );
+                return;
+            }
+            acpHandler(req, res);
+        });
+        await new Promise<void>((r) => httpServer.listen(0, "127.0.0.1", r));
+        const addr = httpServer.address();
+        assert.ok(addr && typeof addr === "object");
+
+        try {
+            const url = `http://127.0.0.1:${String(addr.port)}/acp`;
+            const attachOnlyClient = new AcpClient({ url, token: "t" });
+            await ensureDaemonConnected(
+                attachOnlyClient,
+                baseOpts({ url, port: addr.port, autostart: false }),
+            );
+            attachOnlyClient.close();
+
+            startingRemaining = 2;
+            const autostartClient = new AcpClient({ url, token: "t" });
+            await ensureDaemonConnected(
+                autostartClient,
+                baseOpts({ url, port: addr.port, autostart: true }),
+            );
+            autostartClient.close();
+            assert.equal(fs.existsSync(markerPath), false, "503 starting daemon must not trigger duplicate spawn");
+        } finally {
+            await acpServer.close();
+            httpServer.closeAllConnections();
+            await new Promise<void>((r) => httpServer.close(() => r()));
+        }
+
+        // 3. install-sandbox.mjs pack(destDir) writes tarball to destDir and never writes a .tgz into repo root
+        const packOutDir = path.join(tmp, "pack-dest");
+        const sandboxScriptUrl = new URL("../scripts/install-sandbox.mjs", import.meta.url).href;
+        const packRun = spawnSync(
+            process.execPath,
+            [
+                "--input-type=module",
+                "-e",
+                `import { pack } from ${JSON.stringify(sandboxScriptUrl)}; process.stdout.write(pack(${JSON.stringify(packOutDir)}));`,
+            ],
+            { cwd: repoRoot, encoding: "utf8" },
+        );
+        assert.equal(packRun.status, 0, packRun.stderr);
+        const packedTarball = packRun.stdout.trim();
+        assert.equal(path.dirname(packedTarball), packOutDir);
+        assert.equal(fs.existsSync(packedTarball), true);
+        const rootTarballs = fs.readdirSync(repoRoot).filter((f) => f.endsWith(".tgz"));
+        assert.deepEqual(rootTarballs, []);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
 });

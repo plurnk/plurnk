@@ -15,12 +15,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Outside the repo tree, so node's module resolution can't walk up into the
 // repo's own node_modules — a nested sandbox would defeat the client isolation check.
 export const sandbox = resolve(tmpdir(), "plurnk-client-sandbox");
+const packDir = resolve(tmpdir(), "plurnk-client-pack");
 
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });
 
-export function pack() {
-    const out = execFileSync("npm", ["pack"], { cwd: root, encoding: "utf8" });
-    return resolve(root, out.trim().split("\n").pop().trim());
+export function pack(destDir = packDir) {
+    mkdirSync(destDir, { recursive: true });
+    const out = execFileSync("npm", ["pack", "--pack-destination", destDir], {
+        cwd: root,
+        encoding: "utf8",
+    });
+    return resolve(destDir, out.trim().split("\n").pop().trim());
 }
 
 function cleanTarballs() {
@@ -45,6 +50,7 @@ export function installSandbox() {
 
 export function uninstallSandbox() {
     rmSync(sandbox, { recursive: true, force: true });
+    rmSync(packDir, { recursive: true, force: true });
     cleanTarballs();
 }
 

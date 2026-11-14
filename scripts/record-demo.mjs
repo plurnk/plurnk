@@ -603,11 +603,12 @@ export async function seedDemoProject(projectDir) {
     await writeFile(join(projectDir, "src", "retry.js"), cleanSource, "utf8");
     await writeFile(join(projectDir, "test", "retry.test.js"), testSource, "utf8");
 
-    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: projectDir });
-    execFileSync("git", ["config", "user.name", "demo"], { cwd: projectDir });
-    execFileSync("git", ["config", "user.email", "demo@example.invalid"], { cwd: projectDir });
-    execFileSync("git", ["add", "."], { cwd: projectDir });
-    execFileSync("git", ["commit", "-q", "-m", "feat: initial retry backoff"], { cwd: projectDir });
+    const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: projectDir, env: gitEnv });
+    execFileSync("git", ["config", "user.name", "demo"], { cwd: projectDir, env: gitEnv });
+    execFileSync("git", ["config", "user.email", "demo@example.invalid"], { cwd: projectDir, env: gitEnv });
+    execFileSync("git", ["add", "."], { cwd: projectDir, env: gitEnv });
+    execFileSync("git", ["commit", "-q", "-m", "feat: initial retry backoff"], { cwd: projectDir, env: gitEnv });
 
     const buggySource = [
         "export function computeRetryDelayMs(attempt, baseMs = 200) {",

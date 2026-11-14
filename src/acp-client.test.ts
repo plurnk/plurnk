@@ -19,10 +19,12 @@ import {
     classifyPreFlightDisconnect,
     scrubAcpMeta,
 } from "./acp-client.ts";
-import { AcpSession, type AcpMessageItem, type AcpPlanState } from "./acp-session.ts";
+import { AcpSession, contentBlockToText, type AcpMessageItem, type AcpPlanState } from "./acp-session.ts";
 import { runCliConfig } from "./cli-subcommands.ts";
 import Credential from "./credential.ts";
+import { buildPromptBlocks } from "./repl-commands.ts";
 import { SessionPresenter } from "./session-presenter.ts";
+import { completeInput } from "./term-completion.ts";
 
 test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with replayFrom start and AcpSession idempotently materializes missed turns without duplicating prior ones", async () => {
     const sseResponses = new Set<http.ServerResponse>();
@@ -507,14 +509,18 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     assert.equal(replies[0]?.id, "1/1/2");
     assert.equal(replies[0]?.text, "Edited reply");
 
-    // Plan updates and removals key by planId, supporting items, markdown, and file variants
+    // Plan updates and removals key by planId, supporting items and markdown variants
     session.applyUpdate({
         sessionUpdate: "plan_update",
         plan: { type: "markdown", planId: "mem:///plan", content: "# Memory Plan" },
     });
     session.applyUpdate({
         sessionUpdate: "plan_update",
-        plan: { type: "file", planId: "file:///workspace/plan.md", uri: "file:///workspace/plan.md" },
+        plan: {
+            type: "items",
+            planId: "plan:checklist",
+            entries: [{ content: "Verify 2.7.0", priority: "high", status: "in_progress" }],
+        },
     });
     const plansBeforeRemove = session.items.filter((i): i is AcpPlanState => i.kind === "plan");
     assert.equal(plansBeforeRemove.length, 2);
@@ -525,9 +531,9 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     const plansAfterRemove = session.items.filter((i): i is AcpPlanState => i.kind === "plan");
     assert.equal(plansAfterRemove.length, 1);
     assert.deepEqual(plansAfterRemove[0]?.plan, {
-        type: "file",
-        planId: "file:///workspace/plan.md",
-        uri: "file:///workspace/plan.md",
+        type: "items",
+        planId: "plan:checklist",
+        entries: [{ content: "Verify 2.7.0", priority: "high", status: "in_progress" }],
     });
 
     // SubagentUpdate patches capabilities, cwd, and additionalDirectories
@@ -866,6 +872,151 @@ test("{§cli-conformance} {§cli-rendering}: AcpClient.sessionOptions queries pr
         const opFrame = frames.find((f) => f.kind === "tool_call");
         assert.ok(opFrame && opFrame.kind === "tool_call");
         assert.equal(opFrame.noteBody, "[session] 1#worker");
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
+test("{§cli-conformance} {§cli-output-channels} {§cli-interactive-command-discovery} {§cli-sessions-topology}: AcpClient advertises ACPv2 2.7.0 skill and promptSuggestions capabilities, buildPromptBlocks emits inline skill blocks, and completeInput completes $skill and prompt suggestions", async () => {
+    let observedCapabilities: unknown = null;
+    let observedForkParams: unknown = null;
+    const agentApp = createAcpAgent({ name: "mock-acp-270" })
+        .onRequest(methods.agent.initialize, async ({ params }) => {
+            observedCapabilities = params.capabilities;
+            return {
+                protocolVersion: PROTOCOL_VERSION,
+                info: { name: "mock-acp-270", version: "2.7.0" },
+                capabilities: {
+                    session: {
+                        fork: {},
+                        prompt: {
+                            skill: { inline: {} },
+                        },
+                    },
+                },
+            };
+        })
+        .onRequest(methods.agent.session.fork, async ({ params }) => {
+            observedForkParams = params;
+            return {
+                sessionId: "1#forked",
+                availableCommands: [
+                    { type: "skill", name: "triage", description: "Triage build failures" },
+                ],
+            };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        token: "test-token",
+    });
+
+    try {
+        await client.connect();
+        assert.deepEqual(observedCapabilities, {
+            session: {
+                commands: { skill: {} },
+                promptSuggestions: {},
+            },
+        });
+
+        const forked = await client.forkSession("1#user", "/tmp/ws", {
+            systemPrompt: {
+                mode: "append",
+                content: [{ type: "text", text: "Extra role" }],
+            },
+        });
+        assert.equal(forked.sessionId, "1#forked");
+        assert.deepEqual(observedForkParams, {
+            sessionId: "1#user",
+            cwd: "/tmp/ws",
+            systemPrompt: {
+                mode: "append",
+                content: [{ type: "text", text: "Extra role" }],
+            },
+        });
+
+        const availableCommands = [
+            { type: "skill" as const, name: "triage", description: "Triage build failures" },
+            { type: "skill" as const, name: "release.audit", description: "Audit release" },
+            { type: "command" as const, name: "compact", description: "Non-skill command" },
+        ];
+        assert.deepEqual(
+            buildPromptBlocks(
+                "Check ($triage, $release.audit.) and keep $HOME/$100/$compact literal",
+                availableCommands,
+            ),
+            [
+                { type: "text", text: "Check (" },
+                { type: "skill", name: "triage" },
+                { type: "text", text: ", " },
+                { type: "skill", name: "release.audit" },
+                { type: "text", text: ".) and keep $HOME/$100/$compact literal" },
+            ],
+        );
+        assert.deepEqual(buildPromptBlocks("$triage", availableCommands), [
+            { type: "skill", name: "triage" },
+        ]);
+        assert.equal(contentBlockToText({ type: "skill", name: "triage" }), "$triage");
+
+        const session = new AcpSession("1#user", { availableCommands });
+        assert.equal(session.availableCommands.length, 3);
+        assert.equal(session.replayComplete, false);
+        session.applyUpdate({ sessionUpdate: "replay_complete" });
+        assert.equal(session.replayComplete, true);
+        session.applyUpdate({
+            sessionUpdate: "prompt_suggestions_update",
+            suggestions: [{ prompt: [{ type: "text", text: "Run $triage on CI" }] }],
+        });
+        assert.equal(session.promptSuggestions.length, 1);
+        session.applyUpdate({ sessionUpdate: "state_update", state: "running" });
+        assert.equal(session.promptSuggestions.length, 0);
+
+        const skillCompletion = await completeInput(
+            "Please run $tr",
+            {
+                cwd: "/tmp",
+                getProjectRoot: () => "/tmp",
+                getSkills: () => [
+                    { name: "triage", description: "Triage build failures" },
+                    { name: "trace", description: "Trace spans" },
+                ],
+            },
+        );
+        assert.deepEqual(skillCompletion, {
+            prefix: "tr",
+            suggestions: [
+                { value: "triage", description: "Triage build failures" },
+                { value: "trace", description: "Trace spans" },
+            ],
+        });
+
+        const promptSuggestionCompletion = await completeInput(
+            "",
+            {
+                cwd: "/tmp",
+                getProjectRoot: () => "/tmp",
+                getPromptSuggestions: () => ["Run tests", "Summarize diff"],
+            },
+            { force: true },
+        );
+        assert.deepEqual(promptSuggestionCompletion, {
+            prefix: "",
+            suggestions: [
+                { value: "Run tests", description: "suggested prompt" },
+                { value: "Summarize diff", description: "suggested prompt" },
+            ],
+        });
     } finally {
         client.close();
         await acpServer.close();

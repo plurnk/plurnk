@@ -18,6 +18,7 @@ import {
     type CreateElicitationRequest,
     type CreateElicitationResponse,
     type DeleteSessionResponse,
+    type ForkSessionRequest,
     type ForkSessionResponse,
     type InitializeResponse,
     type ListProvidersResponse,
@@ -1001,6 +1002,12 @@ export class AcpClient {
                     version: this.#clientVersion,
                 },
                 capabilities: {
+                    session: {
+                        commands: {
+                            skill: {},
+                        },
+                        promptSuggestions: {},
+                    },
                     ...(this.#elicitationHandler !== undefined
                         ? {
                               elicitation: {
@@ -1139,11 +1146,16 @@ export class AcpClient {
         return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.auth.logout, {}));
     }
 
-    async forkSession(sessionId: string, cwd: string): Promise<ForkSessionResponse> {
+    async forkSession(
+        sessionId: string,
+        cwd: string,
+        extra?: Omit<ForkSessionRequest, "sessionId" | "cwd">,
+    ): Promise<ForkSessionResponse> {
         const res = await this.#withAutoReconnect((conn) =>
             conn.agent.request(methods.agent.session.fork, {
                 sessionId,
                 cwd,
+                ...extra,
             }),
         );
         this.#boundSessions.set(res.sessionId, cwd);

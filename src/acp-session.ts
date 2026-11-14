@@ -9,6 +9,7 @@ import {
     type AvailableCommand,
     type NoticeSeverity,
     type PlanUpdateContent,
+    type PromptSuggestion,
     type SessionConfigOption,
     type SubagentSessionCapabilities,
     type TerminalExitStatus,
@@ -60,6 +61,9 @@ export const contentBlockToText = (content: ContentBlock): string => {
     }
     if (ContentBlock.isAudio(content)) {
         return `[audio: ${content.mimeType}]`;
+    }
+    if (ContentBlock.isSkill(content)) {
+        return `$${content.name}`;
     }
     return "";
 };
@@ -152,6 +156,8 @@ export class AcpSession {
     title: string | null = null;
     configOptions: SessionConfigOption[] = [];
     availableCommands: AvailableCommand[] = [];
+    promptSuggestions: PromptSuggestion[] = [];
+    replayComplete = false;
     usage: AcpUsageSnapshot | null = null;
     meta: MetaRecord | undefined = undefined;
     lastStateMeta: MetaRecord | undefined = undefined;
@@ -167,12 +173,16 @@ export class AcpSession {
         sessionId: string,
         initial?: {
             configOptions?: SessionConfigOption[] | null;
+            availableCommands?: AvailableCommand[] | null;
             meta?: MetaRecord | null;
         },
     ) {
         this.sessionId = sessionId;
         if (initial?.configOptions) {
             this.configOptions = [...initial.configOptions];
+        }
+        if (initial?.availableCommands) {
+            this.availableCommands = [...initial.availableCommands];
         }
         if (initial?.meta) {
             this.meta = { ...initial.meta };
@@ -522,6 +532,11 @@ export class AcpSession {
             this.configOptions = [...update.configOptions];
         } else if (SessionUpdate.isAvailableCommandsUpdate(update)) {
             this.availableCommands = [...update.availableCommands];
+        } else if (SessionUpdate.isReplayComplete(update)) {
+            this.#activeStreamMessage = null;
+            this.replayComplete = true;
+        } else if (SessionUpdate.isPromptSuggestionsUpdate(update)) {
+            this.promptSuggestions = [...update.suggestions];
         } else if (SessionUpdate.isSessionInfoUpdate(update)) {
             if (update.title !== undefined) {
                 this.title = update.title;
@@ -573,6 +588,9 @@ export class AcpSession {
                 }
             } else {
                 this.stopReason = undefined;
+                if (update.state === "running") {
+                    this.promptSuggestions = [];
+                }
             }
         }
 

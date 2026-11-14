@@ -148,6 +148,8 @@ export interface CompletionContext {
     readonly getSessionNames?: () => readonly string[];
     readonly getWorkspaceNames?: () => readonly string[];
     readonly getPendingGateIds?: () => readonly string[];
+    readonly getSkills?: () => readonly { readonly name: string; readonly description: string }[];
+    readonly getPromptSuggestions?: () => readonly string[];
 }
 
 const FAMILY_SUBCOMMANDS = [
@@ -165,6 +167,19 @@ export const completeInput = async (
     ctx: CompletionContext,
     options?: AutocompleteQueryOptions,
 ): Promise<{ suggestions: CompletionSuggestion[]; prefix: string }> => {
+    if (line === "" && options?.force === true) {
+        const promptSuggestions = ctx.getPromptSuggestions?.() ?? [];
+        if (promptSuggestions.length > 0) {
+            return {
+                suggestions: promptSuggestions.map((value) => ({
+                    value,
+                    description: "suggested prompt",
+                })),
+                prefix: "",
+            };
+        }
+    }
+
     const rootMatch = /^\/(\w*)$/u.exec(line);
     if (rootMatch !== null) {
         const typed = rootMatch[1]!.toLowerCase();
@@ -298,11 +313,25 @@ export const completeInput = async (
         return namespace(values, prefix, () => "local path", options);
     }
 
+    const skillMatch = /(?:^|[\s([{,])\$(\S*)$/u.exec(line);
+    if (skillMatch !== null) {
+        const skills = ctx.getSkills?.() ?? [];
+        if (skills.length > 0) {
+            const descBySkill = new Map(skills.map((s) => [s.name, s.description]));
+            return namespace(
+                skills.map((s) => s.name),
+                skillMatch[1]!,
+                (value) => descBySkill.get(value) ?? "skill",
+                options,
+            );
+        }
+    }
+
     return { suggestions: [], prefix: line };
 };
 
 export const makeAutocompleteProvider = (ctx: CompletionContext): AutocompleteProvider => ({
-    triggerCharacters: ["/", "@"],
+    triggerCharacters: ["/", "@", "$"],
     getSuggestions: async (lines, cursorLine, cursorCol, options) => {
         const beforeCursor = lines
             .slice(0, cursorLine)
@@ -330,6 +359,15 @@ export const makeAutocompleteProvider = (ctx: CompletionContext): AutocompletePr
         const lcp = (item as LcpAutocompleteItem).lcp;
         const applied = typeof lcp === "string" && lcp.length > prefix.length ? lcp : item.value;
         const completed = `${before.slice(0, replaceFrom)}${applied}`;
+        if (completed.includes("\n")) {
+            const parts = completed.split("\n");
+            const lastIdx = parts.length - 1;
+            const lastPart = parts[lastIdx] ?? "";
+            parts[lastIdx] = `${lastPart}${after}`;
+            const next = [...lines];
+            next.splice(cursorLine, 1, ...parts);
+            return { lines: next, cursorLine: cursorLine + lastIdx, cursorCol: lastPart.length };
+        }
         const next = [...lines];
         next[cursorLine] = completed + after;
         return { lines: next, cursorLine, cursorCol: completed.length };

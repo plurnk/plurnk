@@ -107,12 +107,33 @@ export const runTermViewport = async (
     let cachedPersonas: string[] = ["none"];
     let cachedSessions: string[] = [];
     let cachedWorkspaces: string[] = [];
+    let cachedSkills: { readonly name: string; readonly description: string }[] = [];
     let currentPersona: string | null =
         options.persona !== undefined && options.persona.length > 0 && options.persona !== "none"
             ? options.persona
             : null;
     let currentMode: string | null = null;
     let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
+
+    const applyAvailableCommandsToCache = (rawCommands: readonly unknown[]): void => {
+        const next: { readonly name: string; readonly description: string }[] = [];
+        const seen = new Set<string>();
+        for (const rawCmd of rawCommands) {
+            if (!rawCmd || typeof rawCmd !== "object") continue;
+            const cmd = rawCmd as { type?: unknown; name?: unknown; description?: unknown };
+            if (cmd.type !== "skill" || typeof cmd.name !== "string" || cmd.name.length === 0) continue;
+            if (seen.has(cmd.name)) continue;
+            seen.add(cmd.name);
+            next.push({
+                name: cmd.name,
+                description:
+                    typeof cmd.description === "string" && cmd.description.length > 0
+                        ? cmd.description
+                        : "skill",
+            });
+        }
+        cachedSkills = next;
+    };
 
     const applyConfigOptionsToCache = (rawOptions: readonly unknown[]): void => {
         for (const rawOpt of rawOptions) {
@@ -233,13 +254,16 @@ export const runTermViewport = async (
                 ? presenter.lastStatusLine
                 : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
         surface.setStatus(`${yoloLead}${place} ${activity}`);
+        const leadSuggestion = !isLoopActive ? presenter.promptSuggestions[0] : undefined;
         surface.setPlaceholder(
-            formatComposerHint({
-                yolo: presenter.yolo,
-                mode: currentMode,
-                persona: currentPersona,
-                childModel: presenter.spawnModel,
-            }),
+            leadSuggestion !== undefined
+                ? `→ ${leadSuggestion.replace(/\s+/gu, " ").trim()} (Tab)`
+                : formatComposerHint({
+                      yolo: presenter.yolo,
+                      mode: currentMode,
+                      persona: currentPersona,
+                      childModel: presenter.spawnModel,
+                  }),
         );
     };
 
@@ -370,6 +394,14 @@ export const runTermViewport = async (
                 getSessionNames: () => cachedSessions,
                 getWorkspaceNames: () => cachedWorkspaces,
                 getPendingGateIds: () => focusedGateIds,
+                getSkills: () => cachedSkills,
+                getPromptSuggestions: () =>
+                    presenter.lifecycle === "running" ||
+                    presenter.lifecycle === "queued" ||
+                    presenter.lifecycle === "parked" ||
+                    presenter.lifecycle === "requires_action"
+                        ? []
+                        : presenter.promptSuggestions,
             }),
         );
 
@@ -693,24 +725,34 @@ export const runTermViewport = async (
     const localSubmittedPrompts: string[] = [];
     const consumeLocalSubmittedPrompt = (text: string): boolean => {
         const trimmed = text.trim();
-        const idx = localSubmittedPrompts.findIndex((p) => p === text || p.trim() === trimmed);
+        const idx = localSubmittedPrompts.findIndex(
+            (p) =>
+                p === text ||
+                p.trim() === trimmed ||
+                (p.trim().startsWith("$") && /^<skill:\/\/\/[^>]+>$/u.test(trimmed)),
+        );
         if (idx < 0) return false;
         localSubmittedPrompts.splice(idx, 1);
         return true;
     };
 
+    const extractUpdateBlockText = (b: unknown): string => {
+        if (!b || typeof b !== "object") return "";
+        if (typeof (b as { text?: unknown }).text === "string") {
+            return (b as { text: string }).text;
+        }
+        if ((b as { type?: unknown }).type === "skill" && typeof (b as { name?: unknown }).name === "string") {
+            return `$${(b as { name: string }).name}`;
+        }
+        return "";
+    };
+
     const extractUpdateText = (content: unknown): string => {
         if (!content || typeof content !== "object") return "";
         if (Array.isArray(content)) {
-            return content
-                .map((b) =>
-                    b && typeof b === "object" && typeof (b as { text?: unknown }).text === "string"
-                        ? (b as { text: string }).text
-                        : "",
-                )
-                .join("\n");
+            return content.map(extractUpdateBlockText).join("");
         }
-        return typeof (content as { text?: unknown }).text === "string" ? (content as { text: string }).text : "";
+        return extractUpdateBlockText(content);
     };
 
     const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
@@ -895,6 +937,9 @@ export const runTermViewport = async (
                 if (Array.isArray(event.configOptions)) {
                     applyConfigOptionsToCache(event.configOptions);
                 }
+                if (Array.isArray(event.availableCommands)) {
+                    applyAvailableCommandsToCache(event.availableCommands);
+                }
                 const historyLostFrame = presenter.consumeHistoryLostFrame();
                 if (surface !== null) {
                     ensureSurfaceStarted();
@@ -916,6 +961,15 @@ export const runTermViewport = async (
                         presenter.resetSessionHistory();
                         surface.resetToolCallSlots();
                         localSubmittedPrompts.length = 0;
+                    }
+                    if (Array.isArray(event.promptSuggestions)) {
+                        presenter.setPromptSuggestions(
+                            event.promptSuggestions.map((s) =>
+                                s && typeof s === "object" && Array.isArray((s as { prompt?: unknown }).prompt)
+                                    ? extractUpdateText((s as { prompt: unknown[] }).prompt)
+                                    : "",
+                            ),
+                        );
                     }
                     if (Array.isArray(event.prompts)) {
                         surface.recordPromptHistory(
@@ -1086,6 +1140,9 @@ export const runTermViewport = async (
             if (event.sessionUpdate === "config_option_update" && Array.isArray(event.configOptions)) {
                 applyConfigOptionsToCache(event.configOptions);
             }
+            if (event.sessionUpdate === "available_commands_update" && Array.isArray(event.availableCommands)) {
+                applyAvailableCommandsToCache(event.availableCommands);
+            }
             if (
                 event.sessionUpdate === "usage_update" ||
                 event.sessionUpdate === "config_option_update" ||
@@ -1101,6 +1158,7 @@ export const runTermViewport = async (
                     case "reasoning_tail":
                         break;
                     case "subagent":
+                    case "prompt_suggestions":
                         if (surface !== null) {
                             updateSurfaceStatus();
                         }

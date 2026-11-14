@@ -7,6 +7,7 @@ import { existsSync, fstatSync, readFileSync, statSync, writeSync } from "node:f
 import { relative, resolve } from "node:path";
 import { Writable } from "node:stream";
 import { parseEnv } from "node:util";
+import { AvailableCommand, type ContentBlock } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import type { AcpClient } from "./acp-client.ts";
 import type { AcpSession, AcpTranscriptItem } from "./acp-session.ts";
 import { receiveAuthorization } from "./oauth.ts";
@@ -76,6 +77,46 @@ export const mintGateHash = (sessionId: string, kind: string, seq: number): stri
         .update(`${sessionId}:${kind}:${String(seq)}:${String(Date.now())}`)
         .digest("hex")
         .slice(0, 8);
+
+export const buildPromptBlocks = (
+    promptText: string,
+    availableCommands: readonly AvailableCommand[],
+): ContentBlock[] => {
+    const skillNames = new Set(
+        availableCommands
+            .filter((cmd) => AvailableCommand.isSkill(cmd) && cmd.name.length > 0)
+            .map((cmd) => cmd.name),
+    );
+    if (skillNames.size === 0 || !promptText.includes("$")) {
+        return [{ type: "text", text: promptText }];
+    }
+    const blocks: ContentBlock[] = [];
+    let cursor = 0;
+    const tokenPattern = /(?<=^|[\s([{,])\$([^\s,;:!?)\]}]+)/gu;
+    for (const match of promptText.matchAll(tokenPattern)) {
+        const rawBody = match[1] ?? "";
+        const dollarIndex = match.index ?? 0;
+        let candidate = rawBody;
+        while (candidate.length > 0 && !skillNames.has(candidate) && candidate.endsWith(".")) {
+            candidate = candidate.slice(0, -1);
+        }
+        if (!skillNames.has(candidate)) {
+            continue;
+        }
+        if (dollarIndex > cursor) {
+            blocks.push({ type: "text", text: promptText.slice(cursor, dollarIndex) });
+        }
+        blocks.push({ type: "skill", name: candidate });
+        cursor = dollarIndex + 1 + candidate.length;
+    }
+    if (blocks.length === 0) {
+        return [{ type: "text", text: promptText }];
+    }
+    if (cursor < promptText.length) {
+        blocks.push({ type: "text", text: promptText.slice(cursor) });
+    }
+    return blocks;
+};
 
 export const extractOpenPaths = (promptText: string, projectRoot: string | undefined): string[] => {
     if (!projectRoot || projectRoot.length === 0) return [];

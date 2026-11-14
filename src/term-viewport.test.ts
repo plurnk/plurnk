@@ -3046,3 +3046,217 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
 
 
 
+test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-channels}: Term viewport completes $skill tokens into ACPv2 skill blocks and surfaces idle prompt suggestions with Tab completion", async () => {
+    const stripVtAndApc = (s: string): string =>
+        stripVTControlCharacters(s).replace(/\x1b_[^\x07]*\x07/gu, "");
+    const termWrites: string[] = [];
+    let inputCallback: ((data: string) => void) | null = null;
+    const receivedPrompts: unknown[] = [];
+
+    const fakeTerminal: Terminal = {
+        columns: 100,
+        rows: 24,
+        kittyProtocolActive: true,
+        start(onInput) {
+            inputCallback = onInput;
+        },
+        stop() {
+            inputCallback = null;
+        },
+        async drainInput() {},
+        write(data) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    const agentApp = createAcpAgent({ name: "mock-acp-270-term" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "mock-acp-270-term", version: "2.7.0" },
+            capabilities: {
+                session: {
+                    resume: {},
+                    prompt: { skill: { inline: {} } },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [
+                {
+                    type: "select" as const,
+                    configId: "model",
+                    name: "Model",
+                    currentValue: "fast",
+                    options: [{ value: "fast", name: "fast" }],
+                },
+            ],
+            availableCommands: [
+                { type: "skill" as const, name: "triage", description: "Triage CI failures" },
+            ],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "alpha", projectRoot: "/tmp" },
+                    sessionName: "user",
+                    status: { lifecycle: "idle", spend: { costUsd: null } },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.resume, async ({ params, client }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: { sessionUpdate: "replay_complete" },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "prompt_suggestions_update",
+                    suggestions: [
+                        {
+                            prompt: [{ type: "text", text: "Run $triage on src" }],
+                        },
+                    ],
+                },
+            });
+            return {
+                configOptions: [],
+                availableCommands: [
+                    { type: "skill" as const, name: "triage", description: "Triage CI failures" },
+                ],
+            };
+        })
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            receivedPrompts.push(params.prompt);
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: { sessionUpdate: "state_update", state: "running" },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "1/1/1",
+                    content: { type: "text", text: "Triaged cleanly." },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: { sessionUpdate: "state_update", state: "idle", stopReason: "end_turn" },
+            });
+            return { messageId: "1/1/1" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+
+    try {
+        const viewportPromise = runTermViewport(
+            {
+                url: `http://127.0.0.1:${String(addr.port)}/acp`,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port: addr.port,
+                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 2000,
+                cancelGraceMs: 500,
+                workspace: "alpha",
+                sessionId: "user",
+                termSession: "user",
+                yolo: false,
+                auto: false,
+                json: false,
+                repl: false,
+                previewLines: 5,
+                historyEntries: 10,
+                mermaidTimeoutMs: 2000,
+                color: "never",
+                bell: false,
+                cwd: "/tmp",
+                env: { PLURNK_SECRET: "test-secret" },
+            },
+            { stdin, stdout, stderr, terminal: fakeTerminal },
+        );
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate(), `Timed out waiting for condition; writes:\n${stripVtAndApc(termWrites.join(""))}`);
+        };
+
+        // 1. Agent's prompt_suggestions_update surfaces in the empty-composer placeholder after session_bound
+        await waitUntil(() => {
+            const plain = stripVtAndApc(termWrites.join(""));
+            return (
+                inputCallback !== null &&
+                plain.includes("plurnk · workspace: alpha") &&
+                plain.includes("→ Run $triage on src (Tab)")
+            );
+        });
+
+        // 2. Pressing Tab on empty composer accepts the single suggestion into the editor, then Enter submits it as inline skill + text blocks!
+        termWrites.length = 0;
+        inputCallback!("\t");
+        await waitUntil(() => {
+            const recent = stripVtAndApc(termWrites.join(""));
+            return recent.includes("Run $triage on src") && !recent.includes("(Tab)");
+        });
+        inputCallback!("\r");
+
+        await waitUntil(
+            () =>
+                receivedPrompts.length === 1 &&
+                stripVtAndApc(termWrites.join("")).includes("Triaged cleanly."),
+        );
+        assert.deepEqual(receivedPrompts[0], [
+            { type: "text", text: "Run " },
+            { type: "skill", name: "triage" },
+            { type: "text", text: " on src" },
+        ]);
+
+        // 3. Typing `$tri` triggers `$` skill autocomplete and Tab completes `triage`
+        termWrites.length = 0;
+        inputCallback!("$tri");
+        await waitUntil(() =>
+            stripVtAndApc(termWrites.join("")).includes("Triage CI failures"),
+        );
+        termWrites.length = 0;
+        inputCallback!("\t");
+        await waitUntil(() =>
+            stripVtAndApc(termWrites.join("")).includes("$triage"),
+        );
+        inputCallback!("\r");
+
+        await waitUntil(() => receivedPrompts.length === 2);
+        assert.deepEqual(receivedPrompts[1], [{ type: "skill", name: "triage" }]);
+
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});

@@ -359,6 +359,7 @@ export const openCliSession = async (
                         : options.sessionId;
                 nextSession = new AcpSession(resolvedId, {
                     configOptions: resumedFirst.configOptions,
+                    availableCommands: resumedFirst.availableCommands,
                     meta: (resumedFirst._meta ?? undefined) as Record<string, unknown> | undefined,
                 });
                 alreadyReplayedOnResume = true;
@@ -376,6 +377,7 @@ export const openCliSession = async (
             });
             nextSession = new AcpSession(created.sessionId, {
                 configOptions: created.configOptions,
+                availableCommands: created.availableCommands,
                 meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
             });
         }
@@ -390,6 +392,9 @@ export const openCliSession = async (
             });
             if (resumed.configOptions && resumed.configOptions.length > 0) {
                 nextSession.configOptions = [...resumed.configOptions];
+            }
+            if (Array.isArray(resumed.availableCommands)) {
+                nextSession.availableCommands = [...resumed.availableCommands];
             }
             if (resumed._meta !== undefined && resumed._meta !== null) {
                 const prevPlurnk = (nextSession.meta?.plurnk ?? {}) as Record<string, unknown>;

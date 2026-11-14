@@ -2,10 +2,10 @@
 // ({§cli-invocation}, {§cli-subcommands}, {§cli-workspaces-and-sessions}).
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { SessionUpdate } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
 import { AcpSession } from "./acp-session.ts";
@@ -113,14 +113,122 @@ export class ClientCliError extends Error {
     }
 }
 
+const isServiceCommandAvailable = (
+    cmd: { readonly file: string; readonly args: string[] },
+    env: Record<string, string>,
+): boolean => {
+    const isFile = (candidate: string): boolean => {
+        try {
+            return existsSync(candidate) && statSync(candidate).isFile();
+        } catch {
+            return false;
+        }
+    };
+    if (cmd.file === process.execPath && cmd.args.length > 0) {
+        return existsSync(cmd.args[0]!);
+    }
+    if (cmd.file.includes("/") || cmd.file.includes("\\")) {
+        return isFile(cmd.file);
+    }
+    const pathValue = env.PATH !== undefined ? env.PATH : (process.env.PATH ?? "");
+    for (const dir of pathValue.split(delimiter)) {
+        if (!dir) continue;
+        if (isFile(join(dir, cmd.file))) {
+            return true;
+        }
+    }
+    return false;
+};
+
+const isServiceStartingError = (err: unknown): boolean => {
+    if (err === null || typeof err !== "object") return false;
+    const rec = err as {
+        readonly status?: unknown;
+        readonly body?: unknown;
+        readonly message?: unknown;
+        readonly data?: { readonly status?: unknown; readonly type?: unknown } | undefined;
+    };
+    if (rec.status === 503 || rec.data?.status === 503) {
+        return true;
+    }
+    if (typeof rec.data?.type === "string" && rec.data.type.includes("service-starting")) {
+        return true;
+    }
+    if (typeof rec.body === "string" && rec.body.includes("service-starting")) {
+        return true;
+    }
+    if (typeof rec.message === "string" && /\b503\b.*service|service-starting/iu.test(rec.message)) {
+        return true;
+    }
+    return false;
+};
+
+const notInstalledError = (): ClientCliError =>
+    new ClientCliError(
+        {
+            type: "https://problems.plurnk.xyz/client/daemon/not-installed",
+            title: "Service not installed",
+            status: 503,
+            detail: "Could not find `plurnk-service` to start the daemon automatically. Install `@plurnk/plurnk-service` (`npm install -g --ignore-scripts @plurnk/plurnk-service`).",
+        },
+        127,
+    );
+
 export const ensureDaemonConnected = async (client: AcpClient, options: CliCommonOptions): Promise<void> => {
+    const canAutostart = options.autostart && !options.explicitAcpUrl && isLoopbackHost(options.host);
+    if (!options.explicitAcpUrl && options.port === 0 && canAutostart) {
+        const cmd = resolveServiceCommand(options.serviceBin);
+        if (!isServiceCommandAvailable(cmd, options.env)) {
+            throw notInstalledError();
+        }
+        throw new ClientCliError(
+            {
+                type: "https://problems.plurnk.xyz/client/daemon/port-unshareable",
+                title: "Daemon port is not shareable",
+                status: 400,
+                detail: "PLURNK_PORT=0 selects an ephemeral port that later clients cannot discover; configure a fixed port or start the daemon explicitly.",
+            },
+            64,
+        );
+    }
+
     try {
         await client.connect();
         return;
-    } catch (firstErr) {
-        if (!options.autostart || options.explicitAcpUrl || !isLoopbackHost(options.host)) {
+    } catch (initialErr) {
+        let firstErr: unknown = initialErr;
+        if (isServiceStartingError(firstErr)) {
+            const deadline = Date.now() + options.daemonTimeoutMs;
+            let lastStartingErr: unknown = firstErr;
+            while (Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, DAEMON_POLL_MS));
+                try {
+                    await client.connect();
+                    return;
+                } catch (pollErr) {
+                    lastStartingErr = pollErr;
+                    if (!isServiceStartingError(pollErr)) {
+                        break;
+                    }
+                }
+            }
+            if (isServiceStartingError(lastStartingErr)) {
+                throw new ClientCliError(
+                    {
+                        type: "https://problems.plurnk.xyz/service/service-starting",
+                        title: "Service starting",
+                        status: 503,
+                        detail: `Timed out after ${options.daemonTimeoutMs}ms waiting for service at ${options.url} to become ready.`,
+                    },
+                    1,
+                );
+            }
+            firstErr = lastStartingErr;
+        }
+
+        if (!canAutostart) {
             const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-            if (/fetch failed|ECONNREFUSED|connect/iu.test(msg)) {
+            if (/fetch failed|ECONNREFUSED|EADDRNOTAVAIL|connect/iu.test(msg)) {
                 throw new ClientCliError(
                     {
                         type: "https://problems.plurnk.xyz/client/connection/refused",
@@ -135,6 +243,11 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
         }
     }
 
+    const cmd = resolveServiceCommand(options.serviceBin);
+    if (!isServiceCommandAvailable(cmd, options.env)) {
+        throw notInstalledError();
+    }
+
     const stateHome = options.env.XDG_STATE_HOME || join(options.env.HOME || homedir(), ".local", "state");
     const logDir = join(stateHome, "plurnk");
     mkdirSync(logDir, { recursive: true });
@@ -142,7 +255,6 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
     const logFd = openSync(logPath, "a");
 
     try {
-        const cmd = resolveServiceCommand(options.serviceBin);
         await new Promise<void>((resolveSpawn, rejectSpawn) => {
             const child = spawn(cmd.file, cmd.args, {
                 cwd: options.cwd,
@@ -155,17 +267,7 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
             });
             child.once("error", (err: NodeJS.ErrnoException) => {
                 if (err.code === "ENOENT") {
-                    rejectSpawn(
-                        new ClientCliError(
-                            {
-                                type: "https://problems.plurnk.xyz/client/daemon/not-installed",
-                                title: "Service not installed",
-                                status: 503,
-                                detail: "Could not find `plurnk-service` to start the daemon automatically. Install `@plurnk/plurnk-service` (`npm install -g --ignore-scripts @plurnk/plurnk-service`).",
-                            },
-                            127,
-                        ),
-                    );
+                    rejectSpawn(notInstalledError());
                     return;
                 }
                 rejectSpawn(err);
@@ -296,7 +398,7 @@ export const openCliSession = async (
             return;
         }
         if (matchesSession(notification.sessionId, session.sessionId)) {
-            if (isDuplicateNotice(notification.update)) return;
+            if (!session.replaying && isDuplicateNotice(notification.update)) return;
             session.applyUpdate(notification.update);
         }
     });
@@ -419,6 +521,11 @@ export const openCliSession = async (
         if (onLiveUpdate !== undefined) {
             session.onUpdate(onLiveUpdate);
         }
+        client.trackSession?.(session, {
+            cwd: options.cwd,
+            interactive: attended,
+            window: true,
+        });
 
         await applyInitialConfig(client, session, options);
         return session;

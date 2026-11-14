@@ -1,5 +1,6 @@
 // Standard ACP v2 client built on `@agentclientprotocol/sdk` (Streamable HTTP + WebSocket).
 
+import { readFileSync } from "node:fs";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
 import { createWebSocketStream, type WebSocketConstructor } from "@agentclientprotocol/sdk/experimental/ws-client";
 import {
@@ -40,7 +41,24 @@ import {
     type UnarchiveSessionResponse,
     type UpdateSessionNotification,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
+import type { AcpSession } from "./acp-session.ts";
 import Credential from "./credential.ts";
+
+const readPackageClientVersion = (): string => {
+    try {
+        const pkg = JSON.parse(
+            readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+        ) as { readonly version?: unknown };
+        if (typeof pkg.version === "string" && pkg.version.length > 0) {
+            return pkg.version;
+        }
+    } catch {
+        // fallback if package.json is unreadable
+    }
+    return "1.0.0";
+};
+
+const PACKAGE_CLIENT_VERSION = readPackageClientVersion();
 
 class NodeWebSocket extends globalThis.WebSocket {
     constructor(
@@ -169,8 +187,8 @@ export interface PlurnkActionMap {
         } & Record<string, unknown>
     >;
     readonly "workspace.share": PlurnkActionEntry<
-        { readonly outputDir?: string } & Record<string, unknown>,
-        { readonly path?: string; readonly outputDir?: string } & Record<string, unknown>
+        { readonly folder: string } & Record<string, unknown>,
+        { readonly folder: string } & Record<string, unknown>
     >;
     readonly "workspace.rename": PlurnkActionEntry<
         { readonly name: string } & Record<string, unknown>,
@@ -675,6 +693,13 @@ export interface AcpClientOptions {
     readonly onDisconnect?: () => void | Promise<void>;
 }
 
+interface BoundSessionEntry {
+    cwd: string;
+    interactive?: boolean;
+    window?: boolean;
+    session?: AcpSession;
+}
+
 export class AcpClient {
     readonly #url: string;
     readonly #credential: Credential | null;
@@ -687,7 +712,7 @@ export class AcpClient {
     #hasConnected = false;
     #explicitlyClosed = false;
     #reconnectPromise: Promise<ClientConnection> | null = null;
-    readonly #boundSessions = new Map<string, string>();
+    readonly #boundSessions = new Map<string, BoundSessionEntry>();
     readonly #updateListeners = new Set<SessionUpdateHandler>();
     readonly #authStatusListeners = new Set<AuthStatusUpdateHandler>();
     readonly #disconnectListeners = new Set<() => void | Promise<void>>();
@@ -704,7 +729,7 @@ export class AcpClient {
                 : {}),
         };
         this.#clientName = options.clientName ?? "@plurnk/plurnk";
-        this.#clientVersion = options.clientVersion ?? "1.0.0";
+        this.#clientVersion = options.clientVersion ?? PACKAGE_CLIENT_VERSION;
         this.#debugNoMeta =
             typeof options.debugNoMeta === "boolean"
                 ? options.debugNoMeta
@@ -1048,13 +1073,47 @@ export class AcpClient {
                 throw new Error("AcpClient failed to reconnect.");
             }
             if (this.#boundSessions.size > 0) {
-                for (const [sessionId, cwd] of this.#boundSessions) {
+                for (const [sessionId, entry] of this.#boundSessions) {
                     if (sessionId === options?.excludeSessionId) continue;
-                    await conn.agent.request(methods.agent.session.resume, {
-                        sessionId,
-                        cwd,
-                        replayFrom: { type: "start" },
-                    });
+                    const trackedSession = entry.session;
+                    const interactive = trackedSession?.interactive ?? entry.interactive;
+                    const window = trackedSession?.window ?? entry.window ?? true;
+                    trackedSession?.beginReplay();
+                    try {
+                        const resumed = await conn.agent.request(methods.agent.session.resume, {
+                            sessionId,
+                            cwd: entry.cwd,
+                            replayFrom: { type: "start" },
+                            _meta: {
+                                plurnk: {
+                                    window,
+                                    ...(interactive !== undefined ? { interactive } : {}),
+                                },
+                            },
+                        });
+                        if (trackedSession !== undefined) {
+                            if (resumed.configOptions && resumed.configOptions.length > 0) {
+                                trackedSession.configOptions = [...resumed.configOptions];
+                            }
+                            if (Array.isArray(resumed.availableCommands)) {
+                                trackedSession.availableCommands = [...resumed.availableCommands];
+                            }
+                            if (resumed._meta !== undefined && resumed._meta !== null) {
+                                const prevPlurnk = (trackedSession.meta?.plurnk ?? {}) as Record<string, unknown>;
+                                const nextPlurnk = (
+                                    (resumed._meta as Record<string, unknown>).plurnk ?? {}
+                                ) as Record<string, unknown>;
+                                trackedSession.meta = {
+                                    ...(trackedSession.meta ?? {}),
+                                    ...(resumed._meta as Record<string, unknown>),
+                                    plurnk: { ...prevPlurnk, ...nextPlurnk },
+                                };
+                            }
+                        }
+                    } finally {
+                        await new Promise<void>((r) => setImmediate(r));
+                        trackedSession?.endReplay();
+                    }
                 }
             }
             return conn;
@@ -1097,6 +1156,54 @@ export class AcpClient {
         }
     }
 
+    #recordSessionBinding(
+        sessionId: string,
+        cwd: string,
+        meta?: Record<string, unknown> | null,
+    ): void {
+        const plurnkMeta = (meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+        const existing = this.#boundSessions.get(sessionId);
+        const interactive =
+            typeof plurnkMeta?.interactive === "boolean"
+                ? plurnkMeta.interactive
+                : existing?.interactive;
+        const window =
+            typeof plurnkMeta?.window === "boolean"
+                ? plurnkMeta.window
+                : existing?.window;
+        this.#boundSessions.set(sessionId, {
+            cwd,
+            ...(interactive !== undefined ? { interactive } : {}),
+            ...(window !== undefined ? { window } : {}),
+            ...(existing?.session !== undefined ? { session: existing.session } : {}),
+        });
+    }
+
+    trackSession(
+        session: AcpSession,
+        options?: {
+            readonly cwd?: string;
+            readonly interactive?: boolean;
+            readonly window?: boolean;
+        },
+    ): void {
+        const existing = this.#boundSessions.get(session.sessionId);
+        const interactive = options?.interactive ?? session.interactive ?? existing?.interactive;
+        const window = options?.window ?? session.window ?? existing?.window;
+        if (interactive !== undefined) {
+            session.interactive = interactive;
+        }
+        if (window !== undefined) {
+            session.window = window;
+        }
+        this.#boundSessions.set(session.sessionId, {
+            cwd: options?.cwd ?? existing?.cwd ?? process.cwd(),
+            ...(interactive !== undefined ? { interactive } : {}),
+            ...(window !== undefined ? { window } : {}),
+            session,
+        });
+    }
+
     async newSession(cwd: string, extra?: Omit<NewSessionRequest, "cwd">): Promise<NewSessionResponse> {
         const res = await this.#withAutoReconnect((conn) =>
             conn.agent.request(methods.agent.session.new, {
@@ -1104,7 +1211,7 @@ export class AcpClient {
                 ...extra,
             }),
         );
-        this.#boundSessions.set(res.sessionId, cwd);
+        this.#recordSessionBinding(res.sessionId, cwd, extra?._meta);
         return res;
     }
 
@@ -1122,7 +1229,7 @@ export class AcpClient {
                 }),
             { excludeSessionId: sessionId },
         );
-        this.#boundSessions.set(sessionId, cwd);
+        this.#recordSessionBinding(sessionId, cwd, extra?._meta);
         return res;
     }
 
@@ -1149,16 +1256,36 @@ export class AcpClient {
     async forkSession(
         sessionId: string,
         cwd: string,
-        extra?: Omit<ForkSessionRequest, "sessionId" | "cwd">,
+        extra?: Omit<ForkSessionRequest, "sessionId" | "cwd"> & { readonly sessionName?: string },
     ): Promise<ForkSessionResponse> {
+        const { sessionName, ...rest } = extra ?? {};
+        const mergedMeta =
+            sessionName !== undefined && sessionName.length > 0
+                ? {
+                      ...(rest._meta ?? {}),
+                      plurnk: {
+                          ...(((rest._meta as Record<string, unknown> | undefined)?.plurnk as
+                              | Record<string, unknown>
+                              | undefined) ?? {}),
+                          sessionName,
+                      },
+                  }
+                : rest._meta;
+        const reqParams: ForkSessionRequest = {
+            sessionId,
+            cwd,
+            ...rest,
+            ...(mergedMeta !== undefined ? { _meta: mergedMeta } : {}),
+        };
+        const parentEntry = this.#boundSessions.get(sessionId);
         const res = await this.#withAutoReconnect((conn) =>
-            conn.agent.request(methods.agent.session.fork, {
-                sessionId,
-                cwd,
-                ...extra,
-            }),
+            conn.agent.request(methods.agent.session.fork, reqParams),
         );
-        this.#boundSessions.set(res.sessionId, cwd);
+        this.#boundSessions.set(res.sessionId, {
+            cwd,
+            ...(parentEntry?.interactive !== undefined ? { interactive: parentEntry.interactive } : {}),
+            ...(parentEntry?.window !== undefined ? { window: parentEntry.window } : {}),
+        });
         return res;
     }
 

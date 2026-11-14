@@ -549,3 +549,225 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
         await new Promise<void>((r) => ollamaHttp.close(() => r()));
     }
 });
+
+test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: runCliOnboard waits for async turn settlement before session/delete, warns on shell env override without printing secrets, and fails cleanly on verification errors", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "plurnk-onboard-race-test-"));
+    const configHome = join(tmp, "config");
+    const envPath = join(configHome, "plurnk", ".env");
+
+    const timeline: string[] = [];
+    let shouldFailVerification = false;
+    let promptSeq = 0;
+
+    const agentApp = createAcpAgent({ name: "onboard-settlement-mock" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+            capabilities: { session: { prompt: {}, delete: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => {
+            promptSeq += 1;
+            return {
+                sessionId: `verify-${String(promptSeq)}`,
+                configOptions: [
+                    {
+                        type: "select",
+                        configId: "model",
+                        name: "Model",
+                        currentValue: "none",
+                        options: [{ value: "openai", name: "openai" }],
+                    },
+                ],
+            };
+        })
+        .onRequest(methods.agent.session.setConfigOption, async ({ params }) => ({
+            configOptions: [
+                {
+                    type: "select",
+                    configId: "model",
+                    name: "Model",
+                    currentValue: String(params.value),
+                    options: [{ value: String(params.value), name: String(params.value) }],
+                },
+            ],
+        }))
+        .onRequest(methods.agent.session.delete, async ({ params }) => {
+            timeline.push(`delete:${params.sessionId}`);
+            return {};
+        })
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string; params?: { provider?: string } },
+            async ({ params }) => {
+                if (params.kind === "models.list" && params.params?.provider === "openai") {
+                    const currentEnv = (() => {
+                        try {
+                            return readFileSync(envPath, "utf8");
+                        } catch {
+                            return "";
+                        }
+                    })();
+                    if (currentEnv.includes("OPENAI_API_KEY=")) {
+                        return { items: [{ selector: "openai/gpt-5-mini" }] };
+                    }
+                }
+                return { items: [] };
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            // Simulate real daemon 202 loop admission: return messageId immediately, then settle asynchronously!
+            void (async () => {
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "state_update",
+                        state: "running",
+                    },
+                });
+                await new Promise((r) => setTimeout(r, 40));
+                if (shouldFailVerification) {
+                    await client.notify(methods.client.session.update, {
+                        sessionId: params.sessionId,
+                        update: {
+                            sessionUpdate: "notice",
+                            severity: "error",
+                            title: "Provider authentication failed",
+                            description: "Invalid key sk-bad-key-should-be-redacted rejected by upstream (401)",
+                            _meta: {
+                                plurnk: {
+                                    problem: {
+                                        type: "https://problems.plurnk.xyz/provider/auth-failed",
+                                        title: "Provider authentication failed",
+                                        status: 401,
+                                        detail: "Invalid key sk-bad-key-should-be-redacted rejected by upstream",
+                                    },
+                                },
+                            },
+                        },
+                    });
+                    timeline.push(`idle-error:${params.sessionId}`);
+                    await client.notify(methods.client.session.update, {
+                        sessionId: params.sessionId,
+                        update: {
+                            sessionUpdate: "state_update",
+                            state: "idle",
+                            stopReason: "error",
+                            _meta: {
+                                plurnk: {
+                                    terminal: { status: 401 },
+                                },
+                            },
+                        },
+                    });
+                    return;
+                }
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "agent_message_chunk",
+                        messageId: "ok-async",
+                        content: { type: "text", text: "OK" },
+                    },
+                });
+                timeline.push(`idle-ok:${params.sessionId}`);
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "state_update",
+                        state: "idle",
+                        stopReason: "end_turn",
+                    },
+                });
+            })();
+            timeline.push(`admitted:${params.sessionId}`);
+            return { messageId: "admitted-202" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const acpHttp = http.createServer(createNodeHttpHandler(acpServer));
+    await new Promise<void>((r) => acpHttp.listen(0, "127.0.0.1", r));
+    const acpAddr = acpHttp.address();
+    assert.ok(acpAddr && typeof acpAddr === "object");
+
+    const prevShellOpenAi = process.env.OPENAI_API_KEY;
+    const shellSecret = "sk-shell-exported-secret-do-not-print";
+    process.env.OPENAI_API_KEY = shellSecret;
+
+    try {
+        const common = makeCommon({
+            url: `http://127.0.0.1:${String(acpAddr.port)}/acp`,
+            port: acpAddr.port,
+            env: {
+                PLURNK_SECRET: "test-operator-secret",
+                XDG_CONFIG_HOME: configHome,
+            },
+        });
+
+        // 1. Async 202 settlement + shell export override warning (OpenAI = choice 2 when 0 local servers)
+        let okOutput = "";
+        const newFileSecret = "sk-file-saved-secret-do-not-print";
+        const code = await runCliOnboard(common, {
+            ollamaOrigin: "http://127.0.0.1:9",
+            llamaServerOrigin: "http://127.0.0.1:9",
+            write: (t) => {
+                okOutput += t;
+            },
+            askLine: async () => "2",
+            askSecret: async () => newFileSecret,
+        });
+        assert.equal(code, 0);
+        assert.match(okOutput, /Note: OPENAI_API_KEY is already exported in your current shell environment/u);
+        assert.match(okOutput, /verified openai\/gpt-5-mini/u);
+        assert.ok(!okOutput.includes(shellSecret), "Shell secret value must NEVER be printed");
+        assert.ok(!okOutput.includes(newFileSecret), "Entered API key must NEVER be printed");
+        assert.deepEqual(timeline, [
+            "admitted:verify-1",
+            "idle-ok:verify-1",
+            "delete:verify-1",
+        ]);
+
+        // 2. Verification turn failure must reject cleanly without printing "verified" or leaking key, and still delete session
+        timeline.length = 0;
+        shouldFailVerification = true;
+        let failOutput = "";
+        const badKey = "sk-bad-key-should-be-redacted";
+        await assert.rejects(
+            () =>
+                runCliOnboard(common, {
+                    ollamaOrigin: "http://127.0.0.1:9",
+                    llamaServerOrigin: "http://127.0.0.1:9",
+                    write: (t) => {
+                        failOutput += t;
+                    },
+                    askLine: async () => "2",
+                    askSecret: async () => badKey,
+                }),
+            (err: unknown) => {
+                const cliErr = err as { exitCode?: number; message?: string; problem?: { status?: number; detail?: string } };
+                assert.equal(cliErr.exitCode, 1);
+                assert.equal(cliErr.problem?.status, 401);
+                assert.ok(!String(cliErr.message).includes(badKey), "Error message must redact submitted API key");
+                assert.ok(!String(cliErr.problem?.detail).includes(badKey), "Problem detail must redact submitted API key");
+                return true;
+            },
+        );
+        assert.doesNotMatch(failOutput, /verified openai\/gpt-5-mini/u);
+        assert.ok(!failOutput.includes(badKey));
+        assert.ok(!failOutput.includes(shellSecret));
+        assert.deepEqual(timeline, [
+            "admitted:verify-2",
+            "idle-error:verify-2",
+            "delete:verify-2",
+        ]);
+    } finally {
+        if (prevShellOpenAi === undefined) {
+            delete process.env.OPENAI_API_KEY;
+        } else {
+            process.env.OPENAI_API_KEY = prevShellOpenAi;
+        }
+        rmSync(tmp, { recursive: true, force: true });
+        await acpServer.close();
+        acpHttp.closeAllConnections();
+        await new Promise<void>((r) => acpHttp.close(() => r()));
+    }
+});

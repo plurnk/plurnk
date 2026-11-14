@@ -7,6 +7,7 @@ import {
     SessionConfigOption,
     SessionUpdate,
     type CreateElicitationResponse,
+    type ForkSessionResponse,
     type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
@@ -100,8 +101,10 @@ export const runReplSession = async (
         }
         if (typeof plurnk?.sessionName === "string" && plurnk.sessionName.length > 0) {
             currentSessionName = plurnk.sessionName;
-        } else if (session.sessionId.includes("#") ) {
+        } else if (session.sessionId.includes("#")) {
             currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
+        } else if (session.sessionId.length > 0) {
+            currentSessionName = session.sessionId;
         }
         const chronologicalItems = extractChronologicalHistory(session);
         const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
@@ -643,6 +646,106 @@ export const runReplSession = async (
         return nextSession;
     };
 
+    const adoptForkedSession = async (
+        forked: ForkSessionResponse,
+        requestedName?: string,
+    ): Promise<AcpSession> => {
+        const forkedMeta = (forked._meta ?? undefined) as Record<string, unknown> | undefined;
+        const forkedPlurnk = (forkedMeta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+        const nextName =
+            typeof forkedPlurnk?.sessionName === "string" && forkedPlurnk.sessionName.length > 0
+                ? forkedPlurnk.sessionName
+                : (requestedName ??
+                  (forked.sessionId.includes("#")
+                      ? forked.sessionId.slice(forked.sessionId.indexOf("#") + 1)
+                      : forked.sessionId));
+        const prevSession = activeSession;
+        const prevPlurnk = (prevSession?.meta?.plurnk ?? {}) as Record<string, unknown>;
+        const mergedMeta: Record<string, unknown> = {
+            ...(prevSession?.meta ?? {}),
+            ...(forkedMeta ?? {}),
+            plurnk: {
+                ...prevPlurnk,
+                ...(forkedPlurnk ?? {}),
+                sessionName: nextName,
+            },
+        };
+        const attended = !options.auto;
+        const nextSession = new AcpSession(forked.sessionId, {
+            configOptions:
+                forked.configOptions && forked.configOptions.length > 0
+                    ? forked.configOptions
+                    : prevSession?.configOptions,
+            availableCommands: forked.availableCommands ?? prevSession?.availableCommands,
+            meta: mergedMeta,
+            interactive: attended,
+            window: true,
+        });
+        if (options.historyEntries > 0 && prevSession !== null && nextSession.items.length === 0) {
+            for (const item of prevSession.items) {
+                nextSession.items.push(structuredClone(item));
+            }
+        }
+        const matchesForkedSession = (incomingId: string, boundId: string): boolean => {
+            if (incomingId === boundId) return true;
+            if (/^\d+#/u.test(boundId)) return false;
+            const boundSuffix = boundId.includes("#") ? boundId.slice(boundId.indexOf("#") + 1) : boundId;
+            return incomingId.endsWith(`#${boundSuffix}`);
+        };
+        const offUpdate = client.onSessionUpdate((notification) => {
+            if (matchesForkedSession(notification.sessionId, nextSession.sessionId)) {
+                nextSession.applyUpdate(notification.update);
+            }
+        });
+        const offDisconnect = client.onDisconnect(() => {
+            nextSession.endActiveStream();
+        });
+        nextSession.onDispose(() => {
+            offUpdate();
+            offDisconnect();
+        });
+        nextSession.onUpdate((update, s) => {
+            if (s === activeSession) {
+                handleSessionUpdate(update);
+            }
+        });
+        client.trackSession(nextSession, {
+            cwd: currentProjectRoot,
+            interactive: attended,
+            window: true,
+        });
+        if (prevSession !== null && prevSession !== nextSession) {
+            const prevId = prevSession.sessionId;
+            prevSession.dispose();
+            if (prevId !== nextSession.sessionId) {
+                client.untrackSession(prevId);
+            }
+        }
+        activeSession = nextSession;
+        currentSessionName = nextName;
+        const [sessionsRes, workspacesRes] = await Promise.all([
+            client
+                .action<{ readonly sessions?: ReadonlyArray<Record<string, unknown>> }>(
+                    "workspace.sessions",
+                    {},
+                    {
+                        sessionId: nextSession.sessionId,
+                        workspace: currentWorkspace,
+                        session: nextName,
+                    },
+                )
+                .catch(() => undefined),
+            client
+                .action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>("workspace.list", {})
+                .catch(() => undefined),
+        ]);
+        emitSessionBound(nextSession, {
+            sessions: Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [],
+            workspaces: Array.isArray(workspacesRes?.workspaces) ? workspacesRes.workspaces : [],
+        });
+        return nextSession;
+    };
+
     let session = await bindSession(options.workspace, currentSessionName, { initial: true });
     streams.stdout.write(`workspace: ${currentWorkspace}\n`);
 
@@ -714,6 +817,7 @@ export const runReplSession = async (
                     activeLocalMcpOAuth += delta;
                 },
                 bindSession,
+                adoptForkedSession,
                 emitSessionBound,
                 dispatchLine,
             });

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, type ParseArgsConfig } from "node:util";
+import { ClientCliError } from "./cli-connection.ts";
 import {
     runCliCapabilities,
     runCliCompletion,
@@ -284,6 +285,60 @@ subcommands:
 
 const FAMILY_COMMANDS = new Set(["mcp", "skills", "members", "env", "schedule", "personas"]);
 
+const STRING_LONG_FLAGS = new Set(
+    Object.entries(CLIENT_OPTIONS)
+        .filter(([, spec]) => spec.type === "string")
+        .map(([name]) => `--${name}`),
+);
+
+const usageError = (title: string, detail: string): ClientCliError =>
+    new ClientCliError(
+        {
+            type: "https://problems.plurnk.xyz/client/usage",
+            title,
+            status: 400,
+            detail,
+        },
+        64,
+    );
+
+const parseSwitchValue = (name: string, raw: string | undefined, defaultValue = false): boolean => {
+    if (raw === undefined || raw === "") {
+        return defaultValue;
+    }
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+        return true;
+    }
+    if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+        return false;
+    }
+    throw usageError(
+        "Invalid switch value",
+        `${name} expects 1/true/yes/on or 0/false/no/off (got ${JSON.stringify(raw)}).`,
+    );
+};
+
+const detectInitialJsonMode = (rawArgs: readonly string[], rawEnvJson: string | undefined): boolean => {
+    let flagValue: boolean | undefined;
+    for (const token of rawArgs) {
+        if (token === "--") break;
+        if (token === "--json") {
+            flagValue = true;
+        } else if (token === "--no-json") {
+            flagValue = false;
+        }
+    }
+    if (flagValue !== undefined) {
+        return flagValue;
+    }
+    if (rawEnvJson === undefined) {
+        return false;
+    }
+    const normalized = rawEnvJson.trim().toLowerCase();
+    return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
 const readVersion = (): string => {
     try {
         const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -315,9 +370,6 @@ const readStdinAll = async (): Promise<string> => {
     }
     return Buffer.concat(chunks).toString("utf8");
 };
-
-const isTruthyEnv = (val: string | undefined): boolean =>
-    val === "1" || val === "true" || val === "yes" || val === "on";
 
 const collectSessionEnv = (
     env: Record<string, string>,
@@ -360,346 +412,335 @@ const collectSessionEnv = (
 
 export const main = async (argv: readonly string[] = process.argv): Promise<void> => {
     const rawArgs = argv.slice(2);
-
-    // Split before family or daemon command if present ({§cli-invocation})
-    let clientArgs = [...rawArgs];
-    let familyName: string | undefined;
-    let familyArgs: string[] = [];
-    let daemonPassthrough = false;
-    let daemonArgs: string[] = [];
-
-    for (let i = 0; i < rawArgs.length; i += 1) {
-        const token = rawArgs[i]!;
-        if (token === "--") break;
-        if (token.startsWith("-")) {
-            if (
-                !token.includes("=") &&
-                token !== "-h" &&
-                token !== "--help" &&
-                token !== "-v" &&
-                token !== "--version" &&
-                token !== "--json" &&
-                token !== "--yolo" &&
-                token !== "--no-yolo" &&
-                token !== "--auto" &&
-                token !== "--bell" &&
-                token !== "--repl" &&
-                token !== "--no-git" &&
-                token !== "--debug-no-meta" &&
-                token !== "--all" &&
-                token !== "--no-open"
-            ) {
-                i += 1;
-            }
-            continue;
-        }
-        if (token === "daemon") {
-            clientArgs = rawArgs.slice(0, i);
-            daemonPassthrough = true;
-            daemonArgs = rawArgs.slice(i + 1);
-        } else if (FAMILY_COMMANDS.has(token)) {
-            clientArgs = rawArgs.slice(0, i);
-            familyName = token;
-            familyArgs = rawArgs.slice(i + 1);
-        }
-        break;
-    }
-
-    const parsed = parseArgs({
-        args: clientArgs,
-        allowPositionals: true,
-        allowNegative: true,
-        strict: false,
-        options: CLIENT_OPTIONS,
-    });
-
-    const positionals = parsed.positionals;
-    const first = daemonPassthrough ? "daemon" : (familyName ?? positionals[0]);
-
-    if (parsed.values.help === true && familyName === undefined && !daemonPassthrough) {
-        process.stdout.write(first === "render" ? RENDER_HELP : USAGE);
-        return;
-    }
-
-    if (parsed.values.version === true && familyName === undefined && !daemonPassthrough) {
-        process.stdout.write(`${readVersion()}\n`);
-        return;
-    }
-
-    // Local-only subcommands require no daemon or env cascade ({§cli-markdown-projection})
-    if (first === "render") {
-        const defaultWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80;
-        const width = typeof parsed.values.width === "string"
-            ? Number.parseInt(parsed.values.width, 10)
-            : defaultWidth;
-        if (!Number.isInteger(width) || width < 1) {
-            process.stderr.write("plurnk render: --width must be a positive integer.\n");
-            process.exitCode = 64;
-            return;
-        }
-        process.exitCode = await runRender(width);
-        return;
-    }
-
-    if (first === "completion") {
-        process.exitCode = runCliCompletion(positionals[1]);
-        return;
-    }
-
-    const cascadeFiles: CascadeFileSpec[] = [];
-    const envFiles = Array.isArray(parsed.values["env-file"]) ? parsed.values["env-file"] : [];
-    for (const f of envFiles) {
-        if (typeof f === "string") cascadeFiles.push({ path: f, required: true });
-    }
-    const optionalEnvFiles = Array.isArray(parsed.values["env-file-if-exists"])
-        ? parsed.values["env-file-if-exists"]
-        : [];
-    for (const f of optionalEnvFiles) {
-        if (typeof f === "string") cascadeFiles.push({ path: f, required: false });
-    }
-
-    const env = assembleClientEnv(process.env, cascadeFiles);
-
-    const host = env.PLURNK_HOST;
-    const port = Number.parseInt(env.PLURNK_PORT, 10);
-    const configuredAcpUrl = env.PLURNK_ACP_URL;
-    const explicitAcpUrl = typeof configuredAcpUrl === "string" && configuredAcpUrl.trim().length > 0;
-    const url = explicitAcpUrl ? configuredAcpUrl!.trim() : `http://${host}:${String(port)}/acp`;
-
-    const workspace = typeof parsed.values.workspace === "string"
-        ? parsed.values.workspace
-        : env.PLURNK_CLIENT_WORKSPACE;
-    const sessionId = typeof parsed.values.session === "string"
-        ? parsed.values.session
-        : env.PLURNK_CLIENT_SESSION;
-    const termSession = typeof parsed.values["term-session"] === "string"
-        ? parsed.values["term-session"]
-        : env.PLURNK_CLIENT_TERM_SESSION;
-    const model = typeof parsed.values.model === "string"
-        ? parsed.values.model
-        : env.PLURNK_CLIENT_MODEL;
-    const effort = typeof parsed.values.effort === "string"
-        ? parsed.values.effort
-        : env.PLURNK_CLIENT_EFFORT;
-    if (typeof parsed.values.persona === "string" && typeof parsed.values["system-prompt"] === "string") {
-        const detail = "--persona and --system-prompt cannot be used together.";
-        if (parsed.values.json === true) {
-            process.stdout.write(
-                `${JSON.stringify({
-                    schemaVersion: 6,
-                    problem: {
-                        type: "https://problems.plurnk.xyz/client/usage",
-                        title: "Conflicting flags",
-                        status: 400,
-                        detail,
-                    },
-                })}\n`,
-            );
-        } else {
-            process.stderr.write(`plurnk: ${detail}\n`);
-        }
-        process.exitCode = 64;
-        return;
-    }
-    let systemPrompt: string | undefined;
-    if (typeof parsed.values["system-prompt"] === "string") {
-        const rawPrompt = parsed.values["system-prompt"];
-        if (rawPrompt.startsWith("@") && rawPrompt.length > 1) {
-            try {
-                systemPrompt = readFileSync(resolve(process.cwd(), rawPrompt.slice(1)), "utf8");
-            } catch (err) {
-                const detail = `Failed to read --system-prompt file ${rawPrompt.slice(1)}: ${err instanceof Error ? err.message : String(err)}`;
-                if (parsed.values.json === true) {
-                    process.stdout.write(
-                        `${JSON.stringify({
-                            schemaVersion: 6,
-                            problem: {
-                                type: "https://problems.plurnk.xyz/client/usage",
-                                title: "Invalid --system-prompt file",
-                                status: 400,
-                                detail,
-                            },
-                        })}\n`,
-                    );
-                } else {
-                    process.stderr.write(`plurnk: ${detail}\n`);
-                }
-                process.exitCode = 64;
-                return;
-            }
-        } else {
-            systemPrompt = rawPrompt;
-        }
-    }
-    const persona =
-        typeof parsed.values.persona === "string"
-            ? parsed.values.persona
-            : systemPrompt === undefined
-              ? (env.PLURNK_CLIENT_PERSONA || env.PLURNK_PERSONA)
-              : undefined;
-    const projectRoot = typeof parsed.values["project-root"] === "string"
-        ? parsed.values["project-root"]
-        : env.PLURNK_CLIENT_PROJECT_ROOT;
-    const capabilitiesRaw = typeof parsed.values.capabilities === "string"
-        ? parsed.values.capabilities
-        : env.PLURNK_CLIENT_CAPABILITIES;
-    const filesItemsRaw = typeof parsed.values["files-items"] === "string"
-        ? parsed.values["files-items"]
-        : env.PLURNK_CLIENT_FILES_ITEMS;
-    const maxCommandsRaw = typeof parsed.values["max-commands"] === "string"
-        ? parsed.values["max-commands"]
-        : env.PLURNK_CLIENT_MAX_COMMANDS;
-    const noGit = parsed.values["no-git"] === true || isTruthyEnv(env.PLURNK_CLIENT_NO_GIT);
-
-    const workspaceSettings: Record<string, unknown> = {};
-    if (capabilitiesRaw !== undefined && capabilitiesRaw.trim().length > 0) {
-        try {
-            workspaceSettings.capabilities = JSON.parse(capabilitiesRaw);
-        } catch {
-            // ignore invalid JSON here; server validates if needed
-        }
-    }
-    if (filesItemsRaw !== undefined && filesItemsRaw.trim().length > 0) {
-        workspaceSettings.filesItems = Number.parseInt(filesItemsRaw, 10);
-    }
-    if (maxCommandsRaw !== undefined && maxCommandsRaw.trim().length > 0) {
-        workspaceSettings.maxCommands = Number.parseInt(maxCommandsRaw, 10);
-    }
-    if (noGit) {
-        workspaceSettings.noGit = true;
-    }
-
-    const inheritSpec = typeof parsed.values["env-inherit"] === "string"
-        ? parsed.values["env-inherit"]
-        : env.PLURNK_CLIENT_ENV_INHERIT;
-    const excludeSpec = typeof parsed.values["env-exclude"] === "string"
-        ? parsed.values["env-exclude"]
-        : env.PLURNK_CLIENT_ENV_EXCLUDE;
-    const flagEnvs = Array.isArray(parsed.values.env)
-        ? parsed.values.env.filter((x): x is string => typeof x === "string")
-        : [];
-    const sessionEnv = collectSessionEnv(env, flagEnvs, inheritSpec, excludeSpec);
-
-    const autostartRaw = typeof parsed.values.autostart === "string"
-        ? parsed.values.autostart
-        : env.PLURNK_CLIENT_AUTOSTART;
-    const autostart = autostartRaw !== "0" && autostartRaw !== "false";
-
-    const daemonTimeoutMs = Number.parseInt(
-        typeof parsed.values["daemon-timeout-ms"] === "string"
-            ? parsed.values["daemon-timeout-ms"]
-            : env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS,
-        10,
-    );
-    const oauthTimeoutMs = Number.parseInt(
-        typeof parsed.values["oauth-timeout-ms"] === "string"
-            ? parsed.values["oauth-timeout-ms"]
-            : env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS,
-        10,
-    );
-    const cancelGraceMs = Number.parseInt(
-        typeof parsed.values["cancel-grace-ms"] === "string"
-            ? parsed.values["cancel-grace-ms"]
-            : env.PLURNK_CLIENT_CANCEL_GRACE_MS,
-        10,
-    );
-    const serviceBin = typeof parsed.values["service-bin"] === "string"
-        ? parsed.values["service-bin"]
-        : env.PLURNK_CLIENT_SERVICE_BIN;
-
-    const yolo = typeof parsed.values.yolo === "boolean"
-        ? parsed.values.yolo
-        : isTruthyEnv(env.PLURNK_CLIENT_YOLO);
-    const auto = parsed.values.auto === true || isTruthyEnv(env.PLURNK_CLIENT_AUTO);
-    const bell = parsed.values.bell === true || isTruthyEnv(env.PLURNK_CLIENT_BELL);
-    const repl = parsed.values.repl === true || isTruthyEnv(env.PLURNK_CLIENT_REPL);
-    const json = parsed.values.json === true || isTruthyEnv(env.PLURNK_CLIENT_JSON);
-    const debugNoMeta =
-        typeof parsed.values["debug-no-meta"] === "boolean"
-            ? parsed.values["debug-no-meta"]
-            : isTruthyEnv(env.PLURNK_CLIENT_DEBUG_NO_META);
-    if (typeof parsed.values["debug-no-meta"] === "boolean") {
-        env.PLURNK_CLIENT_DEBUG_NO_META = debugNoMeta ? "1" : "0";
-    }
-    const shareFolder = typeof parsed.values.share === "string"
-        ? parsed.values.share
-        : env.PLURNK_CLIENT_SHARE;
-
-    const maxTurnsRaw = typeof parsed.values["max-turns"] === "string"
-        ? parsed.values["max-turns"]
-        : env.PLURNK_CLIENT_MAX_TURNS;
-    const maxTurns = maxTurnsRaw !== undefined && maxTurnsRaw.trim().length > 0
-        ? Number.parseInt(maxTurnsRaw, 10)
-        : undefined;
-
-    const timeoutRaw = typeof parsed.values.timeout === "string"
-        ? parsed.values.timeout
-        : env.PLURNK_CLIENT_TIMEOUT;
-    const timeoutSec = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
-        ? Number.parseFloat(timeoutRaw)
-        : undefined;
-
-    const previewLines = Number.parseInt(
-        typeof parsed.values["preview-lines"] === "string"
-            ? parsed.values["preview-lines"]
-            : env.PLURNK_CLIENT_PREVIEW_LINES,
-        10,
-    );
-    const historyEntries = Number.parseInt(
-        typeof parsed.values["history-entries"] === "string"
-            ? parsed.values["history-entries"]
-            : env.PLURNK_CLIENT_HISTORY_ENTRIES,
-        10,
-    );
-    const mermaidTimeoutMs = Number.parseInt(
-        typeof parsed.values["mermaid-timeout-ms"] === "string"
-            ? parsed.values["mermaid-timeout-ms"]
-            : env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS,
-        10,
-    );
-    const color = typeof parsed.values.color === "string"
-        ? parsed.values.color
-        : env.PLURNK_CLIENT_COLOR;
-
-    const common: CliCommonOptions = {
-        url,
-        explicitAcpUrl,
-        host,
-        port,
-        credential: new Credential(env),
-        env,
-        cwd: process.cwd(),
-        ...(workspace !== undefined && workspace.length > 0 ? { workspace } : {}),
-        ...(sessionId !== undefined && sessionId.length > 0 ? { sessionId } : {}),
-        termSession,
-        ...(model !== undefined && model.length > 0 ? { model } : {}),
-        ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
-        ...(persona !== undefined && persona.length > 0 ? { persona } : {}),
-        ...(systemPrompt !== undefined && systemPrompt.length > 0 ? { systemPrompt } : {}),
-        ...(projectRoot !== undefined ? { projectRoot } : {}),
-        ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
-        ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
-        ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
-        ...(timeoutSec !== undefined && Number.isFinite(timeoutSec) ? { timeoutSec } : {}),
-        autostart,
-        daemonTimeoutMs,
-        oauthTimeoutMs,
-        cancelGraceMs,
-        ...(serviceBin !== undefined && serviceBin.length > 0 ? { serviceBin } : {}),
-        yolo,
-        auto,
-        bell,
-        repl,
-        json,
-        debugNoMeta,
-        ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
-        previewLines,
-        historyEntries,
-        mermaidTimeoutMs,
-        color,
-    };
+    let jsonOutput = detectInitialJsonMode(rawArgs, process.env.PLURNK_CLIENT_JSON);
 
     try {
+        // Split before family or daemon command if present ({§cli-invocation})
+        let clientArgs = [...rawArgs];
+        let familyName: string | undefined;
+        let familyArgs: string[] = [];
+        let daemonPassthrough = false;
+        let daemonArgs: string[] = [];
+
+        for (let i = 0; i < rawArgs.length; i += 1) {
+            const token = rawArgs[i]!;
+            if (token === "--") break;
+            if (token.startsWith("-")) {
+                if (STRING_LONG_FLAGS.has(token)) {
+                    i += 1;
+                }
+                continue;
+            }
+            if (token === "daemon") {
+                clientArgs = rawArgs.slice(0, i);
+                daemonPassthrough = true;
+                daemonArgs = rawArgs.slice(i + 1);
+            } else if (FAMILY_COMMANDS.has(token)) {
+                clientArgs = rawArgs.slice(0, i);
+                familyName = token;
+                familyArgs = rawArgs.slice(i + 1);
+            }
+            break;
+        }
+
+        let parsed: ReturnType<typeof parseArgs>;
+        try {
+            parsed = parseArgs({
+                args: clientArgs,
+                allowPositionals: true,
+                allowNegative: true,
+                strict: true,
+                options: CLIENT_OPTIONS,
+            });
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            throw usageError("Invalid CLI option", detail);
+        }
+
+        const positionals = parsed.positionals;
+        const first = daemonPassthrough ? "daemon" : (familyName ?? positionals[0]);
+
+        if (parsed.values.help === true && familyName === undefined && !daemonPassthrough) {
+            process.stdout.write(first === "render" ? RENDER_HELP : USAGE);
+            return;
+        }
+
+        if (parsed.values.version === true && familyName === undefined && !daemonPassthrough) {
+            process.stdout.write(`${readVersion()}\n`);
+            return;
+        }
+
+        // Local-only subcommands require no daemon or env cascade ({§cli-markdown-projection})
+        if (first === "render") {
+            const defaultWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80;
+            const width = typeof parsed.values.width === "string"
+                ? Number.parseInt(parsed.values.width, 10)
+                : defaultWidth;
+            if (!Number.isInteger(width) || width < 1) {
+                throw usageError("Invalid --width", "plurnk render: --width must be a positive integer.");
+            }
+            process.exitCode = await runRender(width);
+            return;
+        }
+
+        if (first === "completion") {
+            process.exitCode = runCliCompletion(positionals[1]);
+            return;
+        }
+
+        const cascadeFiles: CascadeFileSpec[] = [];
+        const envFiles = Array.isArray(parsed.values["env-file"]) ? parsed.values["env-file"] : [];
+        for (const f of envFiles) {
+            if (typeof f === "string") cascadeFiles.push({ path: f, required: true });
+        }
+        const optionalEnvFiles = Array.isArray(parsed.values["env-file-if-exists"])
+            ? parsed.values["env-file-if-exists"]
+            : [];
+        for (const f of optionalEnvFiles) {
+            if (typeof f === "string") cascadeFiles.push({ path: f, required: false });
+        }
+
+        let env: Record<string, string>;
+        try {
+            env = assembleClientEnv(process.env, cascadeFiles);
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            throw usageError("Invalid environment file", detail);
+        }
+
+        const json =
+            typeof parsed.values.json === "boolean"
+                ? parsed.values.json
+                : parseSwitchValue("PLURNK_CLIENT_JSON", env.PLURNK_CLIENT_JSON);
+        jsonOutput = json;
+
+        const host = env.PLURNK_HOST;
+        const port = Number.parseInt(env.PLURNK_PORT, 10);
+        const configuredAcpUrl = env.PLURNK_ACP_URL;
+        const explicitAcpUrl = typeof configuredAcpUrl === "string" && configuredAcpUrl.trim().length > 0;
+        const url = explicitAcpUrl ? configuredAcpUrl!.trim() : `http://${host}:${String(port)}/acp`;
+
+        const workspace = typeof parsed.values.workspace === "string"
+            ? parsed.values.workspace
+            : env.PLURNK_CLIENT_WORKSPACE;
+        const sessionId = typeof parsed.values.session === "string"
+            ? parsed.values.session
+            : env.PLURNK_CLIENT_SESSION;
+        const termSession = typeof parsed.values["term-session"] === "string"
+            ? parsed.values["term-session"]
+            : env.PLURNK_CLIENT_TERM_SESSION;
+        const model = typeof parsed.values.model === "string"
+            ? parsed.values.model
+            : env.PLURNK_CLIENT_MODEL;
+        const effort = typeof parsed.values.effort === "string"
+            ? parsed.values.effort
+            : env.PLURNK_CLIENT_EFFORT;
+        if (typeof parsed.values.persona === "string" && typeof parsed.values["system-prompt"] === "string") {
+            throw usageError("Conflicting flags", "--persona and --system-prompt cannot be used together.");
+        }
+        let systemPrompt: string | undefined;
+        if (typeof parsed.values["system-prompt"] === "string") {
+            const rawPrompt = parsed.values["system-prompt"];
+            if (rawPrompt.startsWith("@") && rawPrompt.length > 1) {
+                try {
+                    systemPrompt = readFileSync(resolve(process.cwd(), rawPrompt.slice(1)), "utf8");
+                } catch (err) {
+                    const detail = `Failed to read --system-prompt file ${rawPrompt.slice(1)}: ${err instanceof Error ? err.message : String(err)}`;
+                    throw usageError("Invalid --system-prompt file", detail);
+                }
+            } else {
+                systemPrompt = rawPrompt;
+            }
+        }
+        const persona =
+            typeof parsed.values.persona === "string"
+                ? parsed.values.persona
+                : systemPrompt === undefined
+                  ? (env.PLURNK_CLIENT_PERSONA || env.PLURNK_PERSONA)
+                  : undefined;
+        const projectRoot = typeof parsed.values["project-root"] === "string"
+            ? parsed.values["project-root"]
+            : env.PLURNK_CLIENT_PROJECT_ROOT;
+        const capabilitiesRaw = typeof parsed.values.capabilities === "string"
+            ? parsed.values.capabilities
+            : env.PLURNK_CLIENT_CAPABILITIES;
+        const filesItemsRaw = typeof parsed.values["files-items"] === "string"
+            ? parsed.values["files-items"]
+            : env.PLURNK_CLIENT_FILES_ITEMS;
+        const maxCommandsRaw = typeof parsed.values["max-commands"] === "string"
+            ? parsed.values["max-commands"]
+            : env.PLURNK_CLIENT_MAX_COMMANDS;
+        const parsedValuesRecord = parsed.values as Record<string, unknown>;
+        const noGit =
+            parsedValuesRecord.git === false || parsed.values["no-git"] === true
+                ? true
+                : typeof parsed.values["no-git"] === "boolean"
+                  ? parsed.values["no-git"]
+                  : parseSwitchValue("PLURNK_CLIENT_NO_GIT", env.PLURNK_CLIENT_NO_GIT);
+
+        const workspaceSettings: Record<string, unknown> = {};
+        if (capabilitiesRaw !== undefined && capabilitiesRaw.trim().length > 0) {
+            try {
+                workspaceSettings.capabilities = JSON.parse(capabilitiesRaw);
+            } catch {
+                // ignore invalid JSON here; server validates if needed
+            }
+        }
+        if (filesItemsRaw !== undefined && filesItemsRaw.trim().length > 0) {
+            workspaceSettings.filesItems = Number.parseInt(filesItemsRaw, 10);
+        }
+        if (maxCommandsRaw !== undefined && maxCommandsRaw.trim().length > 0) {
+            workspaceSettings.maxCommands = Number.parseInt(maxCommandsRaw, 10);
+        }
+        if (noGit) {
+            workspaceSettings.git = false;
+        }
+
+        const inheritSpec = typeof parsed.values["env-inherit"] === "string"
+            ? parsed.values["env-inherit"]
+            : env.PLURNK_CLIENT_ENV_INHERIT;
+        const excludeSpec = typeof parsed.values["env-exclude"] === "string"
+            ? parsed.values["env-exclude"]
+            : env.PLURNK_CLIENT_ENV_EXCLUDE;
+        const flagEnvs = Array.isArray(parsed.values.env)
+            ? parsed.values.env.filter((x): x is string => typeof x === "string")
+            : [];
+        const sessionEnv = collectSessionEnv(env, flagEnvs, inheritSpec, excludeSpec);
+
+        const autostart =
+            typeof parsed.values.autostart === "string"
+                ? parseSwitchValue("--autostart", parsed.values.autostart, true)
+                : parseSwitchValue("PLURNK_CLIENT_AUTOSTART", env.PLURNK_CLIENT_AUTOSTART, true);
+
+        const daemonTimeoutMs = Number.parseInt(
+            typeof parsed.values["daemon-timeout-ms"] === "string"
+                ? parsed.values["daemon-timeout-ms"]
+                : env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS,
+            10,
+        );
+        const oauthTimeoutMs = Number.parseInt(
+            typeof parsed.values["oauth-timeout-ms"] === "string"
+                ? parsed.values["oauth-timeout-ms"]
+                : env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS,
+            10,
+        );
+        const cancelGraceMs = Number.parseInt(
+            typeof parsed.values["cancel-grace-ms"] === "string"
+                ? parsed.values["cancel-grace-ms"]
+                : env.PLURNK_CLIENT_CANCEL_GRACE_MS,
+            10,
+        );
+        const serviceBin = typeof parsed.values["service-bin"] === "string"
+            ? parsed.values["service-bin"]
+            : env.PLURNK_CLIENT_SERVICE_BIN;
+
+        const yolo =
+            typeof parsed.values.yolo === "boolean"
+                ? parsed.values.yolo
+                : parseSwitchValue("PLURNK_CLIENT_YOLO", env.PLURNK_CLIENT_YOLO);
+        const auto =
+            typeof parsed.values.auto === "boolean"
+                ? parsed.values.auto
+                : parseSwitchValue("PLURNK_CLIENT_AUTO", env.PLURNK_CLIENT_AUTO);
+        const bell =
+            typeof parsed.values.bell === "boolean"
+                ? parsed.values.bell
+                : parseSwitchValue("PLURNK_CLIENT_BELL", env.PLURNK_CLIENT_BELL);
+        const repl =
+            typeof parsed.values.repl === "boolean"
+                ? parsed.values.repl
+                : parseSwitchValue("PLURNK_CLIENT_REPL", env.PLURNK_CLIENT_REPL);
+        const debugNoMeta =
+            typeof parsed.values["debug-no-meta"] === "boolean"
+                ? parsed.values["debug-no-meta"]
+                : parseSwitchValue("PLURNK_CLIENT_DEBUG_NO_META", env.PLURNK_CLIENT_DEBUG_NO_META);
+        if (typeof parsed.values["debug-no-meta"] === "boolean") {
+            env.PLURNK_CLIENT_DEBUG_NO_META = debugNoMeta ? "1" : "0";
+        }
+        const shareFolder = typeof parsed.values.share === "string"
+            ? parsed.values.share
+            : env.PLURNK_CLIENT_SHARE;
+
+        const maxTurnsRaw = typeof parsed.values["max-turns"] === "string"
+            ? parsed.values["max-turns"]
+            : env.PLURNK_CLIENT_MAX_TURNS;
+        const maxTurns = maxTurnsRaw !== undefined && maxTurnsRaw.trim().length > 0
+            ? Number.parseInt(maxTurnsRaw, 10)
+            : undefined;
+
+        const timeoutRaw = typeof parsed.values.timeout === "string"
+            ? parsed.values.timeout
+            : env.PLURNK_CLIENT_TIMEOUT;
+        const timeoutSec = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
+            ? Number.parseFloat(timeoutRaw)
+            : undefined;
+
+        const previewLines = Number.parseInt(
+            typeof parsed.values["preview-lines"] === "string"
+                ? parsed.values["preview-lines"]
+                : env.PLURNK_CLIENT_PREVIEW_LINES,
+            10,
+        );
+        const historyEntries = Number.parseInt(
+            typeof parsed.values["history-entries"] === "string"
+                ? parsed.values["history-entries"]
+                : env.PLURNK_CLIENT_HISTORY_ENTRIES,
+            10,
+        );
+        const mermaidTimeoutMs = Number.parseInt(
+            typeof parsed.values["mermaid-timeout-ms"] === "string"
+                ? parsed.values["mermaid-timeout-ms"]
+                : env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS,
+            10,
+        );
+        const color = typeof parsed.values.color === "string"
+            ? parsed.values.color
+            : env.PLURNK_CLIENT_COLOR;
+        if (color !== "always" && color !== "auto" && color !== "never") {
+            throw usageError(
+                "Invalid color mode",
+                `--color / PLURNK_CLIENT_COLOR must be "always", "auto", or "never" (got ${JSON.stringify(color)}).`,
+            );
+        }
+
+        const common: CliCommonOptions = {
+            url,
+            explicitAcpUrl,
+            host,
+            port,
+            credential: new Credential(env),
+            env,
+            cwd: process.cwd(),
+            ...(workspace !== undefined && workspace.length > 0 ? { workspace } : {}),
+            ...(sessionId !== undefined && sessionId.length > 0 ? { sessionId } : {}),
+            termSession,
+            ...(model !== undefined && model.length > 0 ? { model } : {}),
+            ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
+            ...(persona !== undefined && persona.length > 0 ? { persona } : {}),
+            ...(systemPrompt !== undefined && systemPrompt.length > 0 ? { systemPrompt } : {}),
+            ...(projectRoot !== undefined ? { projectRoot } : {}),
+            ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
+            ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
+            ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
+            ...(timeoutSec !== undefined && Number.isFinite(timeoutSec) ? { timeoutSec } : {}),
+            autostart,
+            daemonTimeoutMs,
+            oauthTimeoutMs,
+            cancelGraceMs,
+            ...(serviceBin !== undefined && serviceBin.length > 0 ? { serviceBin } : {}),
+            yolo,
+            auto,
+            bell,
+            repl,
+            json,
+            debugNoMeta,
+            ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
+            previewLines,
+            historyEntries,
+            mermaidTimeoutMs,
+            color,
+        };
+
         let exitCode = 0;
 
         if (daemonPassthrough) {
@@ -707,7 +748,8 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         } else if (familyName !== undefined) {
             exitCode = await runCliFamily(familyName, familyArgs, common);
         } else if (first === "web") {
-            exitCode = await runCliWeb(parsed.values["no-open"] === true, common);
+            const noOpen = parsed.values["no-open"] === true || parsedValuesRecord.open === false;
+            exitCode = await runCliWeb(noOpen, common);
         } else if (first === "onboard") {
             exitCode = await runCliOnboard(common);
         } else if (first === "session") {
@@ -722,38 +764,28 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                     break;
                 case "resume":
                     if (!targetId) {
-                        process.stderr.write("plurnk session resume requires a <sessionId>.\n");
-                        process.exitCode = 64;
-                        return;
+                        throw usageError("Missing session id", "plurnk session resume requires a <sessionId>.");
                     }
                     exitCode = await runCliResumeSession(targetId, common);
                     break;
                 case "fork":
                     if (!targetId) {
-                        process.stderr.write("plurnk session fork requires a <sessionId>.\n");
-                        process.exitCode = 64;
-                        return;
+                        throw usageError("Missing session id", "plurnk session fork requires a <sessionId>.");
                     }
                     exitCode = await runCliForkSession(targetId, common);
                     break;
                 case "delete":
                     if (!targetId) {
-                        process.stderr.write("plurnk session delete requires a <sessionId>.\n");
-                        process.exitCode = 64;
-                        return;
+                        throw usageError("Missing session id", "plurnk session delete requires a <sessionId>.");
                     }
                     exitCode = await runCliDeleteSession(targetId, common);
                     break;
                 default:
-                    process.stderr.write(`Unknown session subcommand: ${sub}\n`);
-                    process.exitCode = 64;
-                    return;
+                    throw usageError("Unknown subcommand", `Unknown session subcommand: ${sub}`);
             }
         } else if (first === "config") {
             if (positionals.length > 3) {
-                process.stderr.write("plurnk config accepts at most [<id> [<value>]].\n");
-                process.exitCode = 64;
-                return;
+                throw usageError("Invalid arguments", "plurnk config accepts at most [<id> [<value>]].");
             }
             exitCode = await runCliConfig(positionals[1], positionals[2], common);
         } else if (first === "update") {
@@ -793,9 +825,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             );
         } else if (first === "read") {
             if (!positionals[1]) {
-                process.stderr.write("plurnk read requires a <loop>/<turn>/<seq> coordinate.\n");
-                process.exitCode = 64;
-                return;
+                throw usageError("Missing coordinate", "plurnk read requires a <loop>/<turn>/<seq> coordinate.");
             }
             exitCode = await runCliReadCoord(positionals[1], common);
         } else if (first === "effort") {
@@ -810,12 +840,16 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             exitCode = await runCliLogout(common);
         } else if (first === "script") {
             if (!positionals[1]) {
-                process.stderr.write("plurnk script requires a <file.plk> path.\n");
-                process.exitCode = 64;
-                return;
+                throw usageError("Missing script path", "plurnk script requires a <file.plk> path.");
             }
             exitCode = await runCliScript(positionals[1], common);
         } else if (common.repl && positionals.length === 0) {
+            if (common.json) {
+                throw usageError(
+                    "Incompatible flags",
+                    "--json requires one-shot or subcommand mode and cannot be used with --repl.",
+                );
+            }
             exitCode = await runInteractiveSession(common);
         } else {
             const positionalText = positionals.join(" ");
@@ -827,11 +861,15 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                     : stdinText;
 
             if (promptText.length === 0) {
-                if (process.stdin.isTTY) {
+                if (process.stdin.isTTY && !common.json) {
                     exitCode = await runInteractiveSession(common);
                 } else {
-                    process.stdout.write(USAGE);
-                    return;
+                    throw usageError(
+                        "Missing prompt",
+                        common.json
+                            ? "--json requires a non-empty prompt or subcommand."
+                            : "No prompt provided on arguments or standard input. Run `plurnk --help` for usage.",
+                    );
                 }
             } else {
                 exitCode = await runCliPrompt(promptText, common);
@@ -844,16 +882,26 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     } catch (error) {
         const cliErr = error as {
             readonly problem?: Record<string, unknown>;
+            readonly data?: Record<string, unknown>;
             readonly exitCode?: number;
         };
         const message = error instanceof Error ? error.message : String(error);
-        const problem = cliErr?.problem ?? {
+        const dataProblem =
+            cliErr?.data !== undefined &&
+            cliErr.data !== null &&
+            typeof cliErr.data === "object" &&
+            typeof cliErr.data.type === "string" &&
+            typeof cliErr.data.title === "string" &&
+            typeof cliErr.data.status === "number"
+                ? cliErr.data
+                : undefined;
+        const problem = cliErr?.problem ?? dataProblem ?? {
             type: "https://problems.plurnk.xyz/client/error",
             title: "Client error",
             status: 500,
             detail: message,
         };
-        if (common.json) {
+        if (jsonOutput) {
             process.stdout.write(`${JSON.stringify({ schemaVersion: 6, problem })}\n`);
         } else {
             process.stderr.write(`plurnk: ${message}\n`);

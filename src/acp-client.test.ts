@@ -1025,8 +1025,238 @@ test("{§cli-conformance} {§cli-output-channels} {§cli-interactive-command-dis
     }
 });
 
+test("{§cli-conformance} {§cli-sessions-topology} {§cli-session-status}: AcpClient reports package.json version on initialize, passes sessionName on forkSession, and replays auto-reconnect with window/interactive _meta without duplicating multi-chunk history", async () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+        readonly version: string;
+    };
+    const sseResponses = new Set<http.ServerResponse>();
+    const observedClientInfos: Array<{ name?: string; version?: string }> = [];
+    const observedResumeRequests: Array<Record<string, unknown>> = [];
+    const observedForkRequests: Array<Record<string, unknown>> = [];
+    let promptTurn = 0;
 
+    const agentApp = createAcpAgent({ name: "mock-reconnect-meta" })
+        .onRequest(methods.agent.initialize, async ({ params }) => {
+            observedClientInfos.push({
+                name: params.info?.name,
+                version: params.info?.version,
+            });
+            return {
+                protocolVersion: PROTOCOL_VERSION,
+                info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+                capabilities: {
+                    session: {
+                        fork: {},
+                        resume: {},
+                        prompt: {},
+                    },
+                },
+            };
+        })
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [],
+        }))
+        .onRequest(methods.agent.session.fork, async ({ params }) => {
+            observedForkRequests.push(params as unknown as Record<string, unknown>);
+            const plurnkMeta = (params._meta?.plurnk ?? undefined) as { sessionName?: string } | undefined;
+            const forkName = plurnkMeta?.sessionName ?? "fork-1";
+            return {
+                sessionId: `1#${forkName}`,
+                configOptions: [],
+                _meta: { plurnk: { sessionName: forkName } },
+            };
+        })
+        .onRequest(methods.agent.session.resume, async ({ params, client }) => {
+            observedResumeRequests.push(params as unknown as Record<string, unknown>);
+            // Replay multi-chunk historical message and notice from turn 1, then emit replay_complete.
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "m-1",
+                    content: { type: "text", text: "Hello " },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "m-1",
+                    content: { type: "text", text: "world!" },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "notice",
+                    severity: "info",
+                    title: "historical-notice",
+                    description: "Already seen before disconnect",
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "replay_complete",
+                },
+            });
+            return { configOptions: [] };
+        })
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            promptTurn += 1;
+            if (promptTurn === 1) {
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "agent_message_chunk",
+                        messageId: "m-1",
+                        content: { type: "text", text: "Hello " },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "agent_message_chunk",
+                        messageId: "m-1",
+                        content: { type: "text", text: "world!" },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "notice",
+                        severity: "info",
+                        title: "historical-notice",
+                        description: "Already seen before disconnect",
+                    },
+                });
+            } else {
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "agent_message_chunk",
+                        messageId: "m-2",
+                        content: { type: "text", text: "Fresh reply" },
+                    },
+                });
+            }
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { stopReason: "end_turn", messageId: `m-${String(promptTurn)}` };
+        });
 
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => {
+        if (req.method === "GET") {
+            sseResponses.add(res);
+            res.once("close", () => sseResponses.delete(res));
+        }
+        handler(req, res);
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
 
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        token: "test-token",
+    });
 
+    try {
+        await client.connect();
+        assert.equal(observedClientInfos[0]?.name, "@plurnk/plurnk");
+        assert.equal(observedClientInfos[0]?.version, pkg.version);
+        assert.notEqual(pkg.version, "1.0.0");
+
+        const forked = await client.forkSession("1#user", "/tmp/ws", { sessionName: "named-fork" });
+        assert.equal(forked.sessionId, "1#named-fork");
+        assert.deepEqual(observedForkRequests[0], {
+            sessionId: "1#user",
+            cwd: "/tmp/ws",
+            _meta: { plurnk: { sessionName: "named-fork" } },
+        });
+        client.untrackSession("1#named-fork");
+
+        const created = await client.newSession("/tmp/ws", {
+            _meta: { plurnk: { interactive: true, window: true } },
+        });
+        const session = new AcpSession(created.sessionId, { interactive: true, window: true });
+        client.trackSession(session, { cwd: "/tmp/ws", interactive: true, window: true });
+
+        const liveChunks: string[] = [];
+        const liveNotices: string[] = [];
+        let sawReplayComplete = false;
+        session.onUpdate((update) => {
+            if (SessionUpdate.isAgentMessageChunk(update) && ContentBlock.isText(update.content)) {
+                liveChunks.push(update.content.text);
+            } else if (SessionUpdate.isNotice(update)) {
+                liveNotices.push(update.title);
+            } else if (SessionUpdate.isReplayComplete(update)) {
+                sawReplayComplete = true;
+            }
+        });
+        client.onSessionUpdate((n) => {
+            if (n.sessionId === session.sessionId) {
+                session.applyUpdate(n.update);
+            }
+        });
+
+        await client.prompt(session.sessionId, "First");
+        const waitUntil = async (pred: () => boolean) => {
+            const deadline = Date.now() + 3000;
+            while (!pred() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 15));
+            }
+            assert.ok(pred());
+        };
+        await waitUntil(() => liveChunks.join("") === "Hello world!");
+        assert.deepEqual(liveNotices, ["historical-notice"]);
+
+        // Drop SSE to force auto-reconnect on next prompt
+        for (const res of [...sseResponses]) {
+            res.end();
+        }
+        await new Promise((r) => setTimeout(r, 40));
+
+        await client.prompt(session.sessionId, "Second");
+        await waitUntil(() => liveChunks.includes("Fresh reply"));
+
+        assert.equal(observedResumeRequests.length, 1);
+        assert.deepEqual(observedResumeRequests[0], {
+            sessionId: "1#user",
+            cwd: "/tmp/ws",
+            replayFrom: { type: "start" },
+            _meta: {
+                plurnk: {
+                    window: true,
+                    interactive: true,
+                },
+            },
+        });
+        assert.equal(sawReplayComplete, true);
+        assert.equal(session.replaying, false);
+        assert.equal(session.replayComplete, true);
+        // Multi-chunk historical "Hello " + "world!" and notice must NOT be duplicated on live listeners or items!
+        assert.deepEqual(liveChunks, ["Hello ", "world!", "Fresh reply"]);
+        assert.deepEqual(liveNotices, ["historical-notice"]);
+        const msgItems = session.items.filter((i): i is AcpMessageItem => i.kind === "agent_message");
+        assert.deepEqual(
+            msgItems.map((m) => m.text),
+            ["Hello world!", "Fresh reply"],
+        );
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
 

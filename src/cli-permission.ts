@@ -179,12 +179,18 @@ const promptLineWithAbort = (
         });
         const onAbort = () => {
             rl.close();
+            if (stdin === process.stdin) {
+                stdin.pause();
+            }
             resolvePrompt(null);
         };
         signal.addEventListener("abort", onAbort, { once: true });
         rl.question(question, (answer) => {
             signal.removeEventListener("abort", onAbort);
             rl.close();
+            if (stdin === process.stdin) {
+                stdin.pause();
+            }
             resolvePrompt(answer.trim());
         });
     });
@@ -335,7 +341,13 @@ export const createCliPermissionHandler = (
         };
     };
 
-export const createCliElicitationHandler = () =>
+export interface CliElicitationHandlerOptions {
+    readonly stdin?: NodeJS.ReadableStream;
+    readonly stderr?: NodeJS.WritableStream;
+    readonly isTTY?: boolean;
+}
+
+export const createCliElicitationHandler = (options?: CliElicitationHandlerOptions) =>
     async (
         request: CreateElicitationRequest,
         signal: AbortSignal,
@@ -343,12 +355,15 @@ export const createCliElicitationHandler = () =>
         if (signal.aborted) {
             return { action: "cancel" };
         }
-        if (!process.stdin.isTTY) {
-            return { action: "decline" };
+        const stdin = options?.stdin ?? process.stdin;
+        const stderr = options?.stderr ?? process.stderr;
+        const isTTY = options?.isTTY ?? Boolean((stdin as { isTTY?: boolean }).isTTY);
+        if (!isTTY) {
+            return { action: "cancel" };
         }
         if (CreateElicitationRequest.isUrl(request)) {
-            process.stderr.write(`\n[elicitation] ${request.message}\n  URL: ${request.url}\n`);
-            const answer = await promptLineWithAbort("  Open/Confirm [y/N]: ", signal);
+            stderr.write(`\n[elicitation] ${request.message}\n  URL: ${request.url}\n`);
+            const answer = await promptLineWithAbort("  Open/Confirm [y/N]: ", signal, stdin, stderr, isTTY);
             if (answer === null || signal.aborted) {
                 return { action: "cancel" };
             }
@@ -361,7 +376,7 @@ export const createCliElicitationHandler = () =>
             return { action: "decline" };
         }
 
-        process.stderr.write(`\n[elicitation] ${request.message}\n`);
+        stderr.write(`\n[elicitation] ${request.message}\n`);
         const content: Record<string, ElicitationContentValue> = {};
         const properties = request.requestedSchema.properties ?? {};
         for (const [key, prop] of Object.entries(properties)) {
@@ -375,7 +390,7 @@ export const createCliElicitationHandler = () =>
                 prop.title.length > 0
                     ? prop.title
                     : key;
-            const answer = await promptLineWithAbort(`  ${label}: `, signal);
+            const answer = await promptLineWithAbort(`  ${label}: `, signal, stdin, stderr, isTTY);
             if (answer === null || signal.aborted) {
                 return { action: "cancel" };
             }

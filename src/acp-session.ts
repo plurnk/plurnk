@@ -158,6 +158,8 @@ export class AcpSession {
     availableCommands: AvailableCommand[] = [];
     promptSuggestions: PromptSuggestion[] = [];
     replayComplete = false;
+    interactive: boolean | undefined = undefined;
+    window: boolean | undefined = undefined;
     usage: AcpUsageSnapshot | null = null;
     meta: MetaRecord | undefined = undefined;
     lastStateMeta: MetaRecord | undefined = undefined;
@@ -166,6 +168,11 @@ export class AcpSession {
     readonly terminals = new Map<string, AcpTerminalState>();
     readonly subagents = new Map<string, AcpSubagentState>();
     #activeStreamMessage: AcpMessageItem | null = null;
+    #replaying = false;
+    #replayedMessagePrefix = new WeakMap<AcpMessageItem, string>();
+    #preReplayMessages: AcpMessageItem[] = [];
+    #preReplayIndex = 0;
+    #activeUnnamedReplayItem: AcpMessageItem | null = null;
     readonly #listeners = new Set<AcpSessionEventListener>();
     readonly #disposeCallbacks = new Set<() => void>();
 
@@ -175,6 +182,8 @@ export class AcpSession {
             configOptions?: SessionConfigOption[] | null;
             availableCommands?: AvailableCommand[] | null;
             meta?: MetaRecord | null;
+            interactive?: boolean;
+            window?: boolean;
         },
     ) {
         this.sessionId = sessionId;
@@ -187,6 +196,39 @@ export class AcpSession {
         if (initial?.meta) {
             this.meta = { ...initial.meta };
         }
+        if (initial?.interactive !== undefined) {
+            this.interactive = initial.interactive;
+        }
+        if (initial?.window !== undefined) {
+            this.window = initial.window;
+        }
+    }
+
+    get replaying(): boolean {
+        return this.#replaying;
+    }
+
+    beginReplay(): void {
+        this.#replaying = true;
+        this.replayComplete = false;
+        this.#activeStreamMessage = null;
+        this.#replayedMessagePrefix = new WeakMap<AcpMessageItem, string>();
+        this.#preReplayMessages = this.items.filter(
+            (item): item is AcpMessageItem =>
+                item.kind === "user_message" ||
+                item.kind === "agent_message" ||
+                item.kind === "agent_thought",
+        );
+        this.#preReplayIndex = 0;
+        this.#activeUnnamedReplayItem = null;
+    }
+
+    endReplay(): void {
+        this.#activeStreamMessage = null;
+        this.#replaying = false;
+        this.#preReplayMessages = [];
+        this.#preReplayIndex = 0;
+        this.#activeUnnamedReplayItem = null;
     }
 
     onUpdate(listener: AcpSessionEventListener): () => void {
@@ -214,6 +256,7 @@ export class AcpSession {
 
     endActiveStream(): void {
         this.#activeStreamMessage = null;
+        this.#replayedMessagePrefix = new WeakMap<AcpMessageItem, string>();
     }
 
     #findMessageItem(
@@ -325,7 +368,37 @@ export class AcpSession {
                 this.#activeStreamMessage.blocks.push(update.content);
                 this.#activeStreamMessage.meta = patchMeta(this.#activeStreamMessage.meta, update._meta);
             } else {
-                const existing = this.#findMessageItem(targetKind, chunkId, incomingMeta);
+                let existing = this.#findMessageItem(targetKind, chunkId, incomingMeta);
+                if (
+                    existing === undefined &&
+                    this.#replaying &&
+                    chunkId === undefined &&
+                    incomingPlurnk?.coordinate === undefined &&
+                    incomingPlurnk?.id === undefined
+                ) {
+                    if (
+                        this.#activeUnnamedReplayItem !== null &&
+                        this.#activeUnnamedReplayItem.kind === targetKind
+                    ) {
+                        const prev = this.#replayedMessagePrefix.get(this.#activeUnnamedReplayItem) ?? "";
+                        if (this.#activeUnnamedReplayItem.text.startsWith(prev + chunkText)) {
+                            existing = this.#activeUnnamedReplayItem;
+                        } else {
+                            this.#activeUnnamedReplayItem = null;
+                        }
+                    }
+                    if (existing === undefined) {
+                        for (let i = this.#preReplayIndex; i < this.#preReplayMessages.length; i += 1) {
+                            const candidateItem = this.#preReplayMessages[i]!;
+                            if (candidateItem.kind === targetKind && candidateItem.text.startsWith(chunkText)) {
+                                existing = candidateItem;
+                                this.#activeUnnamedReplayItem = candidateItem;
+                                this.#preReplayIndex = i + 1;
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (existing !== undefined) {
                     const existingPlurnk = (existing.meta?.plurnk ?? undefined) as
                         | Record<string, unknown>
@@ -335,9 +408,15 @@ export class AcpSession {
                     }
                     const wasUnpublished =
                         existingPlurnk?.published === false && incomingPlurnk?.published !== false;
-                    if (!wasUnpublished && existing.text.startsWith(chunkText)) {
-                        existing.meta = patchMeta(existing.meta, update._meta);
-                        return;
+                    if (!wasUnpublished) {
+                        const prevPrefix = this.#replayedMessagePrefix.get(existing) ?? "";
+                        const candidate = prevPrefix + chunkText;
+                        if (existing.text.startsWith(candidate)) {
+                            this.#replayedMessagePrefix.set(existing, candidate);
+                            existing.meta = patchMeta(existing.meta, update._meta);
+                            return;
+                        }
+                        this.#replayedMessagePrefix.delete(existing);
                     }
                     if (wasUnpublished || chunkText.startsWith(existing.text)) {
                         existing.meta = patchMeta(existing.meta, update._meta);
@@ -416,6 +495,9 @@ export class AcpSession {
         } else if (SessionUpdate.isToolCallContentChunk(update)) {
             this.#activeStreamMessage = null;
             let tc = this.toolCalls.get(update.toolCallId);
+            if (tc !== undefined && (tc.status === "completed" || tc.status === "failed")) {
+                return;
+            }
             if (tc === undefined) {
                 tc = {
                     kind: "tool_call",
@@ -533,7 +615,7 @@ export class AcpSession {
         } else if (SessionUpdate.isAvailableCommandsUpdate(update)) {
             this.availableCommands = [...update.availableCommands];
         } else if (SessionUpdate.isReplayComplete(update)) {
-            this.#activeStreamMessage = null;
+            this.endReplay();
             this.replayComplete = true;
         } else if (SessionUpdate.isPromptSuggestionsUpdate(update)) {
             this.promptSuggestions = [...update.suggestions];
@@ -551,12 +633,43 @@ export class AcpSession {
             };
         } else if (SessionUpdate.isNotice(update)) {
             this.#activeStreamMessage = null;
+            const incomingMeta = patchMeta(undefined, update._meta);
+            const incomingPlurnk = (incomingMeta?.plurnk ?? undefined) as
+                | { id?: unknown; coordinate?: unknown }
+                | undefined;
+            if (this.#replaying || incomingPlurnk?.id !== undefined || incomingPlurnk?.coordinate !== undefined) {
+                const duplicateNotice = this.items.some((item) => {
+                    if (item.kind !== "notice") return false;
+                    const itemPlurnk = (item.meta?.plurnk ?? undefined) as
+                        | { id?: unknown; coordinate?: unknown }
+                        | undefined;
+                    if (incomingPlurnk?.id !== undefined && itemPlurnk?.id === incomingPlurnk.id) {
+                        return true;
+                    }
+                    if (
+                        typeof incomingPlurnk?.coordinate === "string" &&
+                        incomingPlurnk.coordinate.length > 0 &&
+                        itemPlurnk?.coordinate === incomingPlurnk.coordinate
+                    ) {
+                        return true;
+                    }
+                    return (
+                        this.#replaying &&
+                        item.severity === update.severity &&
+                        item.title === update.title &&
+                        (item.description ?? undefined) === (update.description ?? undefined)
+                    );
+                });
+                if (duplicateNotice) {
+                    return;
+                }
+            }
             this.items.push({
                 kind: "notice",
                 severity: update.severity,
                 title: update.title,
                 ...(update.description !== undefined ? { description: update.description } : {}),
-                meta: patchMeta(undefined, update._meta),
+                meta: incomingMeta,
             });
         } else if (SessionUpdate.isStateUpdate(update)) {
             this.#activeStreamMessage = null;

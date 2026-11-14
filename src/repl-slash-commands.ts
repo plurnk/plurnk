@@ -9,6 +9,7 @@ import type {
     CreateElicitationRequest,
     CreateElicitationResponse,
     ElicitationContentValue,
+    ForkSessionResponse,
     RequestPermissionRequest,
     RequestPermissionResponse,
     SessionUpdate,
@@ -76,6 +77,7 @@ export interface ReplSlashCommandContext {
         sessionName: string,
         bindOpts?: { readonly initial?: boolean; readonly isChild?: boolean },
     ): Promise<AcpSession>;
+    adoptForkedSession(forked: ForkSessionResponse, requestedName?: string): Promise<AcpSession>;
     emitSessionBound(session: AcpSession): void;
     dispatchLine(rawLine: string): Promise<"continue" | "quit">;
 }
@@ -446,13 +448,13 @@ export const dispatchSlashCommand = async (
 
         if (cmd === "fork") {
             const session = ctx.getSession();
-            const forked = await client.forkSession(session.sessionId, ctx.getProjectRoot());
-            const nextName =
-                args[0] ??
-                (forked.sessionId.includes("#")
-                    ? forked.sessionId.slice(forked.sessionId.indexOf("#") + 1)
-                    : forked.sessionId);
-            ctx.setSession(await ctx.bindSession(ctx.getWorkspace(), nextName, { isChild: true }));
+            const requestedName = args[0] && args[0].length > 0 ? args[0] : undefined;
+            const forked = await client.forkSession(
+                session.sessionId,
+                ctx.getProjectRoot(),
+                requestedName !== undefined ? { sessionName: requestedName } : undefined,
+            );
+            ctx.setSession(await ctx.adoptForkedSession(forked, requestedName));
             streams.stdout.write(`session: ${ctx.getSessionName()} (forked)\n`);
             return "continue";
         }

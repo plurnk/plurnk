@@ -473,14 +473,24 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
 
         // Local-only subcommands require no daemon or env cascade ({§cli-markdown-projection})
         if (first === "render") {
+            if (positionals.length > 1) {
+                throw usageError(
+                    "Unexpected argument",
+                    `plurnk render accepts no positional arguments (got ${positionals.slice(1).join(" ")}).`,
+                );
+            }
             const defaultWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80;
             const width = typeof parsed.values.width === "string"
-                ? Number.parseInt(parsed.values.width, 10)
+                ? (/^\d+$/u.test(parsed.values.width.trim()) ? Number.parseInt(parsed.values.width.trim(), 10) : Number.NaN)
                 : defaultWidth;
             if (!Number.isInteger(width) || width < 1) {
                 throw usageError("Invalid --width", "plurnk render: --width must be a positive integer.");
             }
-            process.exitCode = await runRender(width);
+            const mermaidTimeoutOverride =
+                typeof parsed.values["mermaid-timeout-ms"] === "string"
+                    ? parsed.values["mermaid-timeout-ms"]
+                    : undefined;
+            process.exitCode = await runRender(width, mermaidTimeoutOverride);
             return;
         }
 
@@ -688,12 +698,20 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 : env.PLURNK_CLIENT_HISTORY_ENTRIES,
             10,
         );
-        const mermaidTimeoutMs = Number.parseInt(
+        const mermaidTimeoutRaw =
             typeof parsed.values["mermaid-timeout-ms"] === "string"
                 ? parsed.values["mermaid-timeout-ms"]
-                : env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS,
-            10,
-        );
+                : env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS;
+        const mermaidTimeoutMs =
+            mermaidTimeoutRaw !== undefined && /^\d+$/u.test(mermaidTimeoutRaw.trim())
+                ? Number.parseInt(mermaidTimeoutRaw.trim(), 10)
+                : Number.NaN;
+        if (!Number.isInteger(mermaidTimeoutMs) || mermaidTimeoutMs < 1) {
+            throw usageError(
+                "Invalid --mermaid-timeout-ms",
+                `--mermaid-timeout-ms / PLURNK_CLIENT_MERMAID_TIMEOUT_MS must be a positive integer (got ${JSON.stringify(mermaidTimeoutRaw)}).`,
+            );
+        }
         const color = typeof parsed.values.color === "string"
             ? parsed.values.color
             : env.PLURNK_CLIENT_COLOR;

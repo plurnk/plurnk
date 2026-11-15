@@ -1228,6 +1228,31 @@ test("{§cli-conformance} {§cli-repl-mode} {§cli-sessions-topology}: SessionPr
         state: "running",
     });
     assert.deepEqual(presenter.promptSuggestions, []);
+
+    const budgetFrames = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "warning",
+        title: "engine:capacity:budget_exceeded",
+        description: "Context exceeds budget. YOU MUST ONLY kill, move or note this turn.",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:capacity",
+                    kind: "budget_exceeded",
+                    level: "warn",
+                    message: "Context exceeds budget. YOU MUST ONLY kill, move or note this turn.",
+                },
+            },
+        },
+    });
+    assert.equal(budgetFrames.length, 1);
+    assert.equal(budgetFrames[0]?.kind, "tool_call");
+    if (budgetFrames[0]?.kind === "tool_call") {
+        assert.equal(budgetFrames[0].glyph, "📌");
+        assert.equal(budgetFrames[0].op, "info");
+        assert.equal(budgetFrames[0].statusCode, 200);
+        assert.equal(budgetFrames[0].outcome, "curating context");
+    }
 });
 
 

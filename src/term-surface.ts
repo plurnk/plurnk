@@ -49,6 +49,7 @@ import {
     type Role,
 } from "./color.ts";
 import {
+    displayWidth,
     formatCompactCount,
     formatDurationSummary,
     formatLoopMetrics,
@@ -72,6 +73,7 @@ export {
     colorEnabled,
     colorFgBgScheme,
     concluded,
+    displayWidth,
     editorTheme,
     formatCompactCount,
     formatDurationSummary,

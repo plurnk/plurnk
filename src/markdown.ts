@@ -1,24 +1,29 @@
 // Markdown, Mermaid diagram, operation block, and loop summary rendering
-// ({§cli-markdown-projection}, {§cli-rendering}).
+// ({§cli-markdown-projection}, {§cli-rendering}, {§cli-color-policy}).
 
+import { existsSync, readFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
-import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
-import { renderMermaidASCII } from "beautiful-mermaid";
+import { Script } from "node:vm";
+import { Markdown, type MarkdownOptions, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
 import stringWidth from "string-width";
-import { ModelText, paint } from "./color.ts";
+import { colorEnabled, hyperlink, ModelText, paint, styled } from "./color.ts";
+import { CLIENT_DEFAULTS_PATH, parseDefaults } from "./envdefaults.ts";
 import { formatActiveOperationLead, formatDuration } from "./presenter-formatters.ts";
 import type { ActiveLiveEntry } from "./session-presenter.ts";
+
+export const displayWidth = (text: string): number => stringWidth(text);
 
 export const markdownTheme: MarkdownTheme = {
     heading: (text) => paint(text, "bold"),
     link: (text) => paint(text, "reference"),
-    linkUrl: () => "",
+    linkUrl: (text) => paint(text, "dim"),
     code: (text) => paint(text, "reference"),
     codeBlock: (text) => text,
     codeBlockBorder: (text) => paint(text, "dim"),
     quote: (text) => paint(text, "dim", "italic"),
-    quoteBorder: () => paint("│", "dim"),
-    hr: () => paint("─", "dim"),
+    quoteBorder: (text) => paint(text, "dim"),
+    hr: (text) => paint(text, "dim"),
     listBullet: (text) => paint(text, "dim"),
     bold: (text) => paint(text, "bold"),
     italic: (text) => paint(text, "italic"),
@@ -26,32 +31,191 @@ export const markdownTheme: MarkdownTheme = {
     underline: (text) => text,
 };
 
-// {§cli-markdown-projection} — Mermaid ASCII diagram projection.
-export const renderMermaid = (source: string, width: number = 80): string | null => {
-    const trimmed = source.trim();
-    if (trimmed.length === 0) return null;
-    try {
-        const rendered = renderMermaidASCII(trimmed, { colorMode: "none" }).trimEnd();
-        if (rendered.length === 0) return null;
-        const lines = rendered.split("\n");
-        if (lines.some((line) => stringWidth(line) + 2 > width)) return null;
-        return lines.map((line) => `  ${line}`).join("\n");
-    } catch {
-        return null;
+const MARKDOWN_OPTIONS: MarkdownOptions = {
+    preserveOrderedListMarkers: true,
+    renderLatex: true,
+};
+
+const MERMAID_OPTIONS = {
+    useAscii: false,
+    paddingX: 1,
+    paddingY: 1,
+    boxBorderPadding: 0,
+    colorMode: "none",
+} satisfies AsciiRenderOptions;
+
+// {§cli-markdown-projection}: a JS timer cannot interrupt synchronous layout.
+// Only this fixed call executes as code; Mermaid remains data passed to the renderer.
+const mermaidProjection = new Script("project()", { filename: "plurnk-mermaid-render" });
+
+class MermaidTimeoutKnobError extends Error {
+    constructor(detail: string) {
+        super(detail);
+        this.name = "MermaidTimeoutKnobError";
     }
+}
+
+let packagedMermaidTimeoutRaw: string | undefined;
+const defaultMermaidTimeoutRaw = (): string => {
+    if (packagedMermaidTimeoutRaw === undefined) {
+        const defaults = existsSync(CLIENT_DEFAULTS_PATH)
+            ? parseDefaults(readFileSync(CLIENT_DEFAULTS_PATH, "utf8"))
+            : {};
+        packagedMermaidTimeoutRaw = defaults.PLURNK_CLIENT_MERMAID_TIMEOUT_MS ?? "";
+    }
+    return packagedMermaidTimeoutRaw;
+};
+
+const resolveMermaidTimeoutMs = (override?: number | string): number => {
+    if (typeof override === "number") {
+        if (!Number.isInteger(override) || override < 1) {
+            throw new MermaidTimeoutKnobError("PLURNK_CLIENT_MERMAID_TIMEOUT_MS must be a positive integer.");
+        }
+        return override;
+    }
+    const raw =
+        override !== undefined
+            ? override
+            : process.env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS !== undefined
+              ? process.env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS
+              : defaultMermaidTimeoutRaw();
+    const trimmed = raw.trim();
+    if (!/^\d+$/u.test(trimmed)) {
+        throw new MermaidTimeoutKnobError("PLURNK_CLIENT_MERMAID_TIMEOUT_MS must be a positive integer.");
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        throw new MermaidTimeoutKnobError("PLURNK_CLIENT_MERMAID_TIMEOUT_MS must be a positive integer.");
+    }
+    return parsed;
+};
+
+const renderMermaidLines = (source: string): string[] => {
+    const lines = renderMermaidASCII(source, MERMAID_OPTIONS)
+        .replaceAll("\r\n", "\n")
+        .split("\n")
+        .map((line) => line.trimEnd());
+    while (lines[0]?.length === 0) lines.shift();
+    while (lines.at(-1)?.length === 0) lines.pop();
+    if (lines.length === 0) throw new Error("Mermaid produced no diagram.");
+    return lines;
+};
+
+const transposeFlowchart = (source: string): string => {
+    const transpose = (_match: string, prefix: string, direction: string): string =>
+        `${prefix}${/^(?:LR|RL)$/iu.test(direction) ? "TD" : "LR"}`;
+    return source
+        .replace(/^([ \t]*(?:graph|flowchart)[ \t]+)(TD|TB|BT|LR|RL)(?=[ \t]*(?:;|\r?$))/imu, transpose)
+        .replace(/^([ \t]*direction[ \t]+)(TD|TB|BT|LR|RL)(?=[ \t]*\r?$)/gimu, transpose);
+};
+
+const widestLine = (lines: readonly string[]): number =>
+    Math.max(0, ...lines.map(displayWidth));
+
+// {§cli-markdown-projection} — Preserve authored layout whenever it fits the viewport; retry
+// once with transposed flowchart orientation; otherwise return labeled dim source.
+export const renderMermaid = (
+    source: string,
+    viewport: number = process.stdout.columns ?? 80,
+    timeoutMs?: number | string,
+): string[] => {
+    const cleanSource = ModelText.plain(source).replaceAll("\r\n", "\n");
+    const width = Math.max(1, Math.trunc(viewport));
+    let failure: string;
+    try {
+        const timeout = resolveMermaidTimeoutMs(timeoutMs);
+        const projected = mermaidProjection.runInNewContext(
+            {
+                project: () => {
+                    const authored = renderMermaidLines(cleanSource);
+                    if (widestLine(authored) <= width) return authored;
+                    const alternateSource = transposeFlowchart(cleanSource);
+                    const alternate = alternateSource === cleanSource ? null : renderMermaidLines(alternateSource);
+                    if (alternate !== null && widestLine(alternate) <= width) return alternate;
+                    return Math.min(
+                        widestLine(authored),
+                        alternate === null ? Number.POSITIVE_INFINITY : widestLine(alternate),
+                    );
+                },
+            },
+            { timeout },
+        ) as string[] | number;
+        if (Array.isArray(projected)) return projected;
+        failure = ` — rendered width ${String(projected)} exceeds ${String(width)}`;
+    } catch (cause) {
+        failure = " — diagram failed to render";
+        if (cause instanceof MermaidTimeoutKnobError) failure += `: ${cause.message}`;
+    }
+    return [
+        styled("dim")(`💻 mermaid${failure}`),
+        ...cleanSource.split("\n").map((line) => styled("dim")(`│ ${line}`)),
+    ];
+};
+
+type NativeToken = { type: string };
+type NativeCode = NativeToken & { type: "code"; lang?: string; text: string };
+type NativeLink = NativeToken & { type: "link"; text: string; href: string; tokens?: NativeToken[] };
+type NativeHooks = {
+    renderToken(token: NativeToken, width: number, nextTokenType?: string, styleContext?: unknown): string[];
+    renderInlineTokens(tokens: NativeToken[], styleContext?: unknown): string;
+};
+
+// {§cli-markdown-projection}, {§cli-color-policy} — Instance-local adapter hooks for nested
+// Mermaid block widths and color-policy-governed OSC 8 hyperlinks; never mutates Markdown.prototype.
+const customize = (markdown: Markdown, mermaidTimeoutMs?: number | string): Markdown => {
+    const hooks = markdown as unknown as NativeHooks;
+    if (typeof hooks.renderToken !== "function" || typeof hooks.renderInlineTokens !== "function") {
+        throw new TypeError("pi-tui Markdown rendering hooks are unavailable.");
+    }
+    const renderToken = hooks.renderToken.bind(markdown);
+    const renderInlineTokens = hooks.renderInlineTokens.bind(markdown);
+    hooks.renderToken = (token, width, nextTokenType, styleContext) => {
+        if (token.type === "code") {
+            const code = token as NativeCode;
+            if (code.lang?.trim().toLowerCase() === "mermaid") {
+                return [
+                    ...renderMermaid(code.text, width, mermaidTimeoutMs),
+                    ...(nextTokenType && nextTokenType !== "space" ? [""] : []),
+                ];
+            }
+        }
+        return renderToken(token, width, nextTokenType, styleContext);
+    };
+    hooks.renderInlineTokens = (tokens, styleContext) =>
+        renderInlineTokens(
+            tokens.map((token) => {
+                if (token.type !== "link") return token;
+                const link = token as NativeLink;
+                const text = renderInlineTokens(link.tokens ?? [], styleContext);
+                const label = hyperlink(link.href, styled("reference")(text));
+                const hrefForComparison = link.href.startsWith("mailto:") ? link.href.slice(7) : link.href;
+                const sameTarget = link.text === link.href || link.text === hrefForComparison;
+                return {
+                    type: "text",
+                    text: sameTarget ? label : `${label} ${styled("dim")(`(${link.href})`)}`,
+                };
+            }),
+            styleContext,
+        );
+    return markdown;
 };
 
 // {§cli-markdown-projection} — Terminal Markdown projection via pi-tui Markdown + Mermaid.
-export const renderMarkdownDocument = (markdown: string, width: number = 80): string => {
-    const clean = ModelText.plain(markdown).replace(/\r\n/gu, "\n");
+export const renderMarkdownDocument = (
+    markdown: string,
+    viewport: number = process.stdout.columns ?? 80,
+    mermaidTimeoutMs?: number | string,
+): string => {
+    const clean = ModelText.plain(markdown).replaceAll("\r\n", "\n");
     if (clean.trim().length === 0) return "";
-    const withMermaid = clean.replace(
-        /^(`{3,}|~{3,})mermaid[ \t]*\n([\s\S]*?)^\1[ \t]*$/gmu,
-        (full, _fence: string, body: string) => renderMermaid(body, width) ?? full,
-    );
-    const md = new Markdown(withMermaid, 0, 0, markdownTheme);
-    const lines = md.render(Math.max(20, width));
-    return lines.join("\n").replace(/\n+$/u, "");
+    const width = Math.max(1, Math.trunc(viewport));
+    const md = customize(new Markdown(clean, 0, 0, markdownTheme, undefined, MARKDOWN_OPTIONS), mermaidTimeoutMs);
+    const rendered = md
+        .render(width)
+        .map((line) => line.trimEnd())
+        .join("\n")
+        .trimEnd();
+    return colorEnabled() ? rendered : stripVTControlCharacters(rendered);
 };
 
 // {§cli-markdown-projection} — Live 3-line rolling reasoning formatting with 💭 lead and 3-space indent.
@@ -74,11 +238,12 @@ export const renderModelReply = (
         readonly status?: number | null;
         readonly aside?: string | null;
         readonly voice?: string | null;
+        readonly mermaidTimeoutMs?: number | string;
     },
 ): string => {
     const op = opts?.op ?? "send";
     if (op === "outside-") {
-        return renderMarkdownDocument(text, columns);
+        return renderMarkdownDocument(text, columns, opts?.mermaidTimeoutMs);
     }
     const status = opts?.status ?? 200;
     const failed = status >= 400 || op === "fail";
@@ -103,7 +268,7 @@ export const renderModelReply = (
     const lead = `${paint(glyph, failed ? "failure" : "dim")}${
         cleanAside.length > 0 ? ` ${paint(cleanAside, "dim", "italic")}` : ""
     }`;
-    const body = renderMarkdownDocument(text, columns);
+    const body = renderMarkdownDocument(text, columns, opts?.mermaidTimeoutMs);
     return body.length > 0 ? `${lead}\n${body}` : lead;
 };
 
@@ -113,13 +278,14 @@ export const renderNoteBlock = (opts: {
     readonly aside?: string | null;
     readonly body: string;
     readonly columns?: number;
+    readonly mermaidTimeoutMs?: number | string;
 }): string => {
     const cleanAside = opts.aside ? ModelText.plain(opts.aside).trim() : "";
     const sep = opts.glyph.endsWith("\uFE0F") ? "  " : " ";
     const lead = `${paint(opts.glyph, "dim")}${
         cleanAside.length > 0 ? `${sep}${paint(cleanAside, "dim", "italic")}` : ""
     }`;
-    const rendered = renderMarkdownDocument(opts.body, opts.columns ?? 80);
+    const rendered = renderMarkdownDocument(opts.body, opts.columns ?? 80, opts.mermaidTimeoutMs);
     if (rendered.trim().length === 0) {
         return lead;
     }

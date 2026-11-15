@@ -293,6 +293,7 @@ export const runTermViewport = async (
                 aside: frame.aside,
                 body: frame.noteBody ?? frame.contentLines.join("\n"),
                 columns: surface.columns,
+                mermaidTimeoutMs: options.mermaidTimeoutMs,
             });
             surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
         } else {
@@ -882,6 +883,7 @@ export const runTermViewport = async (
                         status: plurnkMeta?.status ?? 200,
                         aside: plurnkMeta?.attrs?.aside ?? null,
                         voice: isOutsideHistory ? null : extractMessageVoice(plurnkMeta),
+                        mermaidTimeoutMs: options.mermaidTimeoutMs,
                     }),
                 );
             }
@@ -1196,6 +1198,7 @@ export const runTermViewport = async (
                                     status: frame.status,
                                     aside: frame.aside,
                                     voice: frame.voice,
+                                    mermaidTimeoutMs: options.mermaidTimeoutMs,
                                 }),
                                 frame.messageId,
                             );

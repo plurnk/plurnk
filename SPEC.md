@@ -51,6 +51,7 @@ plurnk [options]                             # Term mode (no positionals, TTY st
 | `--max-turns <n>` | string | Model-call budget for the prompt's session tree (`PLURNK_CLIENT_MAX_TURNS`). |
 | `--preview-lines <n>` | string | Lines of operation body and concluded execution output shown beneath its row (`PLURNK_CLIENT_PREVIEW_LINES`). |
 | `--history-entries <n>` | string | Non-negative recent entry count restored on Term/REPL attach; `0` disables history (`PLURNK_CLIENT_HISTORY_ENTRIES`). |
+| `--mermaid-timeout-ms <n>` | string | Positive Mermaid rendering deadline per diagram in milliseconds (`PLURNK_CLIENT_MERMAID_TIMEOUT_MS`). |
 | `--color <when>` | string | `always`, `auto`, or `never` (`PLURNK_CLIENT_COLOR`). |
 | `--timeout <s>` | string | Cancel prompt loop via `session/cancel` after `<s>` seconds; CLI exits `3` with `"timedOut": true` (`PLURNK_CLIENT_TIMEOUT`). |
 | `--share <folder>` | string | Write unredacted `workspace.share` into `<folder>` (`~/` expanded, refuses overwrite) when prompt/session ends; `/share <folder>` mid-session (`PLURNK_CLIENT_SHARE`). |

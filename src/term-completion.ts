@@ -11,7 +11,7 @@ export interface PathPartial {
     readonly partial: string;
 }
 
-const DSL_TARGET_PARTIAL = /^(?:await\s+)?plurnk\.[A-Za-z0-9_]+\s*\(\s*\{\s*(?:path|from|to|target)\s*:\s*["']([^"'\n]*)$/u;
+const EXPRESSION_TARGET_PARTIAL = /^(?:await\s+)?plurnk\.[A-Za-z0-9_]+\s*\(\s*\{\s*(?:path|from|to|target)\s*:\s*["']([^"'\n]*)$/u;
 
 export const pathPartial = (line: string): PathPartial | null => {
     const verb = line.match(/^\/(?:import|script)\s+(\S*)$/u);
@@ -22,7 +22,7 @@ export const pathPartial = (line: string): PathPartial | null => {
     if (envImport) return { kind: "local", partial: envImport[1]! };
     const at = line.match(/(?:^|\s)@(\S*)$/u);
     if (at) return { kind: "reference", partial: at[1]! };
-    const target = line.slice(line.lastIndexOf("\n") + 1).match(DSL_TARGET_PARTIAL);
+    const target = line.slice(line.lastIndexOf("\n") + 1).match(EXPRESSION_TARGET_PARTIAL);
     if (target) return { kind: "target", partial: target[1]! };
     return null;
 };
@@ -304,7 +304,7 @@ export const completeInput = async (
     const op = dslOpPartial(line);
     if (op !== null) {
         const [values, prefix] = completeOps(op);
-        return namespace(values, prefix, () => "Plurnk operation", options);
+        return namespace(values, prefix, () => "MCP expression", options);
     }
 
     const partial = pathPartial(line);

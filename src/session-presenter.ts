@@ -147,6 +147,7 @@ export class SessionPresenter {
     #replayingHistory = false;
     #pendingHistoryLost = false;
     #awaitingTurnCount = 0;
+    #budgetNoticeSeq = 0;
     #loopConcluded = false;
     #promptSuggestions: readonly string[] = [];
 
@@ -1015,6 +1016,36 @@ export class SessionPresenter {
             return true;
         }
 
+        // Over-budget curation moment ({§cli-rendering}): render green/dim as `📌 — curating context`.
+        if (
+            (rawNotice?.source === "engine:capacity" && rawNotice?.kind === "budget_exceeded") ||
+            legacyTitle === "engine:capacity:budget_exceeded"
+        ) {
+            this.#flushPendingHistoryLost(frames);
+            frames.push({
+                kind: "tool_call",
+                toolCallId: `notice-budget-exceeded-${++this.#budgetNoticeSeq}`,
+                glyph: "📌",
+                op: "info",
+                origin: "_plurnk",
+                title: "📌 — curating context",
+                target: null,
+                scope: null,
+                destination: null,
+                pattern: null,
+                fields: null,
+                count: null,
+                aside: null,
+                noteBody: null,
+                status: "completed",
+                statusCode: 200,
+                outcome: "curating context",
+                contentLines: [],
+                outputLines: [],
+            });
+            return true;
+        }
+
         return false;
     }
 
@@ -1403,35 +1434,6 @@ export class SessionPresenter {
                           diagnostic?: unknown;
                       })
                     : undefined;
-
-            // Over-budget curation moment ({§cli-rendering}): render as `📌 — curating context`.
-            if (
-                (opName === "error" || opName === "fail") &&
-                problemRec?.type === "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget"
-            ) {
-                frames.push({
-                    kind: "tool_call",
-                    toolCallId: update.toolCallId,
-                    glyph: "📌",
-                    op: "info",
-                    origin,
-                    title: "info — curating context",
-                    target: null,
-                    scope: null,
-                    destination: null,
-                    pattern: null,
-                    fields: null,
-                    count: null,
-                    aside: null,
-                    noteBody: null,
-                    status: "completed",
-                    statusCode: 200,
-                    outcome: "curating context",
-                    contentLines: [],
-                    outputLines: [],
-                });
-                return frames;
-            }
 
             const rawAside =
                 typeof rawInput?.aside === "string" && rawInput.aside.trim().length > 0

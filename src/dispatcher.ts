@@ -277,10 +277,11 @@ subcommands:
   personas ...              List or manage this workspace's persona roles.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
-  script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
-                          trace, exit by worst op status. Honors --workspace/--yolo
-                          /--project-root + workspace-open settings. The daemon owns the
-                          grammar; the client just feeds the file.
+  script <file.plk>       run a .plk file: feed its MCP expressions to op.parse,
+                          render the trace, exit by worst op status. Honors
+                          --workspace/--yolo/--project-root + workspace-open
+                          settings. The daemon owns the grammar; the client
+                          just feeds the file.
 `;
 
 const FAMILY_COMMANDS = new Set(["mcp", "skills", "members", "env", "schedule", "personas"]);

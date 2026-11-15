@@ -858,10 +858,10 @@ export const runReplSession = async (
             return "continue";
         }
 
-        const isCodeStatement =
+        const isMcpExpression =
             !rawLine.trimStart().startsWith(": ") &&
             /^(?:await\s+)?plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
-        if (isCodeStatement) {
+        if (isMcpExpression) {
             try {
                 const res = await client.action<{
                     readonly results?: ReadonlyArray<{

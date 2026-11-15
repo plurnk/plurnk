@@ -1,5 +1,18 @@
 # @plurnk/plurnk
 
+## 6.1.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Upgrade
+
+Upgrade this client and `@plurnk/plurnk-service` together to `6.1.0`.
+
+- Adopt `@agentclientprotocol/sdk` `^2.7.0` `replay_complete` session replay boundaries, inline `skill` prompt blocks and `available_commands_update` skill entries, and prompt suggestions.
+- Migrate interactive terminal nomenclature, CLI flags, test tiers (`test/term/`), and modules from TUI to **Plurnk Term**, align composer `Ctrl+Enter`, review selection keys, and `Shift+Tab` mode cycling, and retire `Alt+Y` (#262, #263).
+- Point `/learn` prompt expansion to `mcp:///plurnk/skills.json`, isolate `seedDemoProject` from host Git configuration, and resolve non-UI CLI, session lifecycle, onboarding, and reconnect edge cases (#254, #261).
+- Bump `@plurnk/plurnk-contracts` to `^7.4.0` (compatible with `7.5.0` and `@plurnk/plurnk-service` `6.1.0`).
+
 ## 6.0.0
 
 > Bare `#N` issue citations reference our private development forge rather than public GitHub issues — our apologies for the opaque provenance; open public bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

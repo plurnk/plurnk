@@ -5,16 +5,17 @@
 - **Perpetual Context.** Like a "perpetual stew" for your tokens, Plurnk
   discards compaction entirely in favor of ongoing, model-driven context
   curation.
-- **Addressable Memory.** Observations, MCP expressions and the model's own reasoning
+- **Addressable Memory.** Observations, tool calls, and the model's own reasoning
   keep addresses it can read back and curate; its notes return every
   turn in its own voice.
 - **Universal Patterns.** Your entire repo gets indexed on entry, letting the
   model explore and edit the project by regex, XPath, JSONPath, full text, and
   tree-sitter symbols.
 
-Plurnk is an agentic virtual machine: each turn the model submits a batch of
-MCP expressions, the machine executes them against one address space and
-journals the results, and the model reads the journal and submits the next. Files, tools,
+Plurnk is an agentic virtual machine: each turn the model emits parallel calls
+through one universal `mcp` tool, the machine executes them against one address
+space and journals the results, and the model reads the journal and emits the
+next. Files, tools,
 delegated sessions, and the model's own past all carry addresses; one selection
 algebra reaches every one of them; the edges speak ACPv2, MCP, Agent Skills,
 and Agent Plugins. Read the full argument in
@@ -49,8 +50,9 @@ plurnk
 Run from your project directory. Or try it without a global install:
 `npx @plurnk/plurnk`.
 
-Give it a task in ordinary language. The model uses the MCP expression language;
-you do not need to learn it to use Plurnk. If no model is configured on an
+Give it a task in ordinary language. The model drives workspace operations
+through a single universal `mcp` tool; you do not need to learn its schemas to
+use Plurnk. If no model is configured on an
 interactive terminal, `plurnk` offers `plurnk onboard` to connect a local
 server or provider key and verify a readiness turn, or [choose one below](#models).
 The first launch starts the included service, which keeps running for later
@@ -163,7 +165,7 @@ plurnk daemon config defaults
 - [Installation and configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
 - [Browser interface](https://github.com/plurnk/plurnk-web)
 - [Architecture and extension points](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)
-- [The MCP expression language](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/plurnk.md)
+- [Model operations and contracts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/SPEC.md)
 - [Client reference](SPEC.md) and [terminal design](TERM.md)
 
 ## Contributing

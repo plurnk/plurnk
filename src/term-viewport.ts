@@ -836,13 +836,7 @@ export const runTermViewport = async (
                     }
                 }
             } else if (
-                (rec.kind === "agent_message" ||
-                    (rec.kind === "agent_thought" &&
-                        ((typeof rec.id === "string" && rec.id.startsWith("outside-")) ||
-                            (rec.meta as { plurnk?: { op?: unknown; outside?: unknown } } | undefined)?.plurnk?.op ===
-                                "outside-" ||
-                            (rec.meta as { plurnk?: { outside?: unknown } } | undefined)?.plurnk?.outside !==
-                                undefined))) &&
+                rec.kind === "agent_message" &&
                 typeof rec.text === "string" &&
                 rec.text.length > 0
             ) {
@@ -873,16 +867,12 @@ export const runTermViewport = async (
                 if (typeof plurnkMeta?.turnSeq === "number" && plurnkMeta.turnSeq > 0) {
                     presenter.turns = Math.max(presenter.turns, plurnkMeta.turnSeq);
                 }
-                const isOutsideHistory =
-                    (typeof rec.id === "string" && rec.id.startsWith("outside-")) ||
-                    plurnkMeta?.op === "outside-" ||
-                    (plurnkMeta as { outside?: unknown } | undefined)?.outside !== undefined;
                 surface.append(
                     renderModelReply(rec.text, surface.columns, {
-                        op: isOutsideHistory ? "outside-" : (plurnkMeta?.op ?? "send"),
+                        op: plurnkMeta?.op ?? "send",
                         status: plurnkMeta?.status ?? 200,
                         aside: plurnkMeta?.attrs?.aside ?? null,
-                        voice: isOutsideHistory ? null : extractMessageVoice(plurnkMeta),
+                        voice: extractMessageVoice(plurnkMeta),
                         mermaidTimeoutMs: options.mermaidTimeoutMs,
                     }),
                 );
@@ -1189,9 +1179,7 @@ export const runTermViewport = async (
                         retireLiveReasoning();
                         currentTurns = presenter.turns;
                         if (surface !== null && frame.text.length > 0) {
-                            if (frame.op !== "outside-") {
-                                suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
-                            }
+                            suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
                             surface.addResponse(
                                 renderModelReply(frame.text, surface.columns, {
                                     op: frame.op,
@@ -1237,7 +1225,7 @@ export const runTermViewport = async (
                         break;
                     case "notice":
                         if (surface !== null) {
-                            const accent = frame.severity === "info" ? "dim" : "failure";
+                            const accent = frame.severity === "info" ? "dim" : frame.severity === "warning" ? "warning" : "failure";
                             surface.append(paint(ModelText.plain(frame.formatted), accent));
                             updateSurfaceStatus();
                         } else {

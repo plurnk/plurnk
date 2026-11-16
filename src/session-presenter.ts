@@ -1157,41 +1157,23 @@ export class SessionPresenter {
                           plurnk?: {
                               op?: string;
                               status?: number;
-                              loopSeq?: number;
-                              turnSeq?: number;
-                              turn?: number;
-                              outside?: unknown;
-                          };
-                      }
-                    | undefined
-            )?.plurnk;
-            const thoughtCoord = extractCoordinateSeqs(update.messageId);
-            this.#syncLoopAndTurn(
-                thoughtPlurnk?.loopSeq ?? thoughtCoord.loopSeq,
-                (typeof thoughtPlurnk?.turnSeq === "number" ? thoughtPlurnk.turnSeq : thoughtPlurnk?.turn) ??
-                    thoughtCoord.turnSeq,
-            );
-            const deltaText = SessionUpdate.isAgentThoughtChunk(update)
-                ? contentBlockToText(update.content)
-                : (update.content ?? []).map(contentBlockToText).join("");
-            const isOutside =
-                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
-                thoughtPlurnk?.op === "outside-" ||
-                thoughtPlurnk?.outside !== undefined;
-            if (isOutside) {
-                this.#retireReasoning(frames);
-                this.#loopConcluded = false;
-                frames.push({
-                    kind: "reply_chunk",
-                    messageId: update.messageId,
-                    text: deltaText,
-                    op: "outside-",
-                    status: typeof thoughtPlurnk?.status === "number" ? thoughtPlurnk.status : 200,
-                    aside: null,
-                });
-                return frames;
-            }
-            if (SessionUpdate.isAgentThought(update)) {
+                                loopSeq?: number;
+                                turnSeq?: number;
+                                turn?: number;
+                            };
+                        }
+                      | undefined
+              )?.plurnk;
+              const thoughtCoord = extractCoordinateSeqs(update.messageId);
+              this.#syncLoopAndTurn(
+                  thoughtPlurnk?.loopSeq ?? thoughtCoord.loopSeq,
+                  (typeof thoughtPlurnk?.turnSeq === "number" ? thoughtPlurnk.turnSeq : thoughtPlurnk?.turn) ??
+                      thoughtCoord.turnSeq,
+              );
+              const deltaText = SessionUpdate.isAgentThoughtChunk(update)
+                  ? contentBlockToText(update.content)
+                  : (update.content ?? []).map(contentBlockToText).join("");
+              if (SessionUpdate.isAgentThought(update)) {
                 this.#reasoningBuffer = deltaText;
             } else {
                 this.#reasoningBuffer += deltaText;
@@ -1745,7 +1727,6 @@ export class SessionPresenter {
                                   repliedTo?: readonly string[];
                                   repliedToSources?: readonly string[];
                               };
-                              outside?: unknown;
                           };
                       }
                     | undefined
@@ -1759,12 +1740,8 @@ export class SessionPresenter {
             const text = SessionUpdate.isAgentMessageChunk(update)
                 ? contentBlockToText(update.content)
                 : (update.content ?? []).map(contentBlockToText).join("");
-            const isOutside =
-                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
-                metaPlurnk?.op === "outside-" ||
-                metaPlurnk?.outside !== undefined;
-            const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "send");
-            const voice = isOutside || effectiveOp === "wait" ? null : extractMessageVoice(metaPlurnk);
+            const effectiveOp = metaPlurnk?.op ?? "send";
+            const voice = effectiveOp === "wait" ? null : extractMessageVoice(metaPlurnk);
             if (effectiveOp === "wait") {
                 this.doing = null;
                 this.buildStatusBar();

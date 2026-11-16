@@ -59,13 +59,13 @@ test("{§cli-interactive-command-discovery} {§cli-subcommands}: expandLearnComm
     const bare = expandLearnCommand("/learn");
     assert.ok(bare !== null);
     assert.match(bare, /mcp:\/\/\/plurnk\/skills\.json/u);
-    assert.match(bare, /plurnk\.skills/u);
+    assert.match(bare, /`skills` tool/u);
 
     const targeted = expandLearnCommand("  /learn   deploy staging safely  ");
     assert.ok(targeted !== null);
     assert.match(targeted, /mcp:\/\/\/plurnk\/skills\.json/u);
     assert.match(targeted, /deploy staging safely/u);
-    assert.match(targeted, /plurnk\.skills/u);
+    assert.match(targeted, /`skills` tool/u);
 
     const completedLearn = await completeInput("/lea", { cwd: "/tmp", getProjectRoot: () => "/tmp" });
     assert.ok(completedLearn.suggestions.some((s) => s.value === "/learn"));

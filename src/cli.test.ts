@@ -471,13 +471,13 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
         sessionUpdate: "notice",
         severity: "info",
         title: "engine:turn:results_pending",
-        description: "All Open Work resolved, but 1 MCP expression delivered unread log receipts. Submit `plurnk.done({})` if already finished.",
+        description: 'All Open Work resolved, but 1 operation delivered unread log receipts. Submit `mcp({ server: "plurnk", tool: "done", arguments: { text: "..." } })` if already finished.',
         _meta: {
             plurnk: {
                 notice: {
                     source: "engine:turn",
                     kind: "results_pending",
-                    message: "All Open Work resolved, but 1 MCP expression delivered unread log receipts. Submit `plurnk.done({})` if already finished.",
+                    message: 'All Open Work resolved, but 1 operation delivered unread log receipts. Submit `mcp({ server: "plurnk", tool: "done", arguments: { text: "..." } })` if already finished.',
                 },
             },
         },

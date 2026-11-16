@@ -7,7 +7,7 @@ flowchart TB
         A2A["A2A spec — agent-to-agent"]
         SKILLS["Agent Skills spec — instruction plane"]
     end
-    PLURNK["Plurnk daemon (one process)<br/>MCP expression loop · durable SQLite state · sessions · log curation"]
+    PLURNK["Plurnk daemon (one process)<br/>Universal mcp tool loop · durable SQLite state · sessions · log curation"]
     MODELS["Model providers: DeepSeek, OpenAI, Anthropic, local…"]
     CLIENTS["Any ACP client: CLI / Term / web (Plurnk's own clients live in separate repos)"]
     MCPS[["Any MCP server: filesystem, forge, search…"]]

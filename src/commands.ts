@@ -54,9 +54,9 @@ export const expandLearnCommand = (rawLine: string): string | null => {
     if (match === null) return null;
     const instructions = (match[1] ?? "").trim();
     if (instructions.length === 0) {
-        return "Read `mcp:///plurnk/skills.json` if needed, then distill the reusable workflow, commands, and non-obvious constraints established in this session into `<project>/.agents/skills/<name>/SKILL.md` (or `$XDG_CONFIG_HOME/plurnk/skills/<name>/SKILL.md` if user-wide) and verify it via `plurnk.skills`.";
+        return "Read `mcp:///plurnk/skills.json` if needed, then distill the reusable workflow, commands, and non-obvious constraints established in this session into `<project>/.agents/skills/<name>/SKILL.md` (or `$XDG_CONFIG_HOME/plurnk/skills/<name>/SKILL.md` if user-wide) and verify it via the `skills` tool.";
     }
-    return `Read \`mcp:///plurnk/skills.json\` if needed, then create or update a reusable \`SKILL.md\` for: ${instructions}, and verify it via \`plurnk.skills\`.`;
+    return `Read \`mcp:///plurnk/skills.json\` if needed, then create or update a reusable \`SKILL.md\` for: ${instructions}, and verify it via the \`skills\` tool.`;
 };
 
 export const renderCommandReference = (): string =>

@@ -345,7 +345,7 @@ export const extractCoordinateSeqs = (
     id: unknown,
 ): { readonly loopSeq?: number; readonly turnSeq?: number } => {
     if (typeof id !== "string" || id.length === 0) return {};
-    const m = /^(?:outside-)?(\d+)\/(\d+)\/(?:\d+|reasoning)$/u.exec(id);
+    const m = /^(\d+)\/(\d+)\/(?:\d+|reasoning)$/u.exec(id);
     if (m === null) return {};
     const loopSeq = Number.parseInt(m[1]!, 10);
     const turnSeq = Number.parseInt(m[2]!, 10);

@@ -242,9 +242,6 @@ export const renderModelReply = (
     },
 ): string => {
     const op = opts?.op ?? "send";
-    if (op === "outside-") {
-        return renderMarkdownDocument(text, columns, opts?.mermaidTimeoutMs);
-    }
     const status = opts?.status ?? 200;
     const failed = status >= 400 || op === "fail";
     const trimmedVoice =

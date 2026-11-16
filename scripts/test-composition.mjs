@@ -137,8 +137,9 @@ try {
                 })}\n\n`);
                 return;
             }
-            const response = scriptedResponses.shift()
-                ?? `plurnk.done(${JSON.stringify({ text: `composition ok: ${request.model}` })})`;
+            const toolCalls = scriptedResponses.shift() ?? [
+                { server: "plurnk", tool: "done", arguments: { text: `composition ok: ${request.model}` } },
+            ];
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -147,11 +148,26 @@ try {
             const frame = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
             frame({
                 id: "composition", object: "chat.completion.chunk", created: 1, model: request.model,
-                choices: [{ index: 0, delta: { role: "assistant", content: response }, finish_reason: null }],
+                choices: [{
+                    index: 0,
+                    delta: {
+                        role: "assistant",
+                        tool_calls: toolCalls.map((call, index) => ({
+                            index,
+                            id: `call_comp_${index}`,
+                            type: "function",
+                            function: {
+                                name: "mcp",
+                                arguments: JSON.stringify(call),
+                            },
+                        })),
+                    },
+                    finish_reason: null,
+                }],
             });
             frame({
                 id: "composition", object: "chat.completion.chunk", created: 1, model: request.model,
-                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
                 usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
             });
             res.end("data: [DONE]\n\n");
@@ -260,12 +276,20 @@ try {
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "plurnk.work({ session: \"guesser1\", prompt: \"Create child.txt and conclude.\" })\n\n"
-            + "plurnk.wait({ text: \"Waiting for guesser1.\" })",
-        "plurnk.edit({ path: \"child.txt\", content: \"created by packed child\" })\n\n"
-            + "plurnk.note({ text: \"Confirming the write.\" })",
-        "plurnk.done({ text: \"Child work complete.\" })",
-        "plurnk.done({ text: \"packed descendant proposal complete\" })",
+        [
+            { server: "plurnk", tool: "work", arguments: { target: "session://guesser1", text: "Create child.txt and conclude." } },
+            { server: "plurnk", tool: "wait", arguments: {}, aside: "Waiting for guesser1." },
+        ],
+        [
+            { server: "plurnk", tool: "edit", arguments: { path: "child.txt", text: "created by packed child" } },
+            { server: "plurnk", tool: "note", arguments: { text: "Confirming the write." } },
+        ],
+        [
+            { server: "plurnk", tool: "done", arguments: { text: "Child work complete." } },
+        ],
+        [
+            { server: "plurnk", tool: "done", arguments: { text: "packed descendant proposal complete" } },
+        ],
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [

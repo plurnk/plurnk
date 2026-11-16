@@ -538,7 +538,7 @@
       },
       "isAgentMessageChunk": {
         "posture": "native",
-        "evidence": ["src/session-presenter.ts — reply_chunk and outside text projection"]
+        "evidence": ["src/session-presenter.ts — reply_chunk projection"]
       },
       "isAgentMessage": {
         "posture": "native",

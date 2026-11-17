@@ -2104,7 +2104,141 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     const stripText = stripVTControlCharacters(
         renderActiveLiveLine(presenter.activeLiveEntries, 80, Date.now() + 5_000),
     );
-    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 work \(session:\/\/\/helper\) \S+$/u);
+    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 helper \S+$/u);
+
+    // Stream with a good aside renders <lead> <aside> <elapsed> instead of (<target>),
+    // trims long asides proportionally before dropping sibling entries to +N more,
+    // and falls back to (<target>) when aside is absent or degenerate ({§cli-rendering}, {§cli-session-status}, #266).
+    const baseStarted = 1_700_000_000_000;
+    const nowAt3m = baseStarted + 183_000;
+    const withAsides = stripVTControlCharacters(
+        renderActiveLiveLine(
+            [
+                {
+                    key: "1/1/1",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///7a559e1f",
+                    aside: "launch Plurnk campaign",
+                    startedAt: baseStarted,
+                },
+                {
+                    key: "1/1/2",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///78eafee4",
+                    aside: "launch Bare Pi campaign",
+                    startedAt: baseStarted + 5_000,
+                },
+                {
+                    key: "review1",
+                    kind: "worker",
+                    glyph: "🐜",
+                    op: "work",
+                    target: "session:///review1",
+                    startedAt: baseStarted + 60_000,
+                },
+            ],
+            120,
+            nowAt3m,
+        ),
+    );
+    assert.equal(
+        withAsides,
+        "⚙️  sh launch Plurnk campaign 3m03s · ⚙️  sh launch Bare Pi campaign 2m58s · 🐜 review1 2m03s",
+    );
+
+    const degenerateFallback = stripVTControlCharacters(
+        renderActiveLiveLine(
+            [
+                {
+                    key: "s1",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///7a559e1f",
+                    aside: "sh",
+                    startedAt: baseStarted,
+                },
+                {
+                    key: "s2",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///78eafee4",
+                    aside: "sh:///78eafee4",
+                    startedAt: baseStarted,
+                },
+                {
+                    key: "probe",
+                    kind: "worker",
+                    glyph: "☁️",
+                    op: "bare",
+                    target: "session:///probe",
+                    startedAt: baseStarted,
+                },
+            ],
+            120,
+            nowAt3m,
+        ),
+    );
+    assert.equal(
+        degenerateFallback,
+        "⚙️  sh (sh:///7a559e1f) 3m03s · ⚙️  sh (sh:///78eafee4) 3m03s · ☁️  probe 3m03s",
+    );
+
+    const budgetedTwoStreams = stripVTControlCharacters(
+        renderActiveLiveLine(
+            [
+                {
+                    key: "s1",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///7a559e1f",
+                    aside: "launch Plurnk ht30 hydrogen head-to-head campaign",
+                    startedAt: baseStarted,
+                },
+                {
+                    key: "s2",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///78eafee4",
+                    aside: "launch Bare Pi campaign",
+                    startedAt: baseStarted + 5_000,
+                },
+            ],
+            80,
+            nowAt3m,
+        ),
+    );
+    assert.ok(
+        budgetedTwoStreams.includes("launch Bare Pi campaign 2m58s"),
+        `proportional aside budgeting must keep second stream visible: ${budgetedTwoStreams}`,
+    );
+    assert.ok(budgetedTwoStreams.includes("… 3m03s"), `first stream keeps elapsed clock: ${budgetedTwoStreams}`);
+
+    const narrowSingle = stripVTControlCharacters(
+        renderActiveLiveLine(
+            [
+                {
+                    key: "s1",
+                    kind: "stream",
+                    glyph: "⚙️",
+                    op: "sh",
+                    target: "sh:///7a559e1f",
+                    aside: "launch Plurnk ht30 hydrogen head-to-head campaign",
+                    startedAt: baseStarted,
+                },
+            ],
+            40,
+            nowAt3m,
+        ),
+    );
+    assert.ok(narrowSingle.endsWith("… 3m03s"), `single narrow stream keeps elapsed tail: ${narrowSingle}`);
 
     // Concluding the stream and worker removes them from activeLiveEntries
     presenter.apply({

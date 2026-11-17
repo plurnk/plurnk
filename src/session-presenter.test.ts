@@ -1255,4 +1255,61 @@ test("{§cli-conformance} {§cli-repl-mode} {§cli-sessions-topology}: SessionPr
     }
 });
 
+test("SessionPresenter preserves stream aside and openedAt across live tool_call_update and cold status.streams hydration ({§cli-rendering}, {§cli-session-status})", () => {
+    const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "main" });
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/1",
+        name: "sh",
+        title: "sh (sh:///7a559e1f) — launch Plurnk campaign",
+        status: "in_progress",
+        rawInput: { aside: "launch Plurnk campaign" },
+        _meta: {
+            plurnk: {
+                id: 101,
+                op: "sh",
+                turnSeq: 1,
+                attrs: { stream: "sh:///7a559e1f" },
+            },
+        },
+    });
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: { plurnk: { notice: { source: "engine:turn", kind: "turn_awaiting_model" } } },
+    });
+    assert.equal(presenter.activeLiveEntries.length, 1);
+    assert.equal(presenter.activeLiveEntries[0]?.aside, "launch Plurnk campaign");
+
+    // Cold-attached presenter receives aside, op, and openedAt from status.streams alone
+    const coldPresenter = new SessionPresenter({ workspaceName: "ws", sessionName: "main" });
+    const openedAtIso = "2026-11-16T20:00:00.000Z";
+    coldPresenter.ingestMeta({
+        plurnk: {
+            status: {
+                streams: [
+                    {
+                        entryId: 202,
+                        sessionId: 1,
+                        target: "sh:///78eafee4",
+                        op: "sh",
+                        aside: "launch Bare Pi campaign",
+                        openedAt: openedAtIso,
+                        loop_seq: 1,
+                        turn_seq: 1,
+                        sequence: 2,
+                        channels: [],
+                    },
+                ],
+            },
+        },
+    });
+    assert.equal(coldPresenter.activeLiveEntries.length, 1);
+    assert.equal(coldPresenter.activeLiveEntries[0]?.op, "sh");
+    assert.equal(coldPresenter.activeLiveEntries[0]?.aside, "launch Bare Pi campaign");
+    assert.equal(coldPresenter.activeLiveEntries[0]?.startedAt, Date.parse(openedAtIso));
+});
+
+
 

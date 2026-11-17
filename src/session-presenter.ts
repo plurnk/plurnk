@@ -199,6 +199,7 @@ export class SessionPresenter {
                 glyph: "⚙️",
                 op: stream.op,
                 target: stream.target,
+                ...(stream.aside !== null ? { aside: stream.aside } : {}),
                 startedAt: stream.startedAt,
             });
         }
@@ -597,15 +598,28 @@ export class SessionPresenter {
                             if (existing !== undefined && existing.key !== streamKey) {
                                 this.#activeStreams.delete(existing.key);
                             }
+                            const sAside =
+                                typeof s.aside === "string" && s.aside.trim().length > 0
+                                    ? s.aside.trim()
+                                    : null;
+                            const parsedOpenedAt =
+                                typeof s.openedAt === "string" && s.openedAt.length > 0
+                                    ? Date.parse(s.openedAt)
+                                    : Number.NaN;
+                            const sOpenedAtMs = Number.isFinite(parsedOpenedAt) ? parsedOpenedAt : null;
                             this.#activeStreams.set(streamKey, {
                                 key: streamKey,
                                 entryId: sEntryId ?? existing?.entryId ?? null,
                                 terminalIds:
                                     existing?.terminalIds ??
                                     (sEntryId !== null ? [`term:${String(sEntryId)}`] : []),
-                                op: existing?.op ?? derivedOp,
+                                op:
+                                    typeof s.op === "string" && s.op.length > 0
+                                        ? s.op
+                                        : (existing?.op ?? derivedOp),
                                 target: sTarget ?? existing?.target ?? streamKey,
-                                startedAt: existing?.startedAt ?? Date.now(),
+                                aside: sAside ?? existing?.aside ?? null,
+                                startedAt: existing?.startedAt ?? sOpenedAtMs ?? Date.now(),
                                 openedTurn:
                                     typeof s.turn_seq === "number"
                                         ? s.turn_seq
@@ -1339,6 +1353,15 @@ export class SessionPresenter {
                         : "completed"
                     : update.status;
 
+            const rawAside =
+                typeof rawInput?.aside === "string" && rawInput.aside.trim().length > 0
+                    ? rawInput.aside.trim()
+                    : typeof rawInput?.comment === "string" && rawInput.comment.trim().length > 0
+                      ? rawInput.comment.trim()
+                      : typeof metaPlurnk.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
+                        ? metaPlurnk.attrs.aside.trim()
+                        : extractTitleAside(effectiveTitle);
+
             if (effectiveStatus === "in_progress" || effectiveStatus === "pending") {
                 this.#pendingToolCalls.set(update.toolCallId, {
                     ...(effectiveName !== undefined ? { name: effectiveName } : {}),
@@ -1371,6 +1394,7 @@ export class SessionPresenter {
                         terminalIds: terminalIds.length > 0 ? terminalIds : (existing?.terminalIds ?? []),
                         op: opName,
                         target: streamTarget,
+                        aside: rawAside ?? existing?.aside ?? null,
                         startedAt: existing?.startedAt ?? Date.now(),
                         openedTurn: existing?.openedTurn ?? openedTurn,
                         survivedTurn:
@@ -1417,14 +1441,6 @@ export class SessionPresenter {
                       })
                     : undefined;
 
-            const rawAside =
-                typeof rawInput?.aside === "string" && rawInput.aside.trim().length > 0
-                    ? rawInput.aside.trim()
-                    : typeof rawInput?.comment === "string" && rawInput.comment.trim().length > 0
-                      ? rawInput.comment.trim()
-                      : typeof metaPlurnk.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
-                        ? metaPlurnk.attrs.aside.trim()
-                        : extractTitleAside(effectiveTitle);
             const glyph = operationGlyphFor(opName);
             const aside = rawAside;
             const scope = extractScopeToken(rawInput?.lineMarker);

@@ -85,6 +85,7 @@ export interface ActiveLiveEntry {
     readonly glyph: string;
     readonly op: string;
     readonly target: string;
+    readonly aside?: string | null;
     readonly startedAt: number;
 }
 
@@ -246,6 +247,7 @@ export interface ActiveStreamState {
     readonly terminalIds: readonly string[];
     readonly op: string;
     readonly target: string;
+    readonly aside: string | null;
     readonly startedAt: number;
     readonly openedTurn: number;
     readonly survivedTurn: boolean;

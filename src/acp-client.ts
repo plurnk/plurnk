@@ -423,6 +423,14 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
+    readonly "workspace.schedule.run": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.status": PlurnkActionEntry<
+        { readonly alias: string; readonly status: "open" | "done" | "fail" } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
     readonly "workspace.mcp.oauth.begin": PlurnkActionEntry<
         { readonly alias: string } & Record<string, unknown>,
         { readonly authorizationUrl?: string } & Record<string, unknown>
@@ -503,6 +511,8 @@ export const ACP_ACTION_KINDS = [
     "workspace.schedule.enable",
     "workspace.schedule.disable",
     "workspace.schedule.remove",
+    "workspace.schedule.run",
+    "workspace.schedule.status",
     "workspace.mcp.oauth.begin",
     "workspace.mcp.oauth.complete",
     "workspace.mcp.complete",

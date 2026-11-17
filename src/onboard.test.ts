@@ -67,6 +67,14 @@ test("{§cli-interactive-command-discovery} {§cli-subcommands}: expandLearnComm
     assert.match(targeted, /deploy staging safely/u);
     assert.match(targeted, /`skills` tool/u);
 
+    const headlessDefault = expandLearnCommand("/learn", { projectRoot: null });
+    assert.ok(headlessDefault !== null);
+    assert.match(headlessDefault, /plurnk\/skills\/<name>\/SKILL\.md/u);
+    assert.equal(expandLearnCommand("/learn --scope project", { projectRoot: null }), null);
+    const explicitPlurnk = expandLearnCommand("/learn --scope plurnk cross-project deploy", { projectRoot: "/tmp" });
+    assert.ok(explicitPlurnk !== null);
+    assert.match(explicitPlurnk, /plurnk\/skills\/<name>\/SKILL\.md/u);
+
     const completedLearn = await completeInput("/lea", { cwd: "/tmp", getProjectRoot: () => "/tmp" });
     assert.ok(completedLearn.suggestions.some((s) => s.value === "/learn"));
 

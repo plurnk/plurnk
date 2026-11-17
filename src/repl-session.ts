@@ -18,7 +18,7 @@ import {
     type CliCommonOptions,
 } from "./cli-connection.ts";
 import { matchesRuntimeAcceptance } from "./cli-permission.ts";
-import { expandLearnCommand } from "./commands.ts";
+import { resolveLearnCommand } from "./commands.ts";
 import {
     buildPromptBlocks,
     executeFamilyCommand,
@@ -64,6 +64,7 @@ export const runReplSession = async (
     let currentWorkspace = options.workspace ?? "default";
     let currentSessionName = options.sessionId ?? options.termSession ?? "user";
     let currentProjectRoot = options.projectRoot ?? options.cwd;
+    let boundWorkspaceProjectRoot: string | null | undefined = options.projectRoot;
     let currentYolo = options.yolo;
     let forceReviewNextRun = false;
     let gateSeq = 0;
@@ -98,6 +99,9 @@ export const runReplSession = async (
         }
         if (typeof ws?.projectRoot === "string") {
             currentProjectRoot = ws.projectRoot;
+            boundWorkspaceProjectRoot = ws.projectRoot;
+        } else if (ws?.projectRoot === null) {
+            boundWorkspaceProjectRoot = null;
         }
         if (typeof plurnk?.sessionName === "string" && plurnk.sessionName.length > 0) {
             currentSessionName = plurnk.sessionName;
@@ -756,7 +760,20 @@ export const runReplSession = async (
             return "continue";
         }
 
-        const expandedLearn = expandLearnCommand(line);
+        const resolvedLearn = resolveLearnCommand(
+            line,
+            boundWorkspaceProjectRoot === undefined ? undefined : { projectRoot: boundWorkspaceProjectRoot },
+        );
+        if (resolvedLearn !== null && !resolvedLearn.ok) {
+            writeErrorJsonl(streams.stderr, {
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Invalid /learn scope",
+                status: 400,
+                detail: resolvedLearn.error,
+            });
+            return "continue";
+        }
+        const expandedLearn = resolvedLearn?.ok === true ? resolvedLearn.prompt : null;
 
         if (expandedLearn === null && line.startsWith("/")) {
             return await dispatchSlashCommand(line, {

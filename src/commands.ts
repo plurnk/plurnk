@@ -42,20 +42,76 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/login", summary: "Sign in to the daemon through the browser and keep the grant." },
     { usage: "/logout", summary: "Revoke the kept grant at the daemon and forget it." },
     { usage: "/web [--no-open]", summary: "Open the Plurnk Web UI signed in via a single-use loopback handoff." },
-    { usage: "/learn [instructions]", summary: "Distill reusable workflow from this session into a SKILL.md." },
+    { usage: "/learn [--scope project|plurnk] [instructions]", summary: "Distill reusable workflow from this session into a SKILL.md." },
     { usage: "/stop", summary: "Cancel the running loop." },
     { usage: "/quit", summary: "Exit the interactive client." },
 ];
 
-export const expandLearnCommand = (rawLine: string): string | null => {
+export type LearnResolution =
+    | { readonly ok: true; readonly scope: "project" | "plurnk"; readonly prompt: string }
+    | { readonly ok: false; readonly error: string };
+
+export const resolveLearnCommand = (
+    rawLine: string,
+    options?: { readonly projectRoot?: string | null },
+): LearnResolution | null => {
     const trimmed = rawLine.trim();
-    const match = /^\/learn(?:\s+([\s\S]*))?$/iu.exec(trimmed);
-    if (match === null) return null;
-    const instructions = (match[1] ?? "").trim();
-    if (instructions.length === 0) {
-        return "Read `mcp:///plurnk/skills.json` if needed, then distill the reusable workflow, commands, and non-obvious constraints established in this session into `<project>/.agents/skills/<name>/SKILL.md` (or `$XDG_CONFIG_HOME/plurnk/skills/<name>/SKILL.md` if user-wide) and verify it via the `skills` tool.";
+    if (trimmed !== "/learn" && !trimmed.startsWith("/learn ")) {
+        return null;
     }
-    return `Read \`mcp:///plurnk/skills.json\` if needed, then create or update a reusable \`SKILL.md\` for: ${instructions}, and verify it via the \`skills\` tool.`;
+    const restText = trimmed.slice("/learn".length).trim();
+    const tokens = restText.length > 0 ? restText.split(/\s+/u) : [];
+    let explicitScope: string | undefined;
+    const instructionTokens: string[] = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+        const tok = tokens[i] ?? "";
+        if (tok === "--scope") {
+            const next = tokens[i + 1];
+            if (next === undefined || next.startsWith("--")) {
+                return { ok: false, error: "Missing /learn --scope value: expected 'project' or 'plurnk'." };
+            }
+            explicitScope = next;
+            i += 1;
+        } else if (tok.startsWith("--scope=")) {
+            explicitScope = tok.slice("--scope=".length);
+        } else {
+            instructionTokens.push(tok);
+        }
+    }
+    if (explicitScope !== undefined && explicitScope !== "project" && explicitScope !== "plurnk") {
+        return {
+            ok: false,
+            error: `Invalid /learn scope '${explicitScope}': expected 'project' or 'plurnk'.`,
+        };
+    }
+    if (explicitScope === "project" && options?.projectRoot === null) {
+        return {
+            ok: false,
+            error: "This workspace has no project folder; use `/learn --scope plurnk` to save under $XDG_CONFIG_HOME/plurnk/skills.",
+        };
+    }
+    const scope = explicitScope ?? (options?.projectRoot === null ? "plurnk" : "project");
+    const targetPath =
+        scope === "plurnk"
+            ? "${XDG_CONFIG_HOME:-~/.config}/plurnk/skills/<name>/SKILL.md"
+            : ".agents/skills/<name>/SKILL.md";
+    const instructions = instructionTokens.join(" ");
+    const basePrompt =
+        `Distill reusable workflow, setup, or domain knowledge from this session into an Agent Skill at \`${targetPath}\` ` +
+        "(read `mcp:///plurnk/skills.json` first, write a concise `SKILL.md` with YAML frontmatter `name` and `description`, and verify discovery with the `skills` tool).";
+    return {
+        ok: true,
+        scope,
+        prompt: instructions.length > 0 ? `${basePrompt}\n\nFocus: ${instructions}` : basePrompt,
+    };
+};
+
+export const expandLearnCommand = (
+    rawLine: string,
+    options?: { readonly projectRoot?: string | null },
+): string | null => {
+    const resolved = resolveLearnCommand(rawLine, options);
+    return resolved?.ok === true ? resolved.prompt : null;
 };
 
 export const renderCommandReference = (): string =>

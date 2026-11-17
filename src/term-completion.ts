@@ -209,7 +209,14 @@ export const completeInput = async (
         );
     }
 
-    const familyMatch = /^\/(mcp|skills|members|env|schedule)\s+(\w*)$/u.exec(line);
+    const learnScopeMatch = /^\/learn\s+--scope(?:\s+|=)(\w*)$/u.exec(line);
+    if (learnScopeMatch !== null) {
+        const typed = learnScopeMatch[1]!.toLowerCase();
+        const scopes = ctx.getProjectRoot() === null ? ["plurnk"] : ["project", "plurnk"];
+        return namespace(scopes, typed, (v) => (v === "plurnk" ? "user-wide Plurnk skills" : "project .agents/skills"), options);
+    }
+
+    const familyMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(\w*)$/u.exec(line);
     if (familyMatch !== null) {
         const typed = familyMatch[2]!.toLowerCase();
         const subs =

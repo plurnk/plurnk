@@ -344,6 +344,16 @@
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
+    "workspace.schedule.run": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/oauth.test.ts — scheduled obligation execution"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
+    },
+    "workspace.schedule.status": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/oauth.test.ts — scheduled obligation lifecycle"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
+    },
     "workspace.mcp.oauth.begin": {
       "posture": "bridge-until-acp-rfd",
       "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",

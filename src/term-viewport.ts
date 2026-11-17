@@ -358,7 +358,11 @@ export const runTermViewport = async (
                 return;
             }
         }
-        if ((!trimmed.startsWith("/") || expandLearnCommand(trimmed) !== null) && !trimmed.startsWith("!")) {
+        if (
+            (!trimmed.startsWith("/") ||
+                expandLearnCommand(trimmed, { projectRoot: boundProjectRoot }) !== null) &&
+            !trimmed.startsWith("!")
+        ) {
             retireLiveReasoning();
             presenter.markTurnStart();
             presenter.buildStatusBar();
@@ -473,7 +477,7 @@ export const runTermViewport = async (
             const trimmed = rawText.trim();
             if (trimmed.length === 0) return;
             surface.recordPrompt(rawText);
-            const expandedLearn = expandLearnCommand(trimmed);
+            const expandedLearn = expandLearnCommand(trimmed, { projectRoot: boundProjectRoot });
             if (expandedLearn !== null) {
                 localSubmittedPrompts.push(expandedLearn);
             } else if (!trimmed.startsWith("/")) {

@@ -820,6 +820,8 @@ test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp s
     );
     await executeFamilyCommand(fakeClient, "env", ["set", "FOO=bar"], { workspace: "alpha" }, "/tmp", io);
     await executeFamilyCommand(fakeClient, "env", ["--scope", "workspace", "unset", "FOO"], { workspace: "alpha" }, "/tmp", io);
+    await executeFamilyCommand(fakeClient, "schedule", ["run", "daily"], { workspace: "alpha" }, "/tmp", io);
+    await executeFamilyCommand(fakeClient, "schedule", ["done", "todo-1"], { workspace: "alpha" }, "/tmp", io);
 
     assert.deepEqual(calls, [
         {
@@ -834,12 +836,12 @@ test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp s
         },
         {
             kind: "workspace.mcp.skills",
-            params: { alias: "gitea" },
+            params: { server: "gitea" },
         },
         {
             kind: "workspace.mcp.complete",
             params: {
-                alias: "gitea",
+                server: "gitea",
                 ref: { type: "ref/prompt", name: "review" },
                 argument: { name: "repo", value: "plurnk" },
             },
@@ -851,6 +853,14 @@ test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp s
         {
             kind: "workspace.env.remove",
             params: { alias: "FOO" },
+        },
+        {
+            kind: "workspace.schedule.run",
+            params: { alias: "daily" },
+        },
+        {
+            kind: "workspace.schedule.status",
+            params: { alias: "todo-1", status: "done" },
         },
     ]);
 });

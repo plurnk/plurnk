@@ -920,11 +920,11 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
 
     // 5. openCliSession deduplicates identical configuration notices across newSession, resumeSession, and live updates ({§cli-rendering})
     const listeners = new Set<(notification: { readonly sessionId: string; readonly update: { readonly sessionUpdate: "notice"; readonly severity: "info"; readonly title: string; readonly description?: string } }) => void>();
-    const shadowedNotice = {
+    const configNotice = {
         sessionUpdate: "notice" as const,
         severity: "info" as const,
-        title: "engine:configuration:plugin_shadowed",
-        description: "plugin plurnk-web is shadowed",
+        title: "engine:configuration:configuration_unavailable",
+        description: "PLURNK_MCP_broken must be an MCP server definition.",
     };
     const loopStatusNotice = {
         sessionUpdate: "notice" as const,
@@ -940,11 +940,11 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
             return () => {};
         },
         async newSession() {
-            for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+            for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
             return { sessionId: "1#user", configOptions: [] };
         },
         async resumeSession() {
-            for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+            for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
             return { configOptions: [] };
         },
     };
@@ -954,12 +954,12 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
         undefined,
         true,
     );
-    for (const cb of listeners) cb({ sessionId: "1#user", update: shadowedNotice });
+    for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
     for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
     for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
     assert.equal(
         opened.items.filter(
-            (item) => item.kind === "notice" && item.title === "engine:configuration:plugin_shadowed",
+            (item) => item.kind === "notice" && item.title === "engine:configuration:configuration_unavailable",
         ).length,
         1,
     );

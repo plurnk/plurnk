@@ -1,5 +1,5 @@
 // Standalone CLI subcommands (`session`, `config`, `update`, `models`, `workspace`,
-// `log read`, `read`, `capabilities`, `script`, `completion`, and family commands)
+// `log read`, `read`, `script`, `completion`, and family commands)
 // ({§cli-subcommands}, {§cli-configuration-source}, {§cli-interactive-command-discovery}).
 
 import { spawn } from "node:child_process";
@@ -510,36 +510,6 @@ export const runCliReadCoord = async (coord: string, options: CliCommonOptions):
         const body =
             channels.body?.content ?? channels.stdout?.content ?? JSON.stringify(result, null, 2);
         process.stdout.write(body.endsWith("\n") ? body : `${body}\n`);
-        return 0;
-    } finally {
-        client.close();
-    }
-};
-
-export const runCliCapabilities = async (
-    policyJson: string | undefined,
-    options: CliCommonOptions,
-): Promise<number> => {
-    const client = new AcpClient({
-        url: options.url,
-        credential: options.credential,
-        env: options.env,
-    });
-    try {
-        await ensureDaemonConnected(client, options);
-        const result =
-            policyJson !== undefined
-                ? await client.action(
-                      "workspace.capabilities.set",
-                      { policy: JSON.parse(policyJson) as unknown },
-                      { workspace: options.workspace, cwd: options.cwd },
-                  )
-                : await client.action(
-                      "workspace.capabilities.get",
-                      {},
-                      { workspace: options.workspace, cwd: options.cwd },
-                  );
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return 0;
     } finally {
         client.close();

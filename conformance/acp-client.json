@@ -94,22 +94,6 @@
       "evidence": ["src/cli.test.ts — PLURNK dispatch"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
     },
-    "workspace.capabilities.get": {
-      "posture": "generic",
-      "evidence": [
-        "src/cli.test.ts — capability policy read",
-        "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
-      ],
-      "dimensions": ["projection", "success", "failure", "composition"]
-    },
-    "workspace.capabilities.set": {
-      "posture": "generic",
-      "evidence": [
-        "src/cli.test.ts — capability policy update",
-        "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
-      ],
-      "dimensions": ["projection", "success", "failure", "durability", "composition"]
-    },
     "workspace.skills.list": {
       "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],

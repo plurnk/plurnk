@@ -1,5 +1,17 @@
 # @plurnk/plurnk
 
+## 7.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Upgrade
+
+Upgrade this client and `@plurnk/plurnk-service` together to `7.0.0`.
+
+- Render open stream causal `aside` labels (`<glyph> <tool> <aside> <elapsed>`, falling back to `(<target>)`) and compact active child worker names (`<glyph> <worker> <elapsed>`) with parameter-free water-filling truncation in Term mode's live activity strip (#266, https://repo.possumtech.com/plurnk/plurnk-service/issues/1514).
+- Align README, teaching fixtures, and MCP expressions terminology with the `7.0` universal `mcp` wire tool, retire the `## Errors` packet section and outside-prose fallback handling in favor of transient `## Notices` and leading `note` lowering, fix warning notice styling, and restore Mermaid diagram transposition, timeout bounds, and fallback labels (#264, #265).
+- Update `@plurnk/plurnk-contracts` (`^7.5.0 || ^8.0.0`) and optional `@plurnk/plurnk-service` (`^6.1.0 || ^7.0.0`) dependency ranges for `7.0.0`.
+
 ## 6.1.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

@@ -77,7 +77,8 @@ const queryLatestVersion = async (pkgName) => {
     const { stdout } = await run("npm", ["view", pkgName, "version", "--json"], {
         env: { ...process.env, npm_config_fetch_retries: "0", npm_config_fetch_timeout: "15000" },
     });
-    return JSON.parse(stdout.trim());
+    const parsed = JSON.parse(stdout.trim());
+    return Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
 };
 
 const queryOutdated = async (rootDir) => {

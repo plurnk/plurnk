@@ -9,7 +9,12 @@ import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
 import stringWidth from "string-width";
 import { colorEnabled, hyperlink, ModelText, paint, styled } from "./color.ts";
 import { CLIENT_DEFAULTS_PATH, parseDefaults } from "./envdefaults.ts";
-import { formatActiveOperationLead, formatDuration } from "./presenter-formatters.ts";
+import {
+    formatActiveOperationLead,
+    formatDuration,
+    normalizeWorkerKey,
+    OPERATION_GLYPH_MAP,
+} from "./presenter-formatters.ts";
 import type { ActiveLiveEntry } from "./session-presenter.ts";
 
 export const displayWidth = (text: string): number => stringWidth(text);
@@ -487,6 +492,53 @@ export const renderLoopSummary = (opts: {
     return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
 };
 
+interface ActiveStripParts {
+    readonly prefix: string;
+    readonly label: string;
+    readonly floorCols: number;
+    readonly italicLabel: boolean;
+    readonly suffix: string;
+}
+
+const normalizeActiveAside = (
+    aside: string | null | undefined,
+    op: string,
+    target: string,
+): string | null => {
+    if (typeof aside !== "string") return null;
+    const clean = ModelText.plain(aside).replace(/\s+/gu, " ").trim();
+    if (clean.length === 0) return null;
+    const cleanOp = ModelText.plain(op).trim();
+    const cleanTarget = ModelText.plain(target).trim();
+    if (clean.toLowerCase() === cleanOp.toLowerCase()) return null;
+    if (clean === cleanTarget || clean === `(${cleanTarget})`) return null;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//u.test(clean) && !clean.includes(" ")) return null;
+    return clean;
+};
+
+const plainActiveItem = (item: ActiveStripParts): string =>
+    `${item.prefix} ${item.label} ${item.suffix}`;
+
+const paintActiveItem = (item: ActiveStripParts): string =>
+    item.italicLabel
+        ? `${paint(`${item.prefix} `, "dim")}${paint(item.label, "dim", "italic")}${paint(` ${item.suffix}`, "dim")}`
+        : paint(plainActiveItem(item), "dim");
+
+const fitSingleActiveItem = (item: ActiveStripParts, maxCols: number): string => {
+    if (stringWidth(plainActiveItem(item)) <= maxCols) {
+        return paintActiveItem(item);
+    }
+    const overhead = stringWidth(`${item.prefix}  ${item.suffix}`);
+    const labelBudget = maxCols - overhead;
+    if (labelBudget > stringWidth("…")) {
+        return paintActiveItem({
+            ...item,
+            label: truncateToColumns(item.label, labelBudget),
+        });
+    }
+    return paint(truncateToColumns(plainActiveItem(item), maxCols), "dim");
+};
+
 // {§cli-rendering}, {§cli-session-status} — Single-line active streams and workers strip above the composer.
 export const renderActiveLiveLine = (
     entries: readonly ActiveLiveEntry[],
@@ -495,36 +547,116 @@ export const renderActiveLiveLine = (
 ): string => {
     if (entries.length === 0) return "";
     const maxCols = Math.max(20, columns);
-    const formatted = entries.map((entry) => {
-        const lead = formatActiveOperationLead(entry.op);
-        const target = ModelText.plain(entry.target);
+    let items: ActiveStripParts[] = entries.map((entry) => {
         const elapsed = formatDuration(Math.max(1, now - entry.startedAt));
-        return `${lead} (${target}) ${elapsed}`;
+        if (entry.kind === "worker") {
+            const rawGlyph = ModelText.plain(
+                entry.glyph || OPERATION_GLYPH_MAP[entry.op] || "🐜",
+            );
+            const prefix = rawGlyph.endsWith("\uFE0F") ? `${rawGlyph} ` : rawGlyph;
+            const workerName = ModelText.plain(normalizeWorkerKey(entry.key || entry.target));
+            return {
+                prefix,
+                label: workerName,
+                floorCols: stringWidth(workerName),
+                italicLabel: false,
+                suffix: elapsed,
+            };
+        }
+        const lead = formatActiveOperationLead(entry.op);
+        const targetLabel = `(${ModelText.plain(entry.target)})`;
+        const floorCols = stringWidth(targetLabel);
+        const goodAside = normalizeActiveAside(entry.aside, entry.op, entry.target);
+        if (goodAside !== null) {
+            return {
+                prefix: lead,
+                label: goodAside,
+                floorCols,
+                italicLabel: true,
+                suffix: elapsed,
+            };
+        }
+        return {
+            prefix: lead,
+            label: targetLabel,
+            floorCols,
+            italicLabel: false,
+            suffix: elapsed,
+        };
     });
-    const joined = formatted.join(" · ");
-    if (stringWidth(joined) <= maxCols) {
-        return paint(joined, "dim");
+
+    if (items.length === 1) {
+        return fitSingleActiveItem(items[0]!, maxCols);
     }
-    const fit: string[] = [];
-    for (let i = 0; i < formatted.length; i += 1) {
-        const remaining = formatted.length - (i + 1);
+
+    const totalWidth = (parts: readonly ActiveStripParts[]): number =>
+        parts.reduce(
+            (sum, p, idx) => sum + (idx > 0 ? 3 : 0) + stringWidth(plainActiveItem(p)),
+            0,
+        );
+
+    // Trim widest shrinkable stream asides first (down to each stream's fallback `(<target>)` width)
+    // so verbose asides never crowd out sibling entries that would have fit with `(<target>)`.
+    let excess = totalWidth(items) - maxCols;
+    if (excess > 0) {
+        const currentCaps = items.map((p) => stringWidth(p.label));
+        while (excess > 0) {
+            let maxCap = 0;
+            for (let i = 0; i < items.length; i += 1) {
+                if (items[i]!.italicLabel && currentCaps[i]! > items[i]!.floorCols) {
+                    maxCap = Math.max(maxCap, currentCaps[i]!);
+                }
+            }
+            if (maxCap === 0) break;
+            for (let i = 0; i < items.length && excess > 0; i += 1) {
+                if (
+                    items[i]!.italicLabel &&
+                    currentCaps[i]! === maxCap &&
+                    currentCaps[i]! > items[i]!.floorCols
+                ) {
+                    currentCaps[i]! -= 1;
+                    excess -= 1;
+                }
+            }
+        }
+        items = items.map((p, idx) =>
+            currentCaps[idx]! < stringWidth(p.label)
+                ? { ...p, label: truncateToColumns(p.label, currentCaps[idx]!) }
+                : p,
+        );
+    }
+
+    if (totalWidth(items) <= maxCols) {
+        return items.map(paintActiveItem).join(paint(" · ", "dim"));
+    }
+
+    const fit: ActiveStripParts[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+        const remaining = items.length - (i + 1);
         const suffix = remaining > 0 ? ` · +${String(remaining)} more` : "";
-        const candidate = [...fit, formatted[i]!].join(" · ") + suffix;
-        if (stringWidth(candidate) <= maxCols) {
-            fit.push(formatted[i]!);
+        const candidatePlain =
+            [...fit, items[i]!].map(plainActiveItem).join(" · ") + suffix;
+        if (stringWidth(candidatePlain) <= maxCols) {
+            fit.push(items[i]!);
         } else {
             if (fit.length === 0) {
-                return paint(truncateToColumns(formatted[i]!, maxCols), "dim");
+                const overflowSuffix = ` · +${String(items.length - 1)} more`;
+                const budgetForFirst = maxCols - stringWidth(overflowSuffix);
+                if (
+                    budgetForFirst >
+                    stringWidth(`${items[0]!.prefix}  ${items[0]!.suffix}`) + stringWidth("…")
+                ) {
+                    return `${fitSingleActiveItem(items[0]!, budgetForFirst)}${paint(overflowSuffix, "dim")}`;
+                }
+                return fitSingleActiveItem(items[0]!, maxCols);
             }
-            const overflowSuffix = ` · +${String(formatted.length - fit.length)} more`;
-            const withOverflow = fit.join(" · ") + overflowSuffix;
-            return paint(
-                stringWidth(withOverflow) <= maxCols
-                    ? withOverflow
-                    : truncateToColumns(fit.join(" · "), maxCols),
-                "dim",
-            );
+            const overflowSuffix = ` · +${String(items.length - fit.length)} more`;
+            const plainFit = fit.map(plainActiveItem).join(" · ");
+            if (stringWidth(plainFit + overflowSuffix) <= maxCols) {
+                return `${fit.map(paintActiveItem).join(paint(" · ", "dim"))}${paint(overflowSuffix, "dim")}`;
+            }
+            return paint(truncateToColumns(plainFit, maxCols), "dim");
         }
     }
-    return paint(truncateToColumns(fit.join(" · "), maxCols), "dim");
+    return fit.map(paintActiveItem).join(paint(" · ", "dim"));
 };

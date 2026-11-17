@@ -17,8 +17,8 @@ through one universal `mcp` tool, the machine executes them against one address
 space and journals the results, and the model reads the journal and emits the
 next. Files, tools,
 delegated sessions, and the model's own past all carry addresses; one selection
-algebra reaches every one of them; the edges speak ACPv2, MCP, Agent Skills,
-and Agent Plugins. Read the full argument in
+algebra reaches every one of them; the edges speak ACPv2, MCP, and Agent Skills.
+Read the full argument in
 [MANIFESTO.md](https://github.com/plurnk/plurnk-service/blob/main/MANIFESTO.md).
 
 This repository provides the Unix CLI and Plurnk Term for
@@ -63,8 +63,7 @@ in a new session of its own (reported in `--json` output and on `fd 3` events).
 
 Proposals require review by default (`PLURNK_CLIENT_YOLO=0`); press `Shift+Tab`,
 run `/yolo`, or pass `--yolo` to accept them automatically (`? <prompt>` forces
-review for one prompt, and `! <command>` runs a shell command directly). Neither
-overrides capability restrictions.
+review for one prompt, and `! <command>` runs a shell command directly).
 
 ## Models
 
@@ -145,8 +144,7 @@ Plurnk uses **ACPv2** for clients, **MCP** for external tools, and **Agent Skill
 for reusable instructions. Tools and skills can be discovered, added, and enabled
 per workspace without restarting the daemon: `/mcp discover <query>` searches the
 MCP Registry, and `/mcp add <alias> <command|url> [args...]` declares a workspace
-server. Standard MCP files, Agent Skills folders, and
-[Agent Plugin](https://agent-plugins.org) bundles contribute through the same
+server. Standard MCP files and Agent Skills folders contribute through the same
 configuration cascade. Documentation is retrieved on demand rather than loading
 every tool's schema into every prompt.
 

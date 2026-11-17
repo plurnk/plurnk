@@ -47,7 +47,6 @@ plurnk [options]                             # Term mode (no positionals, TTY st
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create` (`PLURNK_CLIENT_PROJECT_ROOT`). |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (`PLURNK_CLIENT_YOLO`, shipped `0`). |
 | `--auto` | flag | Nobody is attending: daemon asks no questions and loops that would wait for a person conclude instead (`PLURNK_CLIENT_AUTO`). |
-| `--capabilities <json>` | string | Subtractive `CapabilityPolicy` on `workspace.create` (`PLURNK_CLIENT_CAPABILITIES`). |
 | `--max-turns <n>` | string | Model-call budget for the prompt's session tree (`PLURNK_CLIENT_MAX_TURNS`). |
 | `--preview-lines <n>` | string | Lines of operation body and concluded execution output shown beneath its row (`PLURNK_CLIENT_PREVIEW_LINES`). |
 | `--history-entries <n>` | string | Non-negative recent entry count restored on Term/REPL attach; `0` disables history (`PLURNK_CLIENT_HISTORY_ENTRIES`). |
@@ -72,7 +71,7 @@ plurnk [options]                             # Term mode (no positionals, TTY st
 | Workspace acquisition & rename | `workspace.create` receives literal selected label (or lets daemon derive name from folder) plus `projectRoot`/`settings`, returning `{ id, name }`. Bound requests send `sessionId` as `<workspace ID>#<session name>`. Renames elsewhere detected via `snapshot.plurnk.workspace` trigger `workspace.list` readback. `workspace.attach` resolves existing workspaces without creating. |
 | Session selection & history lost | `--session` / `PLURNK_CLIENT_SESSION` selects the session; unset, Term/REPL/scripts/subcommands bind `PLURNK_CLIENT_TERM_SESSION` (`user`), and one-shot prompts mint a 12-hex-char session (`client:session:new` in text, `session` in JSON). If `snapshot.plurnk.status.loopId` becomes `null` after a gauge on the same binding carried a loop (fresh DB or deleted session), raises `history_lost` warning Notice. |
 | Project root (`projectRoot`) | Existing workspace keeps stored root. Otherwise: `--project-root` / `PLURNK_CLIENT_PROJECT_ROOT` (empty string = headless `null`, requires `--workspace`, else exit `64` `client/flag/missing-dependency`) $\to$ `cwd` when `cwd != HOME` $\to$ home workspace `~` if held $\to$ interactive prompt (or exit `64` `client/project-root/required` when noninteractive/JSON). `Esc`/`Ctrl-C` during root prompt exits `130`. |
-| Workspace-open settings | Sent as `settings` on `workspace.create` (`filesItems`, `capabilities`, `maxCommands`, `git: false`); create-time only, preserved on existing workspaces. |
+| Workspace-open settings | Sent as `settings` on `workspace.create` (`filesItems`, `maxCommands`, `git: false`); create-time only, preserved on existing workspaces. |
 
 ### §cli-model-selection 1.2 Model, Child Provider, Effort, and Persona Selection
 
@@ -143,7 +142,7 @@ plurnk [options]                             # Term mode (no positionals, TTY st
 | Group | Verbs |
 | --- | --- |
 | Inspect | `/help /models /workspaces /sessions /loops /loop` |
-| Policy | `/model /child /effort /persona /capabilities /yolo` |
+| Policy | `/model /child /effort /persona /yolo` |
 | Workspace | `/workspace /rename /share /rollback /session /fork /parent /enter /older /newer` |
 | Functionality | `/mcp /skills /personas /members /env /schedule` |
 | Compose | `/import /script /editor` |

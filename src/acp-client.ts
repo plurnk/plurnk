@@ -210,8 +210,6 @@ export interface PlurnkActionMap {
         { readonly text: string; readonly execute?: boolean } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.capabilities.get": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
-    readonly "workspace.capabilities.set": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
     readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
     readonly "workspace.skills.discover": PlurnkActionEntry<
         { readonly source?: string } & Record<string, unknown>,
@@ -457,8 +455,6 @@ export const ACP_ACTION_KINDS = [
     "workspace.rollback",
     "entry.read",
     "op.parse",
-    "workspace.capabilities.get",
-    "workspace.capabilities.set",
     "workspace.skills.list",
     "workspace.skills.discover",
     "workspace.skills.add",

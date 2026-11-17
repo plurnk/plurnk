@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { ClientCliError } from "./cli-connection.ts";
 import {
-    runCliCapabilities,
     runCliCompletion,
     runCliConfig,
     runCliDaemon,
@@ -59,7 +58,6 @@ export const CLIENT_OPTIONS = {
     auto: { type: "boolean" },
     bell: { type: "boolean" },
     repl: { type: "boolean" },
-    capabilities: { type: "string" },
     "env-file": { type: "string", multiple: true },
     "env-file-if-exists": { type: "string", multiple: true },
     "max-turns": { type: "string" },
@@ -101,7 +99,6 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--session <name>] [--json]
        plurnk effort [level] --workspace <name> [--session <name>] [--json]
        plurnk persona [name|none] --workspace <name> [--session <name>] [--json]
-       plurnk capabilities [json] --workspace <name> [--session <name>] [--json]
        plurnk script <file.plk> [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
@@ -205,8 +202,6 @@ options:
       --repl              run the interactive line-oriented REPL over the 5-stream
                           contract ([stdin, stdout, stderr, events, reasoning], fd 0..4)
                           without the Term viewport. Overrides PLURNK_CLIENT_REPL.
-      --capabilities <json>
-                          CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
@@ -261,7 +256,6 @@ subcommands:
   read <loop>/<turn>/<seq>  inspect one log row in the selected workspace/session
   effort [level]          inspect or set a session's effort
   persona [name|none]     inspect, select, or clear a session's persona role
-  capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
@@ -572,9 +566,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         const projectRoot = typeof parsed.values["project-root"] === "string"
             ? parsed.values["project-root"]
             : env.PLURNK_CLIENT_PROJECT_ROOT;
-        const capabilitiesRaw = typeof parsed.values.capabilities === "string"
-            ? parsed.values.capabilities
-            : env.PLURNK_CLIENT_CAPABILITIES;
         const filesItemsRaw = typeof parsed.values["files-items"] === "string"
             ? parsed.values["files-items"]
             : env.PLURNK_CLIENT_FILES_ITEMS;
@@ -590,13 +581,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                   : parseSwitchValue("PLURNK_CLIENT_NO_GIT", env.PLURNK_CLIENT_NO_GIT);
 
         const workspaceSettings: Record<string, unknown> = {};
-        if (capabilitiesRaw !== undefined && capabilitiesRaw.trim().length > 0) {
-            try {
-                workspaceSettings.capabilities = JSON.parse(capabilitiesRaw);
-            } catch {
-                // ignore invalid JSON here; server validates if needed
-            }
-        }
         if (filesItemsRaw !== undefined && filesItemsRaw.trim().length > 0) {
             workspaceSettings.filesItems = Number.parseInt(filesItemsRaw, 10);
         }
@@ -851,8 +835,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             exitCode = await runCliConfig("thought_level", positionals[1], common);
         } else if (first === "persona") {
             exitCode = await runCliConfig("persona", positionals[1], common);
-        } else if (first === "capabilities") {
-            exitCode = await runCliCapabilities(positionals[1], common);
         } else if (first === "login") {
             exitCode = await runCliLogin(common);
         } else if (first === "logout") {

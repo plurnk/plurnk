@@ -645,20 +645,6 @@ export const dispatchSlashCommand = async (
             return "continue";
         }
 
-        if (cmd === "capabilities") {
-            const rawPolicy = args.join(" ").trim();
-            const result =
-                rawPolicy.length > 0
-                    ? await client.action(
-                          "workspace.capabilities.set",
-                          { policy: JSON.parse(rawPolicy) as unknown },
-                          bindingContext(),
-                      )
-                    : await client.action("workspace.capabilities.get", {}, bindingContext());
-            streams.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-            return "continue";
-        }
-
         if (cmd === "share") {
             const folder = args[0];
             if (!folder) {

@@ -1071,6 +1071,10 @@ export class SessionPresenter {
             return frames;
         }
 
+        if (SessionUpdate.isCursorUpdate(update)) {
+            return frames;
+        }
+
         if (SessionUpdate.isPromptSuggestionsUpdate(update)) {
             if (this.#replayingHistory) {
                 return frames;

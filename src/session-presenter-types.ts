@@ -40,6 +40,7 @@ export const SESSION_UPDATE_GUARDS = {
     isSessionMessageChunk: true,
     isReplayComplete: true,
     isPromptSuggestionsUpdate: true,
+    isCursorUpdate: true,
     isCustom: true,
 } as const satisfies Record<keyof typeof SessionUpdate, true>;
 

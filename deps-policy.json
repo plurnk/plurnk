@@ -5,7 +5,7 @@
             "requirement": "exact",
             "resolved": "1.5.2",
             "verifiedLatest": "1.5.2",
-            "verifiedAt": "2026-11-14",
+            "verifiedAt": "2026-11-18",
             "maxLag": "0 minors",
             "budgetDays": 14,
             "why": "whole terminal interaction layer; ~5 minors/3 weeks; no shipped changelog; native prebuilds"
@@ -13,9 +13,9 @@
         {
             "name": "@agentclientprotocol/sdk",
             "requirement": "caret",
-            "resolved": "2.7.0",
-            "verifiedLatest": "2.7.0",
-            "verifiedAt": "2026-11-14",
+            "resolved": "2.8.0",
+            "verifiedLatest": "2.8.0",
+            "verifiedAt": "2026-11-18",
             "maxLag": "any version",
             "budgetDays": 14,
             "why": "ACP v2 draft; wire/API may change incompatibly in any release"

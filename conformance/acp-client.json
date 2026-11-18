@@ -633,6 +633,12 @@
           "src/term-viewport.ts — idle composer suggestion placeholder and Tab completion"
         ]
       },
+      "isCursorUpdate": {
+        "posture": "ignored",
+        "evidence": [
+          "src/session-presenter.ts — rollback and fork address log:/// coordinates directly; daemon emits no cursor_update"
+        ]
+      },
       "isCustom": {
         "posture": "ignored",
         "evidence": ["src/session-presenter.ts — custom notifications are ignored by presentation"]

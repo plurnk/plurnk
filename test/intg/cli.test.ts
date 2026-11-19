@@ -192,15 +192,33 @@ const createMockAcpServer = async () => {
                     }
                     return { items };
                 }
-                if (params.kind === "op.parse") {
+                if (params.kind === "op.exec") {
                     const rawText = String(params.params?.text ?? "");
+                    if (rawText.includes("BAD_SYNTAX")) {
+                        return {
+                            results: [
+                                {
+                                    status: 400,
+                                    problem: { detail: "OP_EXEC_PROBLEM: invalid statement" },
+                                },
+                            ],
+                        };
+                    }
                     return {
                         results: [
                             {
                                 status: 200,
-                                content: `OP_PARSE_OK: ${rawText.replace(/\r?\n/gu, "\\n")}`,
+                                content: `OP_EXEC_OK: ${rawText.replace(/\r?\n/gu, "\\n")}`,
                             },
                         ],
+                    };
+                }
+                if (params.kind === "session.rollback") {
+                    return {
+                        to: String(params.params?.to ?? ""),
+                        restored: ["src/index.ts"],
+                        skipped: [],
+                        stopped: null,
                     };
                 }
                 if (params.kind === "session.env.replace") {
@@ -940,13 +958,17 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
         const errObj = await waitStderr((e) => e.type === "https://problems.plurnk.xyz/client/unknown-command");
         assert.equal(errObj.status, 400);
 
-        // Direct MCP expression on fd 0 -> routes to op.parse ({§cli-repl-mode})
+        // Direct MCP expression on fd 0 -> routes to op.exec ({§cli-repl-mode})
         replChild.stdin!.write('plurnk.read({ path: "file:///tmp/test.txt" })\n');
-        await waitStdout((l) => l === 'OP_PARSE_OK: plurnk.read({ path: "file:///tmp/test.txt" })');
+        await waitStdout((l) => l === 'OP_EXEC_OK: plurnk.read({ path: "file:///tmp/test.txt" })');
         replChild.stdin!.write('await plurnk.read({ path: "file:///tmp/test.txt" });\n');
-        await waitStdout((l) => l === 'OP_PARSE_OK: await plurnk.read({ path: "file:///tmp/test.txt" });');
+        await waitStdout((l) => l === 'OP_EXEC_OK: await plurnk.read({ path: "file:///tmp/test.txt" });');
         replChild.stdin!.write("!echo hi\n");
-        await waitStdout((l) => l === 'OP_PARSE_OK: plurnk.sh({"command":"echo hi"})');
+        await waitStdout((l) => l === 'OP_EXEC_OK: plurnk.sh({"command":"echo hi"})');
+        replChild.stdin!.write("plurnk.read(BAD_SYNTAX)\n");
+        await waitStdout((l) => l === "OP_EXEC_PROBLEM: invalid statement");
+        replChild.stdin!.write("/rollback 1/1/1\n");
+        await waitStdout((l) => l.includes('"to":"1/1/1"') && l.includes('"restored":["src/index.ts"]'));
 
         // Bracketed paste multiline submission on fd 0 -> single prompt with preserved newlines
         replChild.stdin!.write("\x1b[200~Bracketed line 1\nBracketed line 2\x1b[201~\n");

@@ -30,7 +30,7 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages." },
     { usage: "/personas [subcommand]", summary: "List or manage this workspace's persona roles." },
     { usage: "/import <path>", summary: "Insert a local file into the composer." },
-    { usage: "/script <path>", summary: "Submit a local .plk batch of MCP expressions through op.parse." },
+    { usage: "/script <path>", summary: "Submit a local .plk batch of MCP expressions through op.exec." },
     { usage: "/editor", summary: "Compose the current value in $EDITOR." },
     { usage: "/review", summary: "Inspect pending proposals or questions." },
     { usage: "/approve @<id> [optionId]", summary: "Approve the identified proposal or gate (@<id> optional in Term)." },

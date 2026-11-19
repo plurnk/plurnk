@@ -79,9 +79,9 @@
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "durability"]
     },
-    "workspace.rollback": {
+    "session.rollback": {
       "posture": "vm-workspace-bridge",
-      "evidence": ["src/cli.test.ts — workspace rollback"],
+      "evidence": ["src/cli.test.ts — session rollback"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "entry.read": {
@@ -89,7 +89,7 @@
       "evidence": ["src/cli.test.ts — entry reading"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "op.parse": {
+    "op.exec": {
       "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — PLURNK dispatch"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]

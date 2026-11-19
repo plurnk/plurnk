@@ -283,10 +283,10 @@ export const formatComposerHint = (state: ComposerHintState = {}): string => {
     ) {
         segments.push(`child:${state.childModel}`);
     }
-    if (state.mode === "deny") {
-        segments.push("mode:deny");
+    if (state.mode === "reject") {
+        segments.push("mode:reject");
     }
-    const yoloOn = state.yolo === true || state.mode === "allow";
+    const yoloOn = state.yolo === true || state.mode === "accept";
     if (yoloOn) {
         segments.push("yolo: on (Shift-Tab)", "?review");
     } else {

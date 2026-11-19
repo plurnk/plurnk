@@ -61,7 +61,7 @@ export const CLIENT_OPTIONS = {
     "env-file": { type: "string", multiple: true },
     "env-file-if-exists": { type: "string", multiple: true },
     "max-turns": { type: "string" },
-    timeout: { type: "string" },
+    "timeout-sec": { type: "string" },
     "files-items": { type: "string" },
     "preview-lines": { type: "string" },
     "history-entries": { type: "string" },
@@ -206,7 +206,7 @@ options:
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
                           descendants' turns and every bare call (else the daemon's ceiling).
-      --timeout <s>       cancel each prompt loop (session/cancel) after <s> seconds;
+      --timeout-sec <s>   cancel each prompt loop (session/cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
@@ -271,7 +271,7 @@ subcommands:
   personas ...              List or manage this workspace's persona roles.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
-  script <file.plk>       run a .plk file: feed its MCP expressions to op.parse,
+  script <file.plk>       run a .plk file: feed its MCP expressions to op.exec,
                           render the trace, exit by worst op status. Honors
                           --workspace/--yolo/--project-root + workspace-open
                           settings. The daemon owns the grammar; the client
@@ -663,9 +663,9 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             ? Number.parseInt(maxTurnsRaw, 10)
             : undefined;
 
-        const timeoutRaw = typeof parsed.values.timeout === "string"
-            ? parsed.values.timeout
-            : env.PLURNK_CLIENT_TIMEOUT;
+        const timeoutRaw = typeof parsed.values["timeout-sec"] === "string"
+            ? parsed.values["timeout-sec"]
+            : env.PLURNK_CLIENT_TIMEOUT_SEC;
         const timeoutSec = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
             ? Number.parseFloat(timeoutRaw)
             : undefined;

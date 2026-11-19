@@ -22,6 +22,7 @@ import {
 import { toHttpOrigin } from "./credential.ts";
 import {
     executeFamilyCommand,
+    formatExecResultLine,
     formatLogEntries,
     formatModelsRows,
     formatWorkspacesRows,
@@ -525,14 +526,8 @@ export const runCliScript = async (filePath: string, options: CliCommonOptions):
     });
     try {
         await ensureDaemonConnected(client, options);
-        const res = await client.action<{
-            readonly results?: Array<{
-                readonly status?: number;
-                readonly content?: string;
-                readonly message?: string;
-            }>;
-        }>(
-            "op.parse",
+        const res = await client.action(
+            "op.exec",
             { text },
             {
                 workspace: options.workspace,
@@ -544,7 +539,7 @@ export const runCliScript = async (filePath: string, options: CliCommonOptions):
             process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
         } else {
             for (const r of res.results ?? []) {
-                const line = r.content ?? r.message ?? String(r.status ?? 200);
+                const line = formatExecResultLine(r);
                 process.stdout.write(line.endsWith("\n") ? line : `${line}\n`);
             }
         }

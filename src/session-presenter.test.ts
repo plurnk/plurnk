@@ -979,10 +979,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(freshPresenter.effort, null);
     assert.equal(freshPresenter.effortSource, null);
 
-    // kill with distillation body previews beneath 🗑️ and suppresses synthesized note with attrs.distilled ({§cli-rendering}, #244).
+    // kill renders as a single-line 🗑️ receipt without body preview ({§cli-rendering}).
     const killTarget = "log:///67/[1-2]/*/{read,gitea,sh,emission,reasoning}";
-    const killBody =
-        "Verified open issues and git status across plurnk-service (#1392, #1391, #1390, #1381), plurnk (0 open), and plurnk-web (#98).";
     const killFrames = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "67/2/6",
@@ -993,7 +991,6 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         rawInput: {
             target: { raw: killTarget },
             aside: "retire loop 67 status check transcripts",
-            body: killBody,
         },
         _meta: {
             plurnk: {
@@ -1012,7 +1009,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         assert.equal(killFrames[0].op, "kill");
         assert.equal(killFrames[0].target, killTarget);
         assert.equal(killFrames[0].aside, "retire loop 67 status check transcripts");
-        assert.deepEqual(killFrames[0].contentLines, [killBody]);
+        assert.deepEqual(killFrames[0].contentLines, []);
         const renderedKill = stripVTControlCharacters(
             renderOperationBlock({
                 glyph: killFrames[0].glyph,
@@ -1035,60 +1032,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         );
         assert.equal(
             renderedKill,
-            `🗑️  (${killTarget}) retire loop 67 status check transcripts\n    ${killBody}`,
+            `🗑️  (${killTarget}) retire loop 67 status check transcripts`,
         );
-    }
-
-    const distilledNoteFrames = presenter.apply({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "67/2/7",
-        name: "note",
-        title: "note",
-        status: "completed",
-        rawInput: {
-            aside: null,
-            target: null,
-            body: killBody,
-        },
-        _meta: {
-            plurnk: {
-                id: 6707,
-                coordinate: "67/2/7",
-                op: "note",
-                origin: "model",
-                status: 200,
-                attrs: {
-                    distilled: killTarget,
-                },
-            },
-        },
-    });
-    assert.equal(
-        distilledNoteFrames.length,
-        0,
-        "synthesized note carrying attrs.distilled must be suppressed so it does not render an orphan 🗒️ block",
-    );
-
-    const bodilessKillFrames = presenter.apply({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "67/2/8",
-        name: "kill",
-        title: "kill (workspace:///old.ts)",
-        status: "completed",
-        rawInput: { target: { raw: "workspace:///old.ts" }, body: null },
-        _meta: {
-            plurnk: {
-                id: 6708,
-                coordinate: "67/2/8",
-                op: "kill",
-                origin: "model",
-                status: 200,
-            },
-        },
-    });
-    assert.equal(bodilessKillFrames[0]?.kind, "tool_call");
-    if (bodilessKillFrames[0]?.kind === "tool_call") {
-        assert.deepEqual(bodilessKillFrames[0].contentLines, []);
     }
 });
 

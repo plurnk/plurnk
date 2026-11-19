@@ -228,7 +228,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.equal(noteRow[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
-    // Non-distilled note with _plurnk origin is treated identically to model note ({§cli-rendering})
+    // note with _plurnk origin is treated identically to model note ({§cli-rendering})
     const harnessNote = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/3",
@@ -714,23 +714,6 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         sessionUpdate: "terminal_update",
         terminalId: "term:7",
         output: { data: Buffer.from("hydrated-out\n", "utf8").toString("base64") },
-    });
-    replaySess.applyUpdate({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "1/1/2",
-        name: "note",
-        title: "note",
-        status: "completed",
-        rawInput: { aside: null, body: "distilled summary" },
-        _meta: {
-            plurnk: {
-                id: 8,
-                op: "note",
-                origin: "model",
-                status: 200,
-                attrs: { distilled: "log:///1/1/1/sh" },
-            },
-        },
     });
     const extracted = extractChronologicalHistory(replaySess);
     assert.equal(extracted.length, 1);

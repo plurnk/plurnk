@@ -1223,7 +1223,6 @@ export class SessionPresenter {
                                   aside?: string;
                                   kind?: string;
                                   stream?: string;
-                                  distilled?: string;
                               };
                           };
                       }
@@ -1254,7 +1253,6 @@ export class SessionPresenter {
                     session?: string;
                     to?: string;
                     waiting?: number;
-                    distilled?: string;
                 };
             };
             const toolCoord = extractCoordinateSeqs(update.toolCallId);
@@ -1311,8 +1309,7 @@ export class SessionPresenter {
                 attrSessionTarget ??
                 extractTitleTarget(effectiveTitle);
 
-            // Suppress internal _plurnk emission announcements, entry materializations,
-            // and synthesized kill distillation notes ({§cli-rendering}).
+            // Suppress internal _plurnk emission announcements and entry materializations ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "read" &&
@@ -1325,13 +1322,6 @@ export class SessionPresenter {
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "edit" &&
                 metaPlurnk.attrs?.kind === "entry_materialized"
-            ) {
-                return frames;
-            }
-            if (
-                opName === "note" &&
-                typeof metaPlurnk.attrs?.distilled === "string" &&
-                metaPlurnk.attrs.distilled.trim().length > 0
             ) {
                 return frames;
             }
@@ -1487,7 +1477,7 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (edit, work, fork, kill, and undelivered send)
+            // Authored request bodies (edit, work, fork, and undelivered send/done/fail)
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);

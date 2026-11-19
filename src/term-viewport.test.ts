@@ -1388,7 +1388,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
                     },
                 },
             });
-            // Turn 2 also emits a plan_update and a kill with a distillation body (17/2/6) and its synthesized note (17/2/7) (#244)
+            // Turn 2 also emits a plan_update and a kill receipt (17/2/6)
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -1422,7 +1422,6 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
                     rawInput: {
                         target: { raw: "log:///17/1/*/{read,sh}" },
                         aside: "retire turn 1 transcripts",
-                        body: "DISTILLED_KILL_NOTE_BODY",
                     },
                     _meta: {
                         plurnk: {
@@ -1431,33 +1430,6 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
                             op: "kill",
                             origin: "model",
                             status: 200,
-                        },
-                    },
-                },
-            });
-            await client.notify(methods.client.session.update, {
-                sessionId: params.sessionId,
-                update: {
-                    sessionUpdate: "tool_call_update",
-                    toolCallId: "17/2/7",
-                    name: "note",
-                    title: "note",
-                    status: "completed",
-                    rawInput: {
-                        aside: null,
-                        target: null,
-                        body: "DISTILLED_KILL_NOTE_BODY",
-                    },
-                    _meta: {
-                        plurnk: {
-                            id: 24582,
-                            coordinate: "17/2/7",
-                            op: "note",
-                            origin: "model",
-                            status: 200,
-                            attrs: {
-                                distilled: "log:///17/1/*/{read,sh}",
-                            },
                         },
                     },
                 },
@@ -1591,24 +1563,13 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
         const shPos = promptWrites.lastIndexOf("turn1_sh_aside");
         const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
         const killPos = promptWrites.lastIndexOf("retire turn 1 transcripts");
-        const distilledBodyPos = promptWrites.lastIndexOf("    DISTILLED_KILL_NOTE_BODY");
         const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
         assert.ok(shPos >= 0, "17/1/5 sh single-line receipt must be rendered");
         assert.equal(promptWrites.includes("echo turn1_sh"), false, "sh script body must not be previewed");
         assert.equal(promptWrites.includes("🚧"), false, "plan_update must not emit duplicate 🚧 waterfall rows");
         assert.ok(notePos > shPos, "Turn 1 17/1/5 sh must stay anchored before Turn 2 NOTE (17/2/1)");
         assert.ok(killPos > notePos, "17/2/6 KILL row must appear after 17/2/1 NOTE");
-        assert.ok(
-            distilledBodyPos > killPos,
-            "KILL distillation body must render indented 4 columns beneath the 🗑️ row",
-        );
-        assert.equal(
-            promptWrites.includes("\n🗒️\nDISTILLED_KILL_NOTE_BODY") ||
-                promptWrites.includes("\n🗒️  \nDISTILLED_KILL_NOTE_BODY"),
-            false,
-            "synthesized NOTE with attrs.distilled must not render a standalone 🗒️ block",
-        );
-        assert.ok(hamsterPos > distilledBodyPos, "🐹 reply must follow Turn 2 KILL row");
+        assert.ok(hamsterPos > killPos, "🐹 reply must follow Turn 2 KILL row");
         assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);
 
         inputCallback!("\x04");

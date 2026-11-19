@@ -958,7 +958,6 @@ export class AcpClient {
                     opName === "edit" ||
                     opName === "work" ||
                     opName === "fork" ||
-                    opName === "kill" ||
                     opName === "send") &&
                 Array.isArray(update.content) &&
                 update.content.some((c) => ToolCallContent.isContent(c) && ContentBlock.isResourceLink(c.content))

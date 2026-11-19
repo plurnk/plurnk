@@ -630,7 +630,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                     {
                         entryId: 605,
                         sessionId: 1,
-                        target: "sh://605",
+                        target: "exec:///sh/605",
                         loop_seq: 6,
                         turn_seq: 1,
                         sequence: 5,
@@ -648,8 +648,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     });
     assert.match(presenter.buildStatusBar(5000).formattedStatusLine, /↓18k ↑4k · \$6\.2500 \+ \?/u);
     assert.equal(presenter.isOpenStream("6/1/5"), true);
-    assert.equal(presenter.isOpenStream("6/1/9", "sh://605"), true);
-    assert.equal(presenter.isOpenStream("6/1/9", "sh://other"), false);
+    assert.equal(presenter.isOpenStream("6/1/9", "exec:///sh/605"), true);
+    assert.equal(presenter.isOpenStream("6/1/9", "exec:///sh/other"), false);
 
     // An open stream (status: "in_progress") is NOT fabricated as completed when state_update: "idle" (status 200/202) arrives;
     // it renders once when stream/concluded (status: "completed") arrives ({§cli-session-status}, {§cli-problems-and-notices}).
@@ -665,7 +665,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                 id: 605,
                 op: "sh",
                 status: 200,
-                attrs: { stream: "sh://605" },
+                attrs: { stream: "exec:///sh/605" },
             },
         },
     });
@@ -900,8 +900,12 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                 configId: "mode",
                 name: "Approval Policy",
                 type: "select",
-                currentValue: "allow",
-                options: [{ value: "allow", name: "Allow" }],
+                currentValue: "accept",
+                options: [
+                    { value: "review", name: "Review" },
+                    { value: "accept", name: "Accept" },
+                    { value: "reject", name: "Reject" },
+                ],
             },
         ],
         _meta: {
@@ -916,7 +920,25 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(freshPresenter.model, "rtx5070");
     assert.equal(freshPresenter.yolo, true);
 
-    // Client-local `--yolo` / `/yolo` remains true when server `mode` is `"propose"`.
+    freshPresenter.apply({
+        sessionUpdate: "config_option_update",
+        configOptions: [
+            {
+                configId: "mode",
+                name: "Approval Policy",
+                type: "select",
+                currentValue: "reject",
+                options: [
+                    { value: "review", name: "Review" },
+                    { value: "accept", name: "Accept" },
+                    { value: "reject", name: "Reject" },
+                ],
+            },
+        ],
+    });
+    assert.equal(freshPresenter.yolo, false);
+
+    // Client-local `--yolo` / `/yolo` remains true when server `mode` is `"review"`.
     const localYoloPresenter = new SessionPresenter({
         workspaceName: "alpha",
         sessionName: "user",
@@ -926,10 +948,11 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                 configId: "mode",
                 name: "Approval Policy",
                 type: "select",
-                currentValue: "propose",
+                currentValue: "review",
                 options: [
-                    { value: "propose", name: "Propose" },
-                    { value: "allow", name: "Allow" },
+                    { value: "review", name: "Review" },
+                    { value: "accept", name: "Accept" },
+                    { value: "reject", name: "Reject" },
                 ],
             },
         ],
@@ -1261,7 +1284,7 @@ test("SessionPresenter preserves stream aside and openedAt across live tool_call
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
         name: "sh",
-        title: "sh (sh:///7a559e1f) — launch Plurnk campaign",
+        title: "sh (exec:///sh/7a559e1f) — launch Plurnk campaign",
         status: "in_progress",
         rawInput: { aside: "launch Plurnk campaign" },
         _meta: {
@@ -1269,7 +1292,7 @@ test("SessionPresenter preserves stream aside and openedAt across live tool_call
                 id: 101,
                 op: "sh",
                 turnSeq: 1,
-                attrs: { stream: "sh:///7a559e1f" },
+                attrs: { stream: "exec:///sh/7a559e1f" },
             },
         },
     });
@@ -1292,7 +1315,7 @@ test("SessionPresenter preserves stream aside and openedAt across live tool_call
                     {
                         entryId: 202,
                         sessionId: 1,
-                        target: "sh:///78eafee4",
+                        target: "exec:///sh/78eafee4",
                         op: "sh",
                         aside: "launch Bare Pi campaign",
                         openedAt: openedAtIso,

@@ -320,6 +320,20 @@ const contractsFormatFamilyResult = (
 export const formatFamilyRows = (family: string, result: Record<string, unknown>): string =>
     contractsFormatFamilyRows !== undefined ? contractsFormatFamilyRows(family, result) : localFormatFamilyRows(family, result);
 
+export const formatExecResultLine = (r: {
+    readonly status?: number;
+    readonly content?: string;
+    readonly message?: string;
+    readonly problem?: unknown;
+}): string => {
+    if (typeof r.content === "string" && r.content.length > 0) return r.content;
+    if (typeof r.message === "string" && r.message.length > 0) return r.message;
+    const problemDetail = (r.problem as { readonly detail?: unknown } | undefined)?.detail;
+    if (typeof problemDetail === "string" && problemDetail.length > 0) return problemDetail;
+    if (typeof r.content === "string") return r.content;
+    return String(r.status ?? 200);
+};
+
 const renderTable = (headers: readonly string[], rows: readonly (readonly string[])[]): string => {
     const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
     const fmt = (cells: readonly string[]) =>

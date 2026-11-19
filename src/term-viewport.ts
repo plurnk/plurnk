@@ -243,7 +243,7 @@ export const runTermViewport = async (
         surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
         const loopNum = presenter.loopSeq ?? 1;
         const turns = presenter.turns > 0 ? presenter.turns : currentTurns;
-        const yoloLead = presenter.yolo || currentMode === "allow" ? "🔥 " : "";
+        const yoloLead = presenter.yolo || currentMode === "accept" ? "🔥 " : "";
         const place =
             turns > 0
                 ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`

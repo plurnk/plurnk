@@ -39,7 +39,12 @@ import { altShortcut, backTabShortcut } from "./term-viewport.ts";
 import { completeInput, completeOps, dslOpPartial, pathPartial } from "./term-completion.ts";
 import Review, { QuestionForm } from "./term-review.ts";
 import { AcpSession } from "./acp-session.ts";
-import { extractChronologicalHistory, formatModelsRows, formatWorkspacesRows } from "./repl-commands.ts";
+import {
+    extractChronologicalHistory,
+    formatExecResultLine,
+    formatModelsRows,
+    formatWorkspacesRows,
+} from "./repl-commands.ts";
 import TermSurface, {
     attention,
     backgroundScheme,
@@ -48,6 +53,7 @@ import TermSurface, {
     colorEnabled,
     colorFgBgScheme,
     concluded,
+    formatComposerHint,
     learnScheme,
     ModelText,
     paint,
@@ -81,6 +87,7 @@ test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI 
     assert.match(help.stdout, /--session/);
     assert.match(help.stdout, /--persona/);
     assert.match(help.stdout, /--system-prompt/);
+    assert.match(help.stdout, /--timeout-sec/);
 
     const conflict = spawnSync(
         process.execPath,
@@ -110,11 +117,15 @@ test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI 
     try {
         const plurnkCfg = path.join(tmpXdg, "plurnk");
         fs.mkdirSync(plurnkCfg, { recursive: true });
-        fs.writeFileSync(path.join(plurnkCfg, ".env"), "PLURNK_CLIENT_MODEL=from-env\nPLURNK_CLIENT_EFFORT=low\n");
+        fs.writeFileSync(
+            path.join(plurnkCfg, ".env"),
+            "PLURNK_CLIENT_MODEL=from-env\nPLURNK_CLIENT_EFFORT=low\nPLURNK_CLIENT_TIMEOUT_SEC=45\n",
+        );
         fs.writeFileSync(path.join(plurnkCfg, ".env.local"), "PLURNK_CLIENT_MODEL=from-env-local\n");
         const assembled = assembleClientEnv({ XDG_CONFIG_HOME: tmpXdg });
         assert.equal(assembled.PLURNK_CLIENT_MODEL, "from-env-local");
         assert.equal(assembled.PLURNK_CLIENT_EFFORT, "low");
+        assert.equal(assembled.PLURNK_CLIENT_TIMEOUT_SEC, "45");
     } finally {
         fs.rmSync(tmpXdg, { recursive: true, force: true });
     }
@@ -433,7 +444,7 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
                         { id: 3, name: "done-child", lifecycle: "idle", gates: 0 },
                     ],
                     inbox: [{ id: "m1" }, { id: "m2" }],
-                    streams: [{ id: "sh://1" }],
+                    streams: [{ id: "exec:///sh/1" }],
                     spend: {
                         usage: { inputTokens: 120, outputTokens: 45 },
                         costUsd: "0.0125",
@@ -543,6 +554,26 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         /workspace: ws · session: user · model: fast · effort: high · yolo: on · \/help/u,
     );
     assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
+    assert.equal(
+        formatComposerHint({ mode: "review" }),
+        "yolo: off (Shift-Tab) · !cmd · @file · /help",
+    );
+    assert.equal(
+        formatComposerHint({ mode: "accept" }),
+        "yolo: on (Shift-Tab) · ?review · !cmd · @file · /help",
+    );
+    assert.equal(
+        formatComposerHint({ mode: "reject" }),
+        "mode:reject · yolo: off (Shift-Tab) · !cmd · @file · /help",
+    );
+    assert.equal(
+        formatExecResultLine({ status: 400, problem: { detail: "Statement parse failure." } }),
+        "Statement parse failure.",
+    );
+    assert.equal(
+        formatExecResultLine({ status: 200, content: "ok-body", problem: { detail: "ignored" } }),
+        "ok-body",
+    );
     assert.match(renderSubmittedInput("line 1\nline 2"), /🎤 line 1[\s\S]*line 2/u);
     assert.match(renderSubmittedInput("line 1\nline 2", "scoutproxy"), /\[scoutproxy\] line 1[\s\S]*line 2/u);
     assert.equal(concluded(200, false), "reply");
@@ -1351,7 +1382,27 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
                 },
             };
         })
-        .onRequest("_plurnk/action", (raw) => raw as { kind: string }, async () => ({}))
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string; params?: Record<string, unknown> },
+            async ({ params }) => {
+                if (params.kind === "session.rollback") {
+                    return {
+                        to: String(params.params?.to ?? ""),
+                        restored: ["a.ts"],
+                        skipped: [],
+                        stopped: null,
+                    };
+                }
+                if (params.kind === "workspace.archive") {
+                    return {
+                        id: 1,
+                        archivedAt: params.params?.archived === false ? null : "2026-11-19T00:00:00.000Z",
+                    };
+                }
+                return {};
+            },
+        )
         .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
             promptSessionIds.push(params.sessionId);
             await client.notify(methods.client.session.update, {
@@ -1460,6 +1511,21 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
         stdin.write("Hello forked session\n");
         await waitUntil(() => outText.includes("Reply on 1#feature-branch"));
         assert.deepEqual(promptSessionIds, ["1#feature-branch"]);
+
+        // Verify /rollback dispatches session.rollback and workspace.archive returns archivedAt
+        stdin.write("/rollback 1/1/1\n");
+        await waitUntil(() => outText.includes('"restored":["a.ts"]'));
+        const directClient = new AcpClient({
+            url: `http://127.0.0.1:${String(addr.port)}/acp`,
+            credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        });
+        try {
+            await directClient.connect();
+            const archiveRes = await directClient.action("workspace.archive", { archived: true }, { workspaceId: 1 });
+            assert.equal(archiveRes.archivedAt, "2026-11-19T00:00:00.000Z");
+        } finally {
+            directClient.close();
+        }
 
         stdin.write("/quit\n");
         assert.equal(await replPromise, 0);

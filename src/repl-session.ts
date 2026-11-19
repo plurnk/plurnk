@@ -25,6 +25,7 @@ import {
     extractChronologicalHistory,
     extractOpenPaths,
     extractPromptHistory,
+    formatExecResultLine,
     formatFamilyRows,
     formatLogEntries,
     formatModelsRows,
@@ -827,15 +828,9 @@ export const runReplSession = async (
             }
             const stmt = `plurnk.sh(${JSON.stringify({ command: shellCmd })})`;
             try {
-                const res = await client.action<{
-                    readonly results?: ReadonlyArray<{
-                        readonly status?: number;
-                        readonly content?: string;
-                        readonly message?: string;
-                    }>;
-                }>("op.parse", { text: stmt }, bindingContext());
+                const res = await client.action("op.exec", { text: stmt }, bindingContext());
                 for (const r of res.results ?? []) {
-                    const out = r.content ?? r.message ?? String(r.status ?? 200);
+                    const out = formatExecResultLine(r);
                     streams.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
                 }
             } catch (err) {
@@ -854,15 +849,9 @@ export const runReplSession = async (
             /^(?:await\s+)?plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
         if (isMcpExpression) {
             try {
-                const res = await client.action<{
-                    readonly results?: ReadonlyArray<{
-                        readonly status?: number;
-                        readonly content?: string;
-                        readonly message?: string;
-                    }>;
-                }>("op.parse", { text: line }, bindingContext());
+                const res = await client.action("op.exec", { text: line }, bindingContext());
                 for (const r of res.results ?? []) {
-                    const out = r.content ?? r.message ?? String(r.status ?? 200);
+                    const out = formatExecResultLine(r);
                     streams.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
                 }
             } catch (err) {

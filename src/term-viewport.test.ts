@@ -2033,12 +2033,12 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         ]);
     }
 
-    surface.setLiveActivity("⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s");
+    surface.setLiveActivity("⚙️  sh (exec:///sh/1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s");
     assert.deepEqual(surface.renderLiveLines(80), [
         "thought-line-18",
         "thought-line-19",
         "thought-line-20",
-        "⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s",
+        "⚙️  sh (exec:///sh/1/1/2/sh) 4.2s · 🐜 work (session:///helper) 12.0s",
     ]);
 
     // renderReasoning formats at most the newest 3 lines with 💭 on line 1 and 3-space indent on lines 2-3
@@ -2081,7 +2081,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         name: "sh",
         title: "sh",
         status: "in_progress",
-        _meta: { plurnk: { id: 42, op: "sh", turnSeq: 1, attrs: { stream: "sh:///1/1/2/sh" } } },
+        _meta: { plurnk: { id: 42, op: "sh", turnSeq: 1, attrs: { stream: "exec:///sh/1/1/2/sh" } } },
     });
     assert.equal(
         presenter.activeLiveEntries.length,
@@ -2108,7 +2108,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     const stripText = stripVTControlCharacters(
         renderActiveLiveLine(presenter.activeLiveEntries, 80, Date.now() + 5_000),
     );
-    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 helper \S+$/u);
+    assert.match(stripText, /^⚙️ {2}sh \(exec:\/\/\/sh\/1\/1\/2\/sh\) \S+ · 🐜 helper \S+$/u);
 
     // Stream with a good aside renders <lead> <aside> <elapsed> instead of (<target>),
     // trims long asides proportionally before dropping sibling entries to +N more,
@@ -2123,7 +2123,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///7a559e1f",
+                    target: "exec:///sh/7a559e1f",
                     aside: "launch Plurnk campaign",
                     startedAt: baseStarted,
                 },
@@ -2132,7 +2132,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///78eafee4",
+                    target: "exec:///sh/78eafee4",
                     aside: "launch Bare Pi campaign",
                     startedAt: baseStarted + 5_000,
                 },
@@ -2162,7 +2162,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///7a559e1f",
+                    target: "exec:///sh/7a559e1f",
                     aside: "sh",
                     startedAt: baseStarted,
                 },
@@ -2171,8 +2171,8 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///78eafee4",
-                    aside: "sh:///78eafee4",
+                    target: "exec:///sh/78eafee4",
+                    aside: "exec:///sh/78eafee4",
                     startedAt: baseStarted,
                 },
                 {
@@ -2190,7 +2190,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     );
     assert.equal(
         degenerateFallback,
-        "⚙️  sh (sh:///7a559e1f) 3m03s · ⚙️  sh (sh:///78eafee4) 3m03s · ☁️  probe 3m03s",
+        "⚙️  sh (exec:///sh/7a559e1f) 3m03s · ⚙️  sh (exec:///sh/78eafee4) 3m03s · ☁️  probe 3m03s",
     );
 
     const budgetedTwoStreams = stripVTControlCharacters(
@@ -2201,7 +2201,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///7a559e1f",
+                    target: "exec:///sh/7a559e1f",
                     aside: "launch Plurnk ht30 hydrogen head-to-head campaign",
                     startedAt: baseStarted,
                 },
@@ -2210,7 +2210,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///78eafee4",
+                    target: "exec:///sh/78eafee4",
                     aside: "launch Bare Pi campaign",
                     startedAt: baseStarted + 5_000,
                 },
@@ -2233,7 +2233,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
                     kind: "stream",
                     glyph: "⚙️",
                     op: "sh",
-                    target: "sh:///7a559e1f",
+                    target: "exec:///sh/7a559e1f",
                     aside: "launch Plurnk ht30 hydrogen head-to-head campaign",
                     startedAt: baseStarted,
                 },
@@ -2250,7 +2250,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
         toolCallId: "1/1/2",
         name: "sh",
         status: "completed",
-        _meta: { plurnk: { id: 42, op: "sh", status: 200, attrs: { stream: "sh:///1/1/2/sh" } } },
+        _meta: { plurnk: { id: 42, op: "sh", status: 200, attrs: { stream: "exec:///sh/1/1/2/sh" } } },
     });
     presenter.apply({
         sessionUpdate: "subagent_update",

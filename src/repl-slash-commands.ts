@@ -26,6 +26,7 @@ import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
 import {
     executeFamilyCommand,
     extractChronologicalHistory,
+    formatExecResultLine,
     formatLogEntries,
     formatModelsRows,
     formatWorkspacesRows,
@@ -679,7 +680,7 @@ export const dispatchSlashCommand = async (
                 });
                 return "continue";
             }
-            const result = await client.action("workspace.rollback", { to }, bindingContext());
+            const result = await client.action("session.rollback", { to }, bindingContext());
             streams.stdout.write(`${JSON.stringify(result)}\n`);
             return "continue";
         }
@@ -759,15 +760,9 @@ export const dispatchSlashCommand = async (
                 return "continue";
             }
             const text = readFileSync(resolve(options.cwd, filePath), "utf8");
-            const res = await client.action<{
-                readonly results?: ReadonlyArray<{
-                    readonly status?: number;
-                    readonly content?: string;
-                    readonly message?: string;
-                }>;
-            }>("op.parse", { text }, bindingContext());
+            const res = await client.action("op.exec", { text }, bindingContext());
             for (const r of res.results ?? []) {
-                const out = r.content ?? r.message ?? String(r.status ?? 200);
+                const out = formatExecResultLine(r);
                 streams.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
             }
             return "continue";

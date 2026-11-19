@@ -99,7 +99,7 @@ export class SessionPresenter {
     lifecycle: string = "idle";
     lifecycleGlyph: string = "⏹️";
     #localYolo: boolean;
-    #serverAllowMode = false;
+    #serverAcceptMode = false;
     model: string;
     effort: string | null = null;
     effortSource: "default" | "explicit" | null = null;
@@ -170,7 +170,7 @@ export class SessionPresenter {
     }
 
     get yolo(): boolean {
-        return this.#localYolo || this.#serverAllowMode;
+        return this.#localYolo || this.#serverAcceptMode;
     }
 
     set yolo(value: boolean) {
@@ -709,7 +709,7 @@ export class SessionPresenter {
             } else if (opt.configId === "spawn_model" && SessionConfigOption.isSelect(opt)) {
                 this.spawnModel = opt.currentValue.length > 0 && opt.currentValue !== "inherit" ? opt.currentValue : null;
             } else if (opt.configId === "mode" && SessionConfigOption.isSelect(opt)) {
-                this.#serverAllowMode = opt.currentValue === "allow";
+                this.#serverAcceptMode = opt.currentValue === "accept";
             }
         }
     }

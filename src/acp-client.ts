@@ -212,9 +212,9 @@ export interface PlurnkActionMap {
     >;
     readonly "workspace.archive": PlurnkActionEntry<
         { readonly archived?: boolean } & Record<string, unknown>,
-        { readonly id: number; readonly archived_at: string | null } & Record<string, unknown>
+        { readonly id: number; readonly archivedAt: string | null } & Record<string, unknown>
     >;
-    readonly "workspace.rollback": PlurnkActionEntry<
+    readonly "session.rollback": PlurnkActionEntry<
         { readonly to: string } & Record<string, unknown>,
         {
             readonly to: string;
@@ -235,9 +235,16 @@ export interface PlurnkActionMap {
             readonly problem?: Record<string, unknown>;
         } & Record<string, unknown>
     >;
-    readonly "op.parse": PlurnkActionEntry<
+    readonly "op.exec": PlurnkActionEntry<
         { readonly text: string } & Record<string, unknown>,
-        { readonly results: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+        {
+            readonly results: ReadonlyArray<{
+                readonly status?: number;
+                readonly content?: string;
+                readonly message?: string;
+                readonly problem?: { readonly detail?: string } & Record<string, unknown>;
+            } & Record<string, unknown>>;
+        } & Record<string, unknown>
     >;
     readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
     readonly "workspace.skills.discover": PlurnkActionEntry<
@@ -489,9 +496,9 @@ export const ACP_ACTION_KINDS = [
     "workspace.share",
     "workspace.rename",
     "workspace.archive",
-    "workspace.rollback",
+    "session.rollback",
     "entry.read",
-    "op.parse",
+    "op.exec",
     "workspace.skills.list",
     "workspace.skills.discover",
     "workspace.skills.add",

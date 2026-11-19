@@ -227,7 +227,7 @@ try {
         try {
             completed = await runClient(clientBin, [
                 "--json", "--workspace", "packed-composition", "--session", "durable-session",
-                "--project-root", "", "--max-turns", "2", "--timeout", "20",
+                "--project-root", "", "--max-turns", "2", "--timeout-sec", "20",
                 ...(selector === undefined ? [] : ["--model", selector]),
                 prompt,
             ], { cwd: install, env, timeout: 30_000 });
@@ -294,7 +294,7 @@ try {
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
         "--json", "--yolo", "--workspace", "packed-delegation", "--session", "delegation-parent",
-        "--project-root", delegatedRoot, "--max-turns", "8", "--timeout", "30",
+        "--project-root", delegatedRoot, "--max-turns", "8", "--timeout-sec", "30",
         "Exercise descendant proposal composition.",
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);

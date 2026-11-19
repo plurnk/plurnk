@@ -1,5 +1,17 @@
 # @plurnk/plurnk
 
+## 8.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Upgrade
+
+Upgrade this client and `@plurnk/plurnk-service` together to `8.0.0`.
+
+- Erase the retired `capabilities` CLI/Term surface and Agent Plugins references across client commands, specifications, and teaching fixtures (#267, https://repo.possumtech.com/plurnk/plurnk-service/issues/1517).
+- Unify interactive and CLI family command parsing across `env`, `schedule`, `skills`, `mcp`, and workspace `members`, route `mcp` and `skills` completion against the connected server, and scope `/learn` target coordinates (#268, https://repo.possumtech.com/plurnk/plurnk-service/issues/1521).
+- Adopt `@agentclientprotocol/sdk` `^2.8.0` (`cursor_update` session event classification) and widen `@plurnk/plurnk-contracts` (`^8.0.0 || ^9.0.0`) and optional `@plurnk/plurnk-service` (`^7.0.0 || ^8.0.0`) dependency ranges for `8.0.0` (#269).
+
 ## 7.0.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

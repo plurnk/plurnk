@@ -201,7 +201,10 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
         });
 
         const deadline = Date.now() + 5000;
-        while (!termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")) && Date.now() < deadline) {
+        while (
+            (!termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")) || inputCallback === null) &&
+            Date.now() < deadline
+        ) {
             await new Promise((r) => setTimeout(r, 20));
         }
         assert.ok(termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")));
@@ -474,7 +477,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
                 _meta: { plurnk: { published: true } },
             },
         });
-        await waitUntil(() => !termWrites.at(-1)!.includes("📨"));
+        await waitUntil(() => inputCallback !== null && !termWrites.at(-1)!.includes("📨"));
 
         // Submit prompt through the Term editor
         assert.ok(inputCallback !== null);
@@ -762,6 +765,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         // 1. Modelless startup warning, startup configuration notice, and `none` in status bar
         await waitUntil(
             () =>
+                inputCallback !== null &&
                 termWrites.join("").includes("/model <selector> chooses one.") &&
                 termWrites.join("").includes("Configuration skipped mcp: '/tmp/mcp.json' requires object 'mcpServers'"),
         );
@@ -1183,7 +1187,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires 
             assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
         };
 
-        await waitUntil(() => termWrites.join("").includes("$1.5000"));
+        await waitUntil(() => inputCallback !== null && termWrites.join("").includes("$1.5000"));
         assert.ok(inputCallback !== null);
 
         // 1. Trigger a 499 cancelled loop
@@ -1575,7 +1579,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
             assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
         };
 
-        await waitUntil(() => termWrites.join("").includes("[plurnk-service/~service]"));
+        await waitUntil(() => inputCallback !== null && termWrites.join("").includes("[plurnk-service/~service]"));
         assert.ok(inputCallback !== null);
         const writesBeforePrompt = termWrites.length;
         inputCallback!("go");
@@ -1930,7 +1934,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
             assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
         };
 
-        await waitUntil(() => termWrites.join("").includes("FIRST_TURN_REPLY"));
+        await waitUntil(() => inputCallback !== null && termWrites.join("").includes("FIRST_TURN_REPLY"));
         assert.ok(inputCallback !== null);
 
         // Even though historyEntries=3 sliced off OLDER_PROMPT_BEFORE_MANY_TOOLS from the rendered
@@ -2605,7 +2609,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
                             type: "content",
                             content: {
                                 type: "resource_link",
-                                uri: `${baseUrl}/acp/1/user/entry?target=log%3A%2F%2F1%2F1%2F1`,
+                                uri: `${baseUrl}/acp/1/1/entry?target=log%3A%2F%2F1%2F1%2F1`,
                                 name: "note",
                                 mimeType: "text/plain",
                             },
@@ -2653,7 +2657,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
             res.end(JSON.stringify({ access_token: "test-oauth-token", expires_in: 3600 }));
             return;
         }
-        if (req.url === "/acp/1/user/entry?target=log%3A%2F%2F1%2F1%2F1") {
+        if (req.url === "/acp/1/1/entry?target=log%3A%2F%2F1%2F1%2F1") {
             fetchedAuthHeader = req.headers.authorization;
             res.writeHead(200, { "content-type": "text/plain" });
             res.end("Hydrated note body from HTTP entry route");
@@ -2914,8 +2918,10 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
             assert.ok(predicate(), `Transcript so far:\n${stripVtAndApc(termWrites.join(""))}`);
         };
 
-        await waitUntil(() =>
-            stripVtAndApc(termWrites.join("")).includes("yolo: off (Shift-Tab) · !cmd · @file · /help"),
+        await waitUntil(
+            () =>
+                inputCallback !== null &&
+                stripVtAndApc(termWrites.join("")).includes("yolo: off (Shift-Tab) · !cmd · @file · /help"),
         );
         assert.match(
             stripVtAndApc(termWrites.join("")),

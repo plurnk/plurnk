@@ -134,56 +134,72 @@ export interface PlurnkActionMap {
     readonly ping: PlurnkActionEntry<Record<string, unknown>, { readonly ok?: boolean } & Record<string, unknown>>;
     readonly discover: PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
     readonly "models.list": PlurnkActionEntry<
-        { readonly refresh?: boolean } & Record<string, unknown>,
         {
-            readonly defaultModel?: unknown;
-            readonly aliases?: ReadonlyArray<Record<string, unknown>>;
-            readonly providers?: ReadonlyArray<Record<string, unknown>>;
+            readonly search?: string;
+            readonly provider?: string;
+            readonly availability?: "configured" | "all";
+            readonly all?: boolean;
+            readonly offset?: number;
+            readonly limit?: number;
+        },
+        {
+            readonly total: number;
+            readonly offset: number;
+            readonly nextOffset?: number;
+            readonly items: ReadonlyArray<Record<string, unknown>>;
         } & Record<string, unknown>
     >;
-    readonly "service.update": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.update": PlurnkActionEntry<
+        Record<string, never>,
+        { readonly catalog: Record<string, unknown>; readonly service: Record<string, unknown> } & Record<string, unknown>
+    >;
     readonly "workspace.list": PlurnkActionEntry<
-        Record<string, unknown>,
-        { readonly workspaces?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+        { readonly archived?: boolean; readonly includeArchived?: boolean },
+        { readonly workspaces: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
     >;
     readonly "workspace.create": PlurnkActionEntry<
         {
             readonly name?: string;
-            readonly projectRoot?: string;
-            readonly settings?: Record<string, unknown>;
-        } & Record<string, unknown>,
+            readonly projectRoot?: string | null;
+            readonly settings?: string | Record<string, unknown>;
+        },
         Record<string, unknown>
     >;
     readonly "workspace.attach": PlurnkActionEntry<
-        { readonly name?: string; readonly workspaceId?: number; readonly projectRoot?: string } & Record<
-            string,
-            unknown
-        >,
+        {
+            readonly id?: number;
+            readonly workspaceId?: number;
+            readonly name?: string;
+            readonly projectRoot?: string;
+        },
         Record<string, unknown>
     >;
     readonly "workspace.sessions": PlurnkActionEntry<
-        Record<string, unknown>,
-        { readonly sessions?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+        { readonly archived?: boolean; readonly includeArchived?: boolean } & Record<string, unknown>,
+        { readonly sessions: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
     >;
     readonly "log.read": PlurnkActionEntry<
-        { readonly limit?: number; readonly before?: number; readonly after?: number } & Record<string, unknown>,
-        { readonly entries?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+        {
+            readonly loopId?: number;
+            readonly turnId?: number;
+            readonly sinceId?: number;
+            readonly beforeId?: number;
+            readonly limit?: number;
+            readonly loopSeq?: number;
+            readonly turnSeq?: number;
+            readonly sequence?: number;
+        } & Record<string, unknown>,
+        { readonly entries: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
     >;
     readonly "workspace.prompts": PlurnkActionEntry<
         { readonly limit?: number } & Record<string, unknown>,
-        { readonly prompts?: readonly string[] } & Record<string, unknown>
+        { readonly prompts: readonly string[] } & Record<string, unknown>
     >;
     readonly "session.loops": PlurnkActionEntry<
-        Record<string, unknown>,
+        { readonly loopSeq?: number } & Record<string, unknown>,
         {
-            readonly loops?: ReadonlyArray<{
-                readonly sequence?: number;
-                readonly id?: number;
-                readonly session?: string;
-                readonly status?: number;
-                readonly prompt?: string;
-                readonly summary?: string;
-            }>;
+            readonly items: ReadonlyArray<Record<string, unknown>>;
+            readonly updates?: ReadonlyArray<SessionUpdate>;
         } & Record<string, unknown>
     >;
     readonly "workspace.share": PlurnkActionEntry<
@@ -191,24 +207,37 @@ export interface PlurnkActionMap {
         { readonly folder: string } & Record<string, unknown>
     >;
     readonly "workspace.rename": PlurnkActionEntry<
-        { readonly name: string } & Record<string, unknown>,
-        { readonly name?: string } & Record<string, unknown>
+        { readonly from?: string; readonly name?: string; readonly to?: string } & Record<string, unknown>,
+        { readonly id: number; readonly name: string } & Record<string, unknown>
     >;
     readonly "workspace.archive": PlurnkActionEntry<
         { readonly archived?: boolean } & Record<string, unknown>,
-        { readonly id?: number; readonly archived_at?: string | null } & Record<string, unknown>
+        { readonly id: number; readonly archived_at: string | null } & Record<string, unknown>
     >;
     readonly "workspace.rollback": PlurnkActionEntry<
-        { readonly to: number } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly to: string } & Record<string, unknown>,
+        {
+            readonly to: string;
+            readonly restored: ReadonlyArray<unknown>;
+            readonly skipped: ReadonlyArray<unknown>;
+            readonly stopped: Record<string, unknown> | null;
+        } & Record<string, unknown>
     >;
     readonly "entry.read": PlurnkActionEntry<
-        { readonly id?: number; readonly uri?: string } & Record<string, unknown>,
-        { readonly content?: string; readonly text?: string } & Record<string, unknown>
+        {
+            readonly target: string;
+            readonly channel?: string;
+            readonly offset?: number;
+        } & Record<string, unknown>,
+        {
+            readonly status: number;
+            readonly entry?: Record<string, unknown> | null;
+            readonly problem?: Record<string, unknown>;
+        } & Record<string, unknown>
     >;
     readonly "op.parse": PlurnkActionEntry<
-        { readonly text: string; readonly execute?: boolean } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly text: string } & Record<string, unknown>,
+        { readonly results: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
     >;
     readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
     readonly "workspace.skills.discover": PlurnkActionEntry<
@@ -1403,9 +1432,9 @@ export class AcpClient {
         params?: PlurnkActionMap[K]["params"],
         context?: PlurnkActionContext,
     ): Promise<PlurnkActionMap[K]["result"]>;
-    action<T = Record<string, unknown>>(
-        kind: PlurnkActionKind | (string & {}),
-        params?: Record<string, unknown>,
+    action<T = Record<string, unknown>, K extends string = string>(
+        kind: K,
+        params?: K extends PlurnkActionKind ? PlurnkActionMap[K]["params"] : Record<string, unknown>,
         context?: PlurnkActionContext,
     ): Promise<T>;
     async action<T = unknown>(

@@ -1,8 +1,5 @@
 // Minimal pre-prompt first-run model bootstrap (`plurnk onboard`) ({§cli-model-selection}, {§cli-subcommands}).
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
 import readline from "node:readline";
 import { SessionUpdate } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
@@ -13,13 +10,17 @@ import {
     type CliCommonOptions,
 } from "./cli-connection.ts";
 
-const LOCAL_PROBE_TIMEOUT_MS = 1200;
-
 interface LocalCandidate {
     readonly label: string;
     readonly alias: string;
     readonly selector: string;
     readonly baseUrl?: string;
+}
+
+interface ServiceEnvUpdateResponse {
+    readonly configFile: string;
+    readonly generation: number;
+    readonly shadowed?: ReadonlyArray<{ readonly key: string; readonly overriddenBy: string }>;
 }
 
 interface HostedProvider {
@@ -44,86 +45,6 @@ export interface OnboardIo {
     readonly ollamaOrigin?: string;
     readonly llamaServerOrigin?: string;
 }
-
-const quoteDotenvValue = (val: string): string =>
-    /^[A-Za-z0-9_./:@-]+$/u.test(val) ? val : JSON.stringify(val);
-
-export const upsertOperatorEnv = (
-    filePath: string,
-    updates: Readonly<Record<string, string | null>>,
-): void => {
-    mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
-    const existing = existsSync(filePath) ? readFileSync(filePath, "utf8") : "";
-    const lines = existing.length > 0 ? existing.replace(/\r\n/gu, "\n").split("\n") : [];
-    if (lines.at(-1) === "") lines.pop();
-
-    const handled = new Set<string>();
-    const rewritten: string[] = [];
-    for (const line of lines) {
-        const m = /^([A-Za-z_][A-Za-z0-9_]*)=/u.exec(line);
-        if (m !== null && Object.hasOwn(updates, m[1]!)) {
-            const key = m[1]!;
-            handled.add(key);
-            const nextVal = updates[key];
-            if (nextVal !== null && nextVal !== undefined) {
-                rewritten.push(`${key}=${quoteDotenvValue(nextVal)}`);
-            }
-            continue;
-        }
-        rewritten.push(line);
-    }
-    for (const [key, val] of Object.entries(updates)) {
-        if (!handled.has(key) && val !== null && val !== undefined) {
-            rewritten.push(`${key}=${quoteDotenvValue(val)}`);
-        }
-    }
-    writeFileSync(filePath, `${rewritten.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
-    try {
-        chmodSync(filePath, 0o600);
-    } catch {
-        // ignore chmod failures on filesystems without POSIX mode bits
-    }
-};
-
-const probeLocalCandidates = async (
-    ollamaOrigin: string,
-    llamaServerOrigin: string,
-): Promise<LocalCandidate[]> => {
-    const found: LocalCandidate[] = [];
-    await Promise.all([
-        fetch(`${ollamaOrigin}/api/tags`, { signal: AbortSignal.timeout(LOCAL_PROBE_TIMEOUT_MS) })
-            .then(async (res) => {
-                if (!res.ok) return;
-                const doc = (await res.json()) as { models?: Array<{ name?: string }> };
-                const model = doc.models?.find((m) => typeof m?.name === "string" && m.name.length > 0)?.name;
-                if (model) {
-                    found.push({
-                        label: `Local Ollama (${model} at ${ollamaOrigin})`,
-                        alias: "local",
-                        selector: `ollama/${model}`,
-                        ...(ollamaOrigin !== "http://127.0.0.1:11434" ? { baseUrl: ollamaOrigin } : {}),
-                    });
-                }
-            })
-            .catch(() => undefined),
-        fetch(`${llamaServerOrigin}/v1/models`, { signal: AbortSignal.timeout(LOCAL_PROBE_TIMEOUT_MS) })
-            .then(async (res) => {
-                if (!res.ok) return;
-                const doc = (await res.json()) as { data?: Array<{ id?: string }> };
-                const model = doc.data?.find((m) => typeof m?.id === "string" && m.id.length > 0)?.id;
-                if (model) {
-                    found.push({
-                        label: `Local llama-server (${model} at ${llamaServerOrigin})`,
-                        alias: "local",
-                        selector: `openai/${model}`,
-                        baseUrl: `${llamaServerOrigin}/v1`,
-                    });
-                }
-            })
-            .catch(() => undefined),
-    ]);
-    return found;
-};
 
 const defaultAskLine = async (prompt: string, write: (text: string) => void): Promise<string> => {
     write(prompt);
@@ -189,14 +110,6 @@ const defaultAskSecret = async (prompt: string, write: (text: string) => void): 
     });
 };
 
-export const resolveOperatorConfigPath = (env: Record<string, string | undefined>): string => {
-    const xdg = env.XDG_CONFIG_HOME;
-    const base = typeof xdg === "string" && xdg.trim().length > 0
-        ? xdg.trim()
-        : join(env.HOME || homedir(), ".config");
-    return join(base, "plurnk", ".env");
-};
-
 export const checkNeedsAutoOnboard = async (options: CliCommonOptions): Promise<boolean> => {
     if (
         options.repl ||
@@ -250,10 +163,14 @@ export const runCliOnboard = async (
 
     try {
         await ensureDaemonConnected(client, options);
-        const locals = await probeLocalCandidates(
-            io?.ollamaOrigin ?? "http://127.0.0.1:11434",
-            io?.llamaServerOrigin ?? "http://127.0.0.1:8080",
+        const localRes = await client.action<{ readonly candidates?: readonly LocalCandidate[] }>(
+            "models.local",
+            {
+                ...(io?.ollamaOrigin !== undefined ? { ollamaOrigin: io.ollamaOrigin } : {}),
+                ...(io?.llamaServerOrigin !== undefined ? { llamaServerOrigin: io.llamaServerOrigin } : {}),
+            },
         );
+        const locals = Array.isArray(localRes.candidates) ? localRes.candidates : [];
 
         write("Plurnk setup — choose a model source:\n");
         let idx = 1;
@@ -281,7 +198,7 @@ export const runCliOnboard = async (
             );
         }
 
-        const configPath = resolveOperatorConfigPath(options.env);
+        let configPath = "$XDG_CONFIG_HOME/plurnk/.env";
         let chosenAlias = "";
         let chosenSelector = "";
         let submittedSecret: string | undefined;
@@ -290,14 +207,16 @@ export const runCliOnboard = async (
             const loc = locals[choiceNum - 1]!;
             chosenAlias = loc.alias;
             chosenSelector = loc.selector;
-            upsertOperatorEnv(configPath, {
-                [`PLURNK_MODEL_${chosenAlias}`]: chosenSelector,
-                ...(loc.baseUrl !== undefined
-                    ? { [`PLURNK_BASEURL_${chosenAlias}`]: loc.baseUrl }
-                    : { [`PLURNK_BASEURL_${chosenAlias}`]: null }),
-                PLURNK_MODEL: chosenAlias,
+            const envRes = await client.action<ServiceEnvUpdateResponse>("service.env.set", {
+                updates: {
+                    [`PLURNK_MODEL_${chosenAlias}`]: chosenSelector,
+                    [`PLURNK_BASEURL_${chosenAlias}`]: loc.baseUrl ?? null,
+                    PLURNK_MODEL: chosenAlias,
+                },
             });
-            await client.action("models.list", { limit: 1 });
+            if (typeof envRes.configFile === "string" && envRes.configFile.length > 0) {
+                configPath = envRes.configFile;
+            }
         } else {
             const hp = HOSTED_PROVIDERS[choiceNum - firstHostedIdx]!;
             const apiKey = await askSecret(`${hp.envKey} (input hidden): `);
@@ -313,12 +232,18 @@ export const runCliOnboard = async (
                 );
             }
             submittedSecret = apiKey;
-            upsertOperatorEnv(configPath, {
-                [hp.envKey]: apiKey,
+            const envRes1 = await client.action<ServiceEnvUpdateResponse>("service.env.set", {
+                updates: {
+                    [hp.envKey]: apiKey,
+                },
             });
-            if (Boolean(process.env[hp.envKey])) {
+            if (typeof envRes1.configFile === "string" && envRes1.configFile.length > 0) {
+                configPath = envRes1.configFile;
+            }
+            const shadowedKey = envRes1.shadowed?.find((item) => item.key === hp.envKey);
+            if (shadowedKey !== undefined) {
                 write(
-                    `Note: ${hp.envKey} is already exported in your current shell environment, which overrides ${configPath} until unset or updated.\n`,
+                    `Note: ${hp.envKey} is already set in ${shadowedKey.overriddenBy}, which overrides ${configPath} until unset or updated.\n`,
                 );
             }
             const catalog = await client.action<{
@@ -333,18 +258,19 @@ export const runCliOnboard = async (
                         type: "https://problems.plurnk.xyz/client/onboard/no-models",
                         title: "No ready models",
                         status: 502,
-                        detail: `Saved ${hp.envKey} to ${configPath}, but the daemon reported 0 ready models for provider "${hp.id}". Run \`plurnk daemon reload\` or check \`plurnk models --provider ${hp.id} --all\`.`,
+                        detail: `Saved ${hp.envKey} to ${configPath}, but the daemon reported 0 ready models for provider "${hp.id}". Check \`plurnk models --provider ${hp.id} --all\`.`,
                     },
                     1,
                 );
             }
             chosenAlias = hp.id;
             chosenSelector = selectors.find((s) => hp.preferred.test(s)) ?? selectors[0]!;
-            upsertOperatorEnv(configPath, {
-                [`PLURNK_MODEL_${chosenAlias}`]: chosenSelector,
-                PLURNK_MODEL: chosenAlias,
+            await client.action<ServiceEnvUpdateResponse>("service.env.set", {
+                updates: {
+                    [`PLURNK_MODEL_${chosenAlias}`]: chosenSelector,
+                    PLURNK_MODEL: chosenAlias,
+                },
             });
-            await client.action("models.list", { provider: hp.id, limit: 1 });
         }
 
         const redactSecret = (text: string): string =>

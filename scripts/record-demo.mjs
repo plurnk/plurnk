@@ -973,9 +973,9 @@ export async function main(argv = process.argv.slice(2)) {
         xterm.resize(SPLIT_COLS, TERM_ROWS);
         await sleep(350);
 
-        // Show workspace overview card (`🗂️ ~/retry-budget` + `💬 audit`), then enter the live `audit` session
-        const wsPath = "/~/~/retry-budget/";
-        const sessionPath = "/~/~/retry-budget@audit/";
+        // Open the live `audit` session in workspace `~/retry-budget`
+        const wsPath = "/~/~/retry-budget";
+        const sessionPath = "/~/~/retry-budget#audit";
         await webPage.navigate(`${webOrigin}${wsPath}`);
         await sleep(550);
         stageState.webTitle = `Plurnk Web — ${wsPath}`;

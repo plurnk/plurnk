@@ -438,7 +438,7 @@ export const dispatchSlashCommand = async (
             const targetName = args[0];
             if (!targetName) {
                 streams.stdout.write(
-                    `session: ${ctx.getSessionName()} [/${ctx.getWorkspace()}/~${ctx.getSessionName()}]\n`,
+                    `session: ${ctx.getSessionName()} [/~/${ctx.getWorkspace()}#${ctx.getSessionName()}]\n`,
                 );
                 return "continue";
             }

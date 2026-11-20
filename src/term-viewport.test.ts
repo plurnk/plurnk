@@ -785,7 +785,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         inputCallback!("hello without model");
         inputCallback!("\r");
         await waitUntil(() => termWrites.join("").includes("No model is selected for this session."));
-        await waitUntil(() => termWrites.join("").includes("[alpha/~user] ❌  · none"));
+        await waitUntil(() => termWrites.join("").includes("[/~/alpha#user] ❌  · none"));
 
         // 3. Invalid /model granite reports failure in Term without crashing or freezing
         inputCallback!("/model granite");
@@ -1215,11 +1215,11 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires 
         const parkedRender = termWrites.slice(writesBeforePark).join("");
         assert.match(
             parkedRender,
-            /\[plurnk-service\/~service\(6\/1\)\] 💤 {2}· argon\(adaptive\) · [^·]+ · ↓65k ↑11k · \$1\.9000 · updates in (?:10|11)s/u,
+            /\[\/~\/plurnk-service#service\(6\/1\)\] 💤 {2}· argon\(adaptive\) · [^·]+ · ↓65k ↑11k · \$1\.9000 · updates in (?:10|11)s/u,
         );
         assert.doesNotMatch(
             parkedRender,
-            /\[plurnk-service\/~service\(6\/1\)\] 🛑/u,
+            /\[\/~\/plurnk-service#service\(6\/1\)\] 🛑/u,
             "parked loop must never display stale 🛑 from a prior cancelled loop",
         );
         assert.doesNotMatch(
@@ -1551,7 +1551,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
             assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
         };
 
-        await waitUntil(() => inputCallback !== null && termWrites.join("").includes("[plurnk-service/~service]"));
+        await waitUntil(() => inputCallback !== null && termWrites.join("").includes("[/~/plurnk-service#service]"));
         assert.ok(inputCallback !== null);
         const writesBeforePrompt = termWrites.length;
         inputCallback!("go");
@@ -2015,7 +2015,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
 
     // Status line and TailText truncate to terminal width instead of wrapping onto multiple lines (#238)
     surface.setStatus(
-        "[plurnk-service/~service(12/8)] ⌛︎  · deepseek/deepseek-reasoner(high) · 42s · ↓128k ↑16k · $1.2345 · read src/very/long/path.ts",
+        "[/~/plurnk-service#service(12/8)] ⌛︎  · deepseek/deepseek-reasoner(high) · 42s · ↓128k ↑16k · $1.2345 · read src/very/long/path.ts",
     );
     const truncatedStatus = surface.renderStatusLines(50);
     assert.equal(truncatedStatus.length, 1, "status line must never wrap onto a second line");
@@ -2888,23 +2888,23 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
             stripVtAndApc(termWrites.join("")),
             /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u,
         );
-        assert.doesNotMatch(stripVtAndApc(termWrites.join("")), /🔥 \[alpha\/~user\]/u);
+        assert.doesNotMatch(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#user\]/u);
         assert.ok(inputCallback !== null);
 
         // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle, putting 🔥 at first left of statusline
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
             stripVtAndApc(termWrites.join("")).includes("yolo: on (Shift-Tab) · ?review · !cmd · @file · /help") &&
-            stripVtAndApc(termWrites.join("")).includes("🔥 [alpha/~user]"),
+            stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#user]"),
         );
         assert.match(stripVtAndApc(termWrites.join("")), /yolo: on\s/u);
-        assert.match(stripVtAndApc(termWrites.join("")), /🔥 \[alpha\/~user\]/u);
+        assert.match(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#user\]/u);
         termWrites.length = 0;
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
             /yolo: off\s/u.test(stripVtAndApc(termWrites.join("")).replaceAll("yolo: off (Shift-Tab)", "")) &&
-            stripVtAndApc(termWrites.join("")).includes("[alpha/~user]") &&
-            !stripVtAndApc(termWrites.join("")).includes("🔥 [alpha/~user]"),
+            stripVtAndApc(termWrites.join("")).includes("[/~/alpha#user]") &&
+            !stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#user]"),
         );
 
         // Submit prompt while yolo: off -> inline permission review card opens
@@ -3085,7 +3085,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
             assert.ok(predicate(), `Timed out waiting for condition; writes:\n${stripVtAndApc(termWrites.join(""))}`);
         };
 
-        await waitUntil(() => inputCallback !== null && stripVtAndApc(termWrites.join("")).includes("[alpha/~user]"));
+        await waitUntil(() => inputCallback !== null && stripVtAndApc(termWrites.join("")).includes("[/~/alpha#user]"));
 
         // Shift+Enter (\x1b[13;2u) and Ctrl+J (\x1b[106;5u) insert newlines; CSI-u Ctrl+Enter (\x1b[13;5u) submits!
         inputCallback!("line1");

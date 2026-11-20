@@ -1237,6 +1237,7 @@ test("{§cli-conformance} {§cli-sessions-topology} {§cli-session-status}: AcpC
             _meta: {
                 plurnk: {
                     window: true,
+                    bodies: "link",
                     interactive: true,
                 },
             },

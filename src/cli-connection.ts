@@ -426,6 +426,7 @@ export const openCliSession = async (
             tools: attended ? ["question", "mcp_input_required"] : [],
             descendants: true,
             control: true,
+            bodies: "link",
             ...(options.workspace !== undefined
                 ? { workspace: options.workspace }
                 : resolvedWorkspaceId !== undefined
@@ -490,7 +491,7 @@ export const openCliSession = async (
         if (replayHistory && !alreadyReplayedOnResume) {
             const resumed = await client.resumeSession(nextSession.sessionId, options.cwd, {
                 replayFrom: { type: "start" },
-                _meta: { plurnk: { ...plurnkMeta, window: true } },
+                _meta: { plurnk: { ...plurnkMeta, window: true, bodies: "link" } },
             });
             if (resumed.configOptions && resumed.configOptions.length > 0) {
                 nextSession.configOptions = [...resumed.configOptions];

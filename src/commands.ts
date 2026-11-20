@@ -114,7 +114,23 @@ export const expandLearnCommand = (
     return resolved?.ok === true ? resolved.prompt : null;
 };
 
-export const renderCommandReference = (): string =>
-    INTERACTIVE_COMMANDS.map(({ usage, summary }) =>
+export const renderCommandReference = (platform: NodeJS.Platform = process.platform): string => {
+    const mod = platform === "darwin" ? "⌘" : "Ctrl";
+    const shortcuts = [
+        [`Enter · ${mod}+Enter`, "Submit prompt or confirm review choice"],
+        ["Shift+Enter · Ctrl+J · Alt+Enter", "Insert newline in composer"],
+        ["Shift+Tab", "Toggle local proposal auto-accept (YOLO)"],
+        ["y / e / n / c", "Accept, edit, reject, or cancel focused proposal"],
+        ["Alt+h / Alt+l / Alt+j / Alt+k", "Hop to parent, newest child, older, or newer sibling session"],
+        ["Tab (empty composer)", "Accept or pick advertised prompt suggestion"],
+        ["Esc", "Return from review, cancel active loop, or clear composer"],
+        ["Ctrl+C", "Cancel active loop or exit idle session"],
+    ];
+    const commandLines = INTERACTIVE_COMMANDS.map(({ usage, summary }) =>
         usage.length >= 30 ? `${usage} ${summary}` : `${usage.padEnd(30, " ")} ${summary}`,
-    ).join("\n");
+    );
+    const shortcutLines = shortcuts.map(([chord, summary]) =>
+        chord.length >= 30 ? `${chord} ${summary}` : `${chord.padEnd(30, " ")} ${summary}`,
+    );
+    return `${commandLines.join("\n")}\n\nShortcuts:\n${shortcutLines.join("\n")}`;
+};

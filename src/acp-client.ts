@@ -149,6 +149,55 @@ export interface PlurnkActionMap {
             readonly items: ReadonlyArray<Record<string, unknown>>;
         } & Record<string, unknown>
     >;
+    readonly "models.local": PlurnkActionEntry<
+        {
+            readonly ollamaOrigin?: string;
+            readonly llamaServerOrigin?: string;
+        },
+        {
+            readonly candidates: ReadonlyArray<{
+                readonly runtime: "ollama" | "llama-server";
+                readonly id: string;
+                readonly label: string;
+                readonly alias: string;
+                readonly selector: string;
+                readonly baseUrl?: string;
+            }>;
+        } & Record<string, unknown>
+    >;
+    readonly "service.env.list": PlurnkActionEntry<
+        Record<string, never>,
+        {
+            readonly configFile: string;
+            readonly entries: ReadonlyArray<{
+                readonly key: string;
+                readonly secret: boolean;
+                readonly configured: boolean;
+                readonly value: string | null;
+                readonly overriddenBy: string | null;
+            }>;
+        } & Record<string, unknown>
+    >;
+    readonly "service.env.set": PlurnkActionEntry<
+        {
+            readonly updates: Readonly<Record<string, string | null>>;
+        },
+        {
+            readonly configFile: string;
+            readonly generation: number;
+            readonly entries: ReadonlyArray<{
+                readonly key: string;
+                readonly secret: boolean;
+                readonly configured: boolean;
+                readonly value: string | null;
+                readonly overriddenBy: string | null;
+            }>;
+            readonly shadowed: ReadonlyArray<{
+                readonly key: string;
+                readonly overriddenBy: string;
+            }>;
+        } & Record<string, unknown>
+    >;
     readonly "service.update": PlurnkActionEntry<
         Record<string, never>,
         { readonly catalog: Record<string, unknown>; readonly service: Record<string, unknown> } & Record<string, unknown>
@@ -485,6 +534,9 @@ export const ACP_ACTION_KINDS = [
     "ping",
     "discover",
     "models.list",
+    "models.local",
+    "service.env.list",
+    "service.env.set",
     "service.update",
     "workspace.list",
     "workspace.create",

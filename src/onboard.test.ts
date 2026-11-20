@@ -2,7 +2,7 @@
 // ({§cli-subcommands}, {§cli-model-selection}, {§cli-interactive-command-discovery}, {§cli-repl-mode}).
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +23,7 @@ import {
     runReplSession,
     type CliCommonOptions,
 } from "./cli-runner.ts";
-import { expandLearnCommand } from "./commands.ts";
+import { expandLearnCommand, renderCommandReference } from "./commands.ts";
 import Credential from "./credential.ts";
 import { completeInput } from "./term-completion.ts";
 
@@ -80,6 +80,10 @@ test("{§cli-interactive-command-discovery} {§cli-subcommands}: expandLearnComm
 
     const completedWeb = await completeInput("/we", { cwd: "/tmp", getProjectRoot: () => "/tmp" });
     assert.ok(completedWeb.suggestions.some((s) => s.value === "/web"));
+
+    assert.match(renderCommandReference("darwin"), /⌘\+Enter/u);
+    assert.match(renderCommandReference("linux"), /Ctrl\+Enter/u);
+    assert.match(renderCommandReference("linux"), /Shortcuts:/u);
 });
 
 test("{§cli-subcommands}: runCliDaemon forwards status -> config, passes custom arguments, and fails with 127 when service is absent (#254)", async () => {
@@ -385,18 +389,19 @@ test("{§cli-subcommands} {§cli-repl-mode}: runCliWeb and REPL /web + /learn mi
     }
 });
 
-test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures hosted API key with 0600 mode without echoing key AND configures probed local Ollama (#254)", async () => {
+test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures hosted API key and probed local Ollama via service.env.set and models.local without echoing key (#254, #273)", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "plurnk-onboard-test-"));
-    const configHome = join(tmp, "config");
-    const envPath = join(configHome, "plurnk", ".env");
+    const remoteConfigFile = "/srv/remote-daemon/.config/plurnk/.env";
 
-    let deletedSessions: string[] = [];
+    const deletedSessions: string[] = [];
+    const operatorEnv = new Map<string, string>();
+    let ollamaModels: Array<{ name: string }> = [];
     let promptCount = 0;
 
     const agentApp = createAcpAgent({ name: "onboard-mock" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
-            info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+            info: { name: "@plurnk/plurnk-service", version: "8.0.0" },
             capabilities: { session: { prompt: {}, delete: {} } },
         }))
         .onRequest(methods.agent.session.new, async () => ({
@@ -431,17 +436,43 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
         })
         .onRequest(
             "_plurnk/action",
-            (raw) => raw as { kind: string; params?: { provider?: string } },
+            (raw) =>
+                raw as {
+                    kind: string;
+                    params?: {
+                        provider?: string;
+                        ollamaOrigin?: string;
+                        updates?: Record<string, string | null>;
+                    };
+                },
             async ({ params }) => {
+                if (params.kind === "models.local") {
+                    const origin = params.params?.ollamaOrigin ?? "http://127.0.0.1:11434";
+                    return {
+                        candidates: ollamaModels.map((m) => ({
+                            runtime: "ollama",
+                            label: `Local Ollama (${m.name} at ${origin})`,
+                            alias: "local",
+                            selector: `ollama/${m.name}`,
+                            origin,
+                            ...(origin !== "http://127.0.0.1:11434" ? { baseUrl: origin } : {}),
+                        })),
+                    };
+                }
+                if (params.kind === "service.env.set") {
+                    for (const [k, v] of Object.entries(params.params?.updates ?? {})) {
+                        if (v === null) operatorEnv.delete(k);
+                        else operatorEnv.set(k, v);
+                    }
+                    return {
+                        configFile: remoteConfigFile,
+                        generation: 1,
+                        entries: [],
+                        shadowed: [],
+                    };
+                }
                 if (params.kind === "models.list") {
-                    const currentEnv = (() => {
-                        try {
-                            return readFileSync(envPath, "utf8");
-                        } catch {
-                            return "";
-                        }
-                    })();
-                    if (params.params?.provider === "deepseek" && currentEnv.includes("DEEPSEEK_API_KEY=")) {
+                    if (params.params?.provider === "deepseek" && operatorEnv.has("DEEPSEEK_API_KEY")) {
                         return { items: [{ selector: "deepseek/deepseek-chat" }] };
                     }
                     return { items: [] };
@@ -477,27 +508,12 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
     const acpAddr = acpHttp.address();
     assert.ok(acpAddr && typeof acpAddr === "object");
 
-    // Mock local Ollama server
-    let ollamaModels: Array<{ name: string }> = [];
-    const ollamaHttp = http.createServer((req, res) => {
-        if (req.url === "/api/tags") {
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(JSON.stringify({ models: ollamaModels }));
-            return;
-        }
-        res.writeHead(404).end();
-    });
-    await new Promise<void>((r) => ollamaHttp.listen(0, "127.0.0.1", r));
-    const ollamaAddr = ollamaHttp.address();
-    assert.ok(ollamaAddr && typeof ollamaAddr === "object");
-
     try {
         const common = makeCommon({
             url: `http://127.0.0.1:${String(acpAddr.port)}/acp`,
             port: acpAddr.port,
             env: {
                 PLURNK_SECRET: "test-operator-secret",
-                XDG_CONFIG_HOME: configHome,
             },
         });
 
@@ -505,7 +521,7 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
         let logOutput = "";
         const superSecretKey = "sk-super-secret-never-echo-999";
         const code1 = await runCliOnboard(common, {
-            ollamaOrigin: `http://127.0.0.1:${String(ollamaAddr.port)}`,
+            ollamaOrigin: "http://127.0.0.1:11499",
             llamaServerOrigin: "http://127.0.0.1:9",
             write: (t) => {
                 logOutput += t;
@@ -515,23 +531,18 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
         });
         assert.equal(code1, 0);
         assert.ok(!logOutput.includes(superSecretKey), "API key must NEVER appear in output");
-        const mode = statSync(envPath).mode & 0o777;
-        assert.equal(mode, 0o600, ".env must be written with 0600 permissions");
-        const envText1 = readFileSync(envPath, "utf8");
-        assert.match(envText1, /DEEPSEEK_API_KEY=sk-super-secret-never-echo-999/u);
-        assert.match(envText1, /PLURNK_MODEL_deepseek=deepseek\/deepseek-chat/u);
-        assert.match(envText1, /PLURNK_MODEL=deepseek/u);
+        assert.match(logOutput, /Saved to \/srv\/remote-daemon\/\.config\/plurnk\/\.env/u);
+        assert.equal(operatorEnv.get("DEEPSEEK_API_KEY"), superSecretKey);
+        assert.equal(operatorEnv.get("PLURNK_MODEL_deepseek"), "deepseek/deepseek-chat");
+        assert.equal(operatorEnv.get("PLURNK_MODEL"), "deepseek");
         assert.equal(promptCount, 1);
         assert.deepEqual(deletedSessions, ["ephemeral-1"]);
 
-        // Test that even if file had looser permissions beforehand, upsertOperatorEnv tightens it back to 0600
-        chmodSync(envPath, 0o644);
-
-        // 2. Local Ollama path (appears as option 1 when Ollama reports a model)
+        // 2. Local Ollama path (appears as option 1 when daemon models.local reports a model)
         ollamaModels = [{ name: "qwen2.5-coder:7b" }];
         let localLog = "";
         const code2 = await runCliOnboard(common, {
-            ollamaOrigin: `http://127.0.0.1:${String(ollamaAddr.port)}`,
+            ollamaOrigin: "http://127.0.0.1:11499",
             llamaServerOrigin: "http://127.0.0.1:9",
             write: (t) => {
                 localLog += t;
@@ -539,12 +550,11 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
             askLine: async () => "", // default 1
         });
         assert.equal(code2, 0);
-        assert.equal(statSync(envPath).mode & 0o777, 0o600);
-        const envText2 = readFileSync(envPath, "utf8");
-        assert.match(envText2, /PLURNK_MODEL_local=ollama\/qwen2\.5-coder:7b/u);
-        assert.match(envText2, /PLURNK_MODEL=local/u);
+        assert.equal(operatorEnv.get("PLURNK_MODEL_local"), "ollama/qwen2.5-coder:7b");
+        assert.equal(operatorEnv.get("PLURNK_BASEURL_local"), "http://127.0.0.1:11499");
+        assert.equal(operatorEnv.get("PLURNK_MODEL"), "local");
         // Preserves prior DEEPSEEK_API_KEY entry without clobbering unrelated lines
-        assert.match(envText2, /DEEPSEEK_API_KEY=sk-super-secret-never-echo-999/u);
+        assert.equal(operatorEnv.get("DEEPSEEK_API_KEY"), superSecretKey);
         assert.match(localLog, /Local Ollama \(qwen2\.5-coder:7b/u);
         assert.equal(promptCount, 2);
         assert.deepEqual(deletedSessions, ["ephemeral-1", "ephemeral-2"]);
@@ -552,25 +562,23 @@ test("{§cli-model-selection} {§cli-subcommands}: runCliOnboard configures host
         rmSync(tmp, { recursive: true, force: true });
         await acpServer.close();
         acpHttp.closeAllConnections();
-        ollamaHttp.closeAllConnections();
         await new Promise<void>((r) => acpHttp.close(() => r()));
-        await new Promise<void>((r) => ollamaHttp.close(() => r()));
     }
 });
 
-test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: runCliOnboard waits for async turn settlement before session/delete, warns on shell env override without printing secrets, and fails cleanly on verification errors", async () => {
+test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: runCliOnboard waits for async turn settlement before session/delete, warns on daemon shadowed override without printing secrets, and fails cleanly on verification errors", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "plurnk-onboard-race-test-"));
-    const configHome = join(tmp, "config");
-    const envPath = join(configHome, "plurnk", ".env");
+    const remoteConfigFile = "/srv/remote-daemon/.config/plurnk/.env";
 
     const timeline: string[] = [];
+    const operatorEnv = new Map<string, string>();
     let shouldFailVerification = false;
     let promptSeq = 0;
 
     const agentApp = createAcpAgent({ name: "onboard-settlement-mock" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
-            info: { name: "@plurnk/plurnk-service", version: "6.0.0" },
+            info: { name: "@plurnk/plurnk-service", version: "8.0.0" },
             capabilities: { session: { prompt: {}, delete: {} } },
         }))
         .onRequest(methods.agent.session.new, async () => {
@@ -605,17 +613,35 @@ test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: 
         })
         .onRequest(
             "_plurnk/action",
-            (raw) => raw as { kind: string; params?: { provider?: string } },
+            (raw) =>
+                raw as {
+                    kind: string;
+                    params?: {
+                        provider?: string;
+                        updates?: Record<string, string | null>;
+                    };
+                },
             async ({ params }) => {
+                if (params.kind === "models.local") {
+                    return { candidates: [] };
+                }
+                if (params.kind === "service.env.set") {
+                    const updates = params.params?.updates ?? {};
+                    for (const [k, v] of Object.entries(updates)) {
+                        if (v === null) operatorEnv.delete(k);
+                        else operatorEnv.set(k, v);
+                    }
+                    return {
+                        configFile: remoteConfigFile,
+                        generation: 1,
+                        entries: [],
+                        shadowed: Object.hasOwn(updates, "OPENAI_API_KEY")
+                            ? [{ key: "OPENAI_API_KEY", overriddenBy: "process environment" }]
+                            : [],
+                    };
+                }
                 if (params.kind === "models.list" && params.params?.provider === "openai") {
-                    const currentEnv = (() => {
-                        try {
-                            return readFileSync(envPath, "utf8");
-                        } catch {
-                            return "";
-                        }
-                    })();
-                    if (currentEnv.includes("OPENAI_API_KEY=")) {
+                    if (operatorEnv.has("OPENAI_API_KEY")) {
                         return { items: [{ selector: "openai/gpt-5-mini" }] };
                     }
                 }
@@ -707,11 +733,10 @@ test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: 
             port: acpAddr.port,
             env: {
                 PLURNK_SECRET: "test-operator-secret",
-                XDG_CONFIG_HOME: configHome,
             },
         });
 
-        // 1. Async 202 settlement + shell export override warning (OpenAI = choice 2 when 0 local servers)
+        // 1. Async 202 settlement + daemon shadowed override warning (OpenAI = choice 2 when 0 local servers)
         let okOutput = "";
         const newFileSecret = "sk-file-saved-secret-do-not-print";
         const code = await runCliOnboard(common, {
@@ -724,7 +749,7 @@ test("{§cli-model-selection} {§cli-subcommands} {§cli-problems-and-notices}: 
             askSecret: async () => newFileSecret,
         });
         assert.equal(code, 0);
-        assert.match(okOutput, /Note: OPENAI_API_KEY is already exported in your current shell environment/u);
+        assert.match(okOutput, /Note: OPENAI_API_KEY is already set in process environment/u);
         assert.match(okOutput, /verified openai\/gpt-5-mini/u);
         assert.ok(!okOutput.includes(shellSecret), "Shell secret value must NEVER be printed");
         assert.ok(!okOutput.includes(newFileSecret), "Entered API key must NEVER be printed");

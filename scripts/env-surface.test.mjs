@@ -57,7 +57,6 @@ const TIMER_LITERAL = /\b(?:setTimeout|setInterval|delay|sleep|AbortSignal\.time
 const MECHANISM = new Map([
     ["src/runtime-floor.ts:NODE_MAJOR_FLOOR", "package.json engines.node floor"],
     ["src/cli-connection.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
-    ["src/onboard.ts:LOCAL_PROBE_TIMEOUT_MS", "loopback local-inference discovery timeout during plurnk onboard (#254)"],
 ]);
 
 const tracked = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src"], { cwd: ROOT, encoding: "utf8" })

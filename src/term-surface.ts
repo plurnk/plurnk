@@ -194,7 +194,7 @@ class TranscriptSlot implements Component {
         if (this.#trailingBlankLine && lines.length > 0) {
             return [...lines, ""];
         }
-        return lines;
+        return [...lines];
     }
 }
 

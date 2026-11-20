@@ -246,8 +246,8 @@ export const runTermViewport = async (
         const yoloLead = presenter.yolo || currentMode === "accept" ? "🔥 " : "";
         const place =
             turns > 0
-                ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
-                : `[${presenter.workspaceName}/~${presenter.sessionName}]`;
+                ? `[/~/${presenter.workspaceName}#${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
+                : `[/~/${presenter.workspaceName}#${presenter.sessionName}]`;
         const modelLabel = formatModelRoute(presenter.model, presenter.effort, presenter.effortSource);
         const activity =
             presenter.lastStatusLine.length > 0
@@ -588,7 +588,7 @@ export const runTermViewport = async (
             presenter.sessionName
         ) {
             initialPromptPrinted = true;
-            termOut.write(`${chunk}[${presenter.workspaceName}/~${presenter.sessionName}] `);
+            termOut.write(`${chunk}[/~/${presenter.workspaceName}#${presenter.sessionName}] `);
             return;
         }
         if (chunk.startsWith("● ") && presenter.lastStatusLine.length > 0 && !chunk.includes(presenter.lastStatusLine)) {
@@ -1278,7 +1278,7 @@ export const runTermViewport = async (
                             }
                             const loopNum = presenter.loopSeq ?? 1;
                             termOut.write(
-                                `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(frame.turns)})] `,
+                                `${frame.status.formattedStatusLine}\n[/~/${presenter.workspaceName}#${presenter.sessionName}(${String(loopNum)}/${String(frame.turns)})] `,
                             );
                         }
                         break;

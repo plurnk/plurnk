@@ -26,7 +26,7 @@ scripted answer.
    verifies `node --test`, and runs `/web` to mint a single-use OAuth browser
    handoff URL.
 3. **50/50 Terminal + Web live sync** — opens `@plurnk/plurnk-web` via
-   `/oauth/handoff`, visits `/~/~/retry-budget/` and `/~/~/retry-budget@audit/`,
+   `/oauth/handoff`, visits `/~/~/retry-budget#audit`,
    and submits a follow-up Mermaid prompt from the browser composer so both
    surfaces stream and render the final summary and flowchart simultaneously
    (Unicode box-drawing in Term, SVG in Web).

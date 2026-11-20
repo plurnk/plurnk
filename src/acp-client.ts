@@ -1005,7 +1005,17 @@ export class AcpClient {
                       ? metaOp
                       : ""
             ).toLowerCase();
+            const rawInputRec =
+                update.rawInput && typeof update.rawInput === "object" && !Array.isArray(update.rawInput)
+                    ? (update.rawInput as Record<string, unknown>)
+                    : null;
+            const hasInlineInputBody =
+                typeof rawInputRec?.body === "string" ||
+                (rawInputRec?.body !== null &&
+                    typeof rawInputRec?.body === "object" &&
+                    !Array.isArray(rawInputRec.body));
             if (
+                !hasInlineInputBody &&
                 (opName === "note" ||
                     opName === "edit" ||
                     opName === "work" ||
@@ -1180,6 +1190,7 @@ export class AcpClient {
                             _meta: {
                                 plurnk: {
                                     window,
+                                    ...(window ? { bodies: "link" } : {}),
                                     ...(interactive !== undefined ? { interactive } : {}),
                                 },
                             },

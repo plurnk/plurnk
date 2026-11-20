@@ -503,8 +503,9 @@ export const runReplSession = async (
                         readonly selector?: string;
                         readonly modelName?: string;
                         readonly limits?: { readonly contextTokens?: number; readonly inputTokens?: number };
+                        readonly readiness?: { readonly ready?: boolean };
                     }>;
-                }>("models.list", { limit: 100 })
+                }>("models.list", { availability: "configured", limit: 100 })
                 .catch(() => undefined),
         ]);
         const catalogOptions = (modelsRes?.items ?? [])
@@ -515,7 +516,8 @@ export const runReplSession = async (
                     readonly selector: string;
                     readonly modelName?: string;
                     readonly limits?: { readonly contextTokens?: number; readonly inputTokens?: number };
-                } => typeof m?.selector === "string" && m.selector.length > 0,
+                    readonly readiness?: { readonly ready?: boolean };
+                } => typeof m?.selector === "string" && m.selector.length > 0 && m.readiness?.ready !== false,
             )
             .map((m) => {
                 const cap = m.limits?.inputTokens ?? m.limits?.contextTokens;

@@ -72,7 +72,7 @@
         "protobufjs@7.6.6": false
     },
     "dependencies": {
-        "@agentclientprotocol/sdk": "^2.8.0",
+        "@agentclientprotocol/sdk": "^2.9.1",
         "@earendil-works/pi-tui": "1.6.0",
         "@plurnk/plurnk-contracts": "^9.0.0",
         "beautiful-mermaid": "^1.1.3",

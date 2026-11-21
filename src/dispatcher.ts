@@ -148,7 +148,7 @@ options:
                           Overrides PLURNK_CLIENT_SESSION. Unset, Term binds
                           --term-session and a one-shot opens a new session of its own.
       --term-session <name> the session Term binds when no session is selected.
-                          Overrides PLURNK_CLIENT_TERM_SESSION (user).
+                          Overrides PLURNK_CLIENT_TERM_SESSION (session1).
       --model <selector>  persistently select the session's model
                           before the first loop (session/set_config_option). A selector is
                           a declared alias or exact provider/model route. Without

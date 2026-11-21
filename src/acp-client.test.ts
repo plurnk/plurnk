@@ -48,7 +48,7 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with
             };
         })
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [],
         }))
         .onRequest(methods.agent.session.resume, async ({ params, client }) => {
@@ -128,7 +128,7 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with
         assert.equal(initializeCount, 1);
 
         const created = await client.newSession("/tmp/ws");
-        assert.equal(created.sessionId, "1#user");
+        assert.equal(created.sessionId, "1#session1");
         session = new AcpSession(created.sessionId);
         session.onUpdate((update) => {
             if (SessionUpdate.isAgentMessageChunk(update) && ContentBlock.isText(update.content)) {
@@ -136,7 +136,7 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with
             }
         });
 
-        await client.prompt("1#user", "first turn");
+        await client.prompt("1#session1", "first turn");
         assert.deepEqual(promptsReceived, ["first turn"]);
         assert.deepEqual(receivedTexts, ["Reply: first turn"]);
 
@@ -147,14 +147,14 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with
         await client.closed;
         assert.equal(disconnects, 1);
 
-        // Next prompt automatically reconnects, reattaches "1#user" via session/resume
+        // Next prompt automatically reconnects, reattaches "1#session1" via session/resume
         // with replayFrom: { type: "start" }, idempotently deduplicating "msg-1" while
         // materializing missed "replay-1" and delivering the new turn.
-        await client.prompt("1#user", "second turn after idle drop");
+        await client.prompt("1#session1", "second turn after idle drop");
         assert.equal(initializeCount, 2, "client re-initialized a new ACP connection");
         assert.deepEqual(
             resumedCalls,
-            [{ sessionId: "1#user", replayFrom: { type: "start" } }],
+            [{ sessionId: "1#session1", replayFrom: { type: "start" } }],
             "bound session was automatically resumed with replayFrom: start",
         );
         assert.deepEqual(promptsReceived, ["first turn", "second turn after idle drop"]);
@@ -198,7 +198,7 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
             },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [],
         }))
         .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
@@ -270,9 +270,9 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
         assert.equal(issuedTokenCounter, 1);
 
         const created = await client.newSession("/tmp/ws");
-        assert.equal(created.sessionId, "1#user");
+        assert.equal(created.sessionId, "1#session1");
 
-        await client.prompt("1#user", "turn before token expiry");
+        await client.prompt("1#session1", "turn before token expiry");
         assert.deepEqual(promptsReceived, ["turn before token expiry"]);
 
         // Simulate token expiry and secret rotation on disk: the server rejects tok-1 with 401 bearer-token-invalid
@@ -280,7 +280,7 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
         writeFileSync(secretFile, "secret-2\n", "utf8");
         validToken = "expired";
 
-        await client.prompt("1#user", "turn after token expiry");
+        await client.prompt("1#session1", "turn after token expiry");
         assert.equal(issuedTokenCounter, 2, "client exchanged rotated secret for a fresh access token on 401");
         assert.deepEqual(promptsReceived, ["turn before token expiry", "turn after token expiry"]);
     } finally {
@@ -359,7 +359,7 @@ test("{§cli-inline-review}: passive AcpClient without permission or elicitation
 
     try {
         await client.connect();
-        await client.resumeSession("1#user", "/tmp/ws");
+        await client.resumeSession("1#session1", "/tmp/ws");
         assert.ok(permissionOutcome?.startsWith("rejected:"), `expected permission request to reject, got ${String(permissionOutcome)}`);
         assert.ok(elicitationOutcome?.startsWith("rejected:"), `expected elicitation request to reject, got ${String(elicitationOutcome)}`);
     } finally {
@@ -468,7 +468,7 @@ test("{§cli-conformance}: PlurnkActionMap and ACP_ACTION_KINDS match conformanc
 });
 
 test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId items in place across interleaved chunks and full message updates (#236)", () => {
-    const session = new AcpSession("1#user");
+    const session = new AcpSession("1#session1");
 
     session.applyUpdate({
         sessionUpdate: "agent_thought_chunk",
@@ -581,7 +581,7 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
             },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions,
         }));
 
@@ -601,8 +601,8 @@ test("{§cli-subcommands}: runCliConfig rejects unknown session config option id
         env: { PLURNK_CLIENT_TOKEN: "test-token" },
         cwd: "/tmp/ws",
         workspace: "ws",
-        sessionId: "user",
-        termSession: "user",
+        sessionId: "session1",
+        termSession: "session1",
         autostart: false,
         daemonTimeoutMs: 500,
         oauthTimeoutMs: 500,
@@ -650,7 +650,7 @@ test("{§cli-invocation} {§cli-conformance}: scrubAcpMeta and AcpClient debugNo
         jsonrpc: "2.0",
         method: "session/update",
         params: {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             update: {
                 sessionUpdate: "tool_call_update",
                 toolCallId: "1/1/1",
@@ -693,7 +693,7 @@ test("{§cli-invocation} {§cli-conformance}: scrubAcpMeta and AcpClient debugNo
         .onRequest(methods.agent.session.new, async ({ params }) => {
             serverReceivedNewMeta = params._meta;
             return {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 configOptions: [],
                 _meta: { plurnk: { workspace: { id: 1, name: "ws" } } },
             };
@@ -746,7 +746,7 @@ test("{§cli-invocation} {§cli-conformance}: scrubAcpMeta and AcpClient debugNo
     try {
         await client.connect();
         const created = await client.newSession("/tmp/ws", {
-            _meta: { plurnk: { workspace: "ws", session: "user" } },
+            _meta: { plurnk: { workspace: "ws", session: "session1" } },
         });
         assert.equal(serverReceivedNewMeta, undefined, "outbound session/new _meta must be scrubbed");
         assert.equal(created._meta, undefined, "inbound session/new _meta must be scrubbed");
@@ -840,17 +840,17 @@ test("{§cli-conformance} {§cli-rendering}: AcpClient.sessionOptions queries pr
         assert.equal(preOpts.configOptions?.[0]?.configId, "mode");
         assert.equal(preOpts.availableCommands?.[0]?.name, "help");
 
-        const existingOpts = await client.sessionOptions("/tmp/ws", { sessionId: "1#user" });
+        const existingOpts = await client.sessionOptions("/tmp/ws", { sessionId: "1#session1" });
         assert.equal(existingOpts.configOptions?.[0]?.configId, "mode");
         assert.deepEqual(receivedRequests, [
             { cwd: "/tmp/ws" },
-            { cwd: "/tmp/ws", sessionId: "1#user" },
+            { cwd: "/tmp/ws", sessionId: "1#session1" },
         ]);
 
-        const session = new AcpSession("1#user");
+        const session = new AcpSession("1#session1");
         const presenter = new SessionPresenter({
             workspaceName: "ws",
-            sessionName: "user",
+            sessionName: "session1",
             model: "fast",
             yolo: false,
         });
@@ -930,7 +930,7 @@ test("{§cli-conformance} {§cli-output-channels} {§cli-interactive-command-dis
             },
         });
 
-        const forked = await client.forkSession("1#user", "/tmp/ws", {
+        const forked = await client.forkSession("1#session1", "/tmp/ws", {
             systemPrompt: {
                 mode: "append",
                 content: [{ type: "text", text: "Extra role" }],
@@ -938,7 +938,7 @@ test("{§cli-conformance} {§cli-output-channels} {§cli-interactive-command-dis
         });
         assert.equal(forked.sessionId, "1#forked");
         assert.deepEqual(observedForkParams, {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             cwd: "/tmp/ws",
             systemPrompt: {
                 mode: "append",
@@ -969,7 +969,7 @@ test("{§cli-conformance} {§cli-output-channels} {§cli-interactive-command-dis
         ]);
         assert.equal(contentBlockToText({ type: "skill", name: "triage" }), "$triage");
 
-        const session = new AcpSession("1#user", { availableCommands });
+        const session = new AcpSession("1#session1", { availableCommands });
         assert.equal(session.availableCommands.length, 3);
         assert.equal(session.replayComplete, false);
         session.applyUpdate({ sessionUpdate: "replay_complete" });
@@ -1054,7 +1054,7 @@ test("{§cli-conformance} {§cli-sessions-topology} {§cli-session-status}: AcpC
             };
         })
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [],
         }))
         .onRequest(methods.agent.session.fork, async ({ params }) => {
@@ -1176,10 +1176,10 @@ test("{§cli-conformance} {§cli-sessions-topology} {§cli-session-status}: AcpC
         assert.equal(observedClientInfos[0]?.version, pkg.version);
         assert.notEqual(pkg.version, "1.0.0");
 
-        const forked = await client.forkSession("1#user", "/tmp/ws", { sessionName: "named-fork" });
+        const forked = await client.forkSession("1#session1", "/tmp/ws", { sessionName: "named-fork" });
         assert.equal(forked.sessionId, "1#named-fork");
         assert.deepEqual(observedForkRequests[0], {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             cwd: "/tmp/ws",
             _meta: { plurnk: { sessionName: "named-fork" } },
         });
@@ -1231,7 +1231,7 @@ test("{§cli-conformance} {§cli-sessions-topology} {§cli-session-status}: AcpC
 
         assert.equal(observedResumeRequests.length, 1);
         assert.deepEqual(observedResumeRequests[0], {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             cwd: "/tmp/ws",
             replayFrom: { type: "start" },
             _meta: {

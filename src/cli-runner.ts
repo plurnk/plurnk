@@ -109,7 +109,7 @@ export const runCliPrompt = async (
     const isQuestionPrompt = promptText.trimStart().startsWith("?");
     const effectiveYolo = isQuestionPrompt ? false : options.yolo;
     let gateSeq = 0;
-    let activeSessionId = options.sessionId ?? "user";
+    let activeSessionId = options.sessionId ?? "session1";
     const stdinIsTTY = Boolean((streams.stdin as { isTTY?: boolean }).isTTY);
     const canElicit = !options.auto && !options.json && stdinIsTTY;
     const basePermHandler = createCliPermissionHandler(effectiveYolo, {
@@ -287,7 +287,7 @@ export const runCliPrompt = async (
             session:
                 typeof plurnkInitMeta?.sessionName === "string"
                     ? plurnkInitMeta.sessionName
-                    : (options.sessionId ?? "user"),
+                    : (options.sessionId ?? "session1"),
             cwd: typeof wsInit?.projectRoot === "string" ? wsInit.projectRoot : (options.projectRoot ?? options.cwd),
             configOptions: session.configOptions,
             availableCommands: session.availableCommands,
@@ -571,7 +571,7 @@ export const runCliPrompt = async (
                     turnCount,
                     wallMs: Date.now() - startedAt,
                     workspace: plurnkSessionMeta.workspace ?? { name: options.workspace ?? "default" },
-                    session: plurnkSessionMeta.session ?? { name: options.sessionId ?? "user" },
+                    session: plurnkSessionMeta.session ?? { name: options.sessionId ?? "session1" },
                     turns,
                     response: finalAnswer,
                     usage: mergedUsage,

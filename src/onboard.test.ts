@@ -35,7 +35,7 @@ const makeCommon = (overrides: Partial<CliCommonOptions>): CliCommonOptions => (
     credential: new Credential({ PLURNK_SECRET: "test-operator-secret" }),
     env: { PLURNK_SECRET: "test-operator-secret" },
     cwd: "/tmp",
-    termSession: "user",
+    termSession: "session1",
     autostart: false,
     daemonTimeoutMs: 2000,
     oauthTimeoutMs: 2000,
@@ -142,7 +142,7 @@ test("{§cli-subcommands} {§cli-repl-mode}: runCliWeb and REPL /web + /learn mi
     let handoffCount = 0;
 
     const sessionOpen = {
-        sessionId: "1#user",
+        sessionId: "1#session1",
         configOptions: [
             {
                 type: "select" as const,

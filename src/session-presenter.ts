@@ -153,7 +153,7 @@ export class SessionPresenter {
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
-        this.sessionName = options.sessionName ?? "user";
+        this.sessionName = options.sessionName ?? "session1";
         this.model = options.model ?? "default";
         this.#localYolo = options.yolo ?? false;
         this.maxReasoningLines = options.maxReasoningLines ?? 3;

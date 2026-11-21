@@ -39,7 +39,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
             capabilities: { session: { prompt: {}, resume: {} } },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [
                 {
                     configId: "model",
@@ -52,7 +52,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: {
                         model: null,
                         spawnModel: null,
@@ -81,7 +81,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: {
                         model: null,
                         spawnModel: null,
@@ -105,7 +105,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
                     return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
-                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                    return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
@@ -177,8 +177,8 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
         oauthTimeoutMs: 2000,
         cancelGraceMs: 500,
         workspace: "alpha",
-        sessionId: "user",
-        termSession: "user",
+        sessionId: "session1",
+        termSession: "session1",
         yolo: true,
         auto: false,
         json: false,
@@ -202,12 +202,12 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
 
         const deadline = Date.now() + 5000;
         while (
-            (!termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")) || inputCallback === null) &&
+            (!termWrites.some((w) => w.includes("TITLE:plurnk · alpha · session1")) || inputCallback === null) &&
             Date.now() < deadline
         ) {
             await new Promise((r) => setTimeout(r, 20));
         }
-        assert.ok(termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")));
+        assert.ok(termWrites.some((w) => w.includes("TITLE:plurnk · alpha · session1")));
         const rendered = stripVTControlCharacters(termWrites.join(""));
         assert.match(rendered, /model: mocktest\/fast/u);
         assert.doesNotMatch(rendered, /No model selected/u);
@@ -239,7 +239,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
         .onRequest(methods.agent.session.new, async ({ client }) => {
             capturedClient = client as { notify: (method: string, params: unknown) => Promise<void> };
             return {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 configOptions: [
                     {
                         configId: "model",
@@ -252,7 +252,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
                 _meta: {
                     plurnk: {
                         workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                        sessionName: "user",
+                        sessionName: "session1",
                         status: {
                             lifecycle: "running",
                             inbox: [
@@ -279,7 +279,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
                 _meta: {
                     plurnk: {
                         workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                        sessionName: "user",
+                        sessionName: "session1",
                         status: {
                             lifecycle: "running",
                             inbox: [
@@ -299,7 +299,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
                     return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
-                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                    return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
@@ -433,8 +433,8 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
         oauthTimeoutMs: 2000,
         cancelGraceMs: 500,
         workspace: "alpha",
-        sessionId: "user",
-        termSession: "user",
+        sessionId: "session1",
+        termSession: "session1",
         yolo: true,
         auto: false,
         json: false,
@@ -469,7 +469,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
 
         assert.ok(capturedClient !== null);
         await capturedClient.notify(methods.client.session.update, {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             update: {
                 sessionUpdate: "user_message_chunk",
                 messageId: "msg-running",
@@ -526,7 +526,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         }))
         .onRequest(methods.agent.session.new, async ({ client }) => {
             await client.notify(methods.client.session.update, {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 update: {
                     sessionUpdate: "notice",
                     severity: "warning",
@@ -546,12 +546,12 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
                 },
             });
             return {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 configOptions: [],
                 _meta: {
                     plurnk: {
                         workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                        sessionName: "user",
+                        sessionName: "session1",
                         status: {
                             model: null,
                         },
@@ -572,7 +572,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: {
                         model: currentModel ? { provider: "mocktest", model: "fast" } : null,
                     },
@@ -659,7 +659,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
                     return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
-                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                    return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
@@ -731,8 +731,8 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         oauthTimeoutMs: 2000,
         cancelGraceMs: 500,
         workspace: "alpha",
-        sessionId: "user",
-        termSession: "user",
+        sessionId: "session1",
+        termSession: "session1",
         yolo: true,
         auto: false,
         json: false,
@@ -785,7 +785,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         inputCallback!("hello without model");
         inputCallback!("\r");
         await waitUntil(() => termWrites.join("").includes("No model is selected for this session."));
-        await waitUntil(() => termWrites.join("").includes("[/~/alpha#user] ❌  · none"));
+        await waitUntil(() => termWrites.join("").includes("[/~/alpha#session1] ❌  · none"));
 
         // 3. Invalid /model granite reports failure in Term without crashing or freezing
         inputCallback!("/model granite");
@@ -1600,7 +1600,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
             },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [
                 {
                     configId: "model",
@@ -1613,7 +1613,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: { lifecycle: "idle", loopId: 1, loopSeq: 1, packetCount: 1 },
                 },
             },
@@ -1749,7 +1749,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.sessions") {
-                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                    return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
@@ -1864,8 +1864,8 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
         oauthTimeoutMs: 2000,
         cancelGraceMs: 500,
         workspace: "alpha",
-        sessionId: "user",
-        termSession: "user",
+        sessionId: "session1",
+        termSession: "session1",
         yolo: true,
         auto: false,
         json: false,
@@ -2024,7 +2024,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
 
     // Active streams & workers strip: synchronous verbs (read, find, edit, etc.) never appear,
     // streams appear only after surviving past their opening turn, and workers appear while active (#238)
-    const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "user" });
+    const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "session1" });
     presenter.markTurnStart(1_000);
     presenter.apply({
         sessionUpdate: "tool_call_update",
@@ -2222,7 +2222,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     assert.equal(presenter.activeLiveEntries.length, 0);
 
     // extractPromptHistory bounds user prompts to maxEntries without letting tool calls evict them
-    const session = new AcpSession("1#user");
+    const session = new AcpSession("1#session1");
     for (let i = 1; i <= 5; i += 1) {
         session.applyUpdate({
             sessionUpdate: "user_message_chunk",
@@ -2271,7 +2271,7 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
             prov === "openai" ? ["openai/gpt-4o-mini", "openai/gpt-4o-realtime"] : [],
         getEfforts: () => ["low", "medium", "high"],
         getPersonas: () => ["none", "architect", "archivist"],
-        getSessionNames: () => ["user", "worker-1", "worker-2"],
+        getSessionNames: () => ["session1", "worker-1", "worker-2"],
         getWorkspaceNames: () => ["alpha", "beta"],
     });
 
@@ -2553,7 +2553,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
             capabilities: { session: { prompt: {} } },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [],
         }))
         .onRequest(methods.agent.session.prompt, async (ctx) => {
@@ -2655,8 +2655,8 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
                 oauthTimeoutMs: 2000,
                 cancelGraceMs: 500,
                 workspace: "alpha",
-                sessionId: "user",
-                termSession: "user",
+                sessionId: "session1",
+                termSession: "session1",
                 yolo: true,
                 auto: false,
                 json: true,
@@ -2712,7 +2712,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
     let permissionOutcome: unknown = null;
 
     const sessionOpenResponse = {
-        sessionId: "1#user",
+        sessionId: "1#session1",
         configOptions: [
             {
                 type: "select" as const,
@@ -2725,7 +2725,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         _meta: {
             plurnk: {
                 workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                sessionName: "user",
+                sessionName: "session1",
             },
         },
     };
@@ -2741,7 +2741,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
             "_plurnk/action",
             (raw) => raw as { kind: string },
             async ({ params }) => {
-                if (params.kind === "workspace.sessions") return { sessions: [{ name: "user", lifecycle: "idle" }] };
+                if (params.kind === "workspace.sessions") return { sessions: [{ name: "session1", lifecycle: "idle" }] };
                 if (params.kind === "workspace.list") return { workspaces: [{ name: "alpha" }] };
                 if (params.kind === "models.list") return { items: [{ selector: "mocktest/fast" }] };
                 return {};
@@ -2854,8 +2854,8 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
                 oauthTimeoutMs: 2000,
                 cancelGraceMs: 500,
                 workspace: "alpha",
-                sessionId: "user",
-                termSession: "user",
+                sessionId: "session1",
+                termSession: "session1",
                 yolo: false,
                 auto: false,
                 json: false,
@@ -2888,23 +2888,23 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
             stripVtAndApc(termWrites.join("")),
             /yolo: off \(Shift-Tab\) · !cmd · @file · \/help/u,
         );
-        assert.doesNotMatch(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#user\]/u);
+        assert.doesNotMatch(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#session1\]/u);
         assert.ok(inputCallback !== null);
 
         // Legacy back-tab (\x1b[Z) toggles yolo on -> off cleanly while idle, putting 🔥 at first left of statusline
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
             stripVtAndApc(termWrites.join("")).includes("yolo: on (Shift-Tab) · ?review · !cmd · @file · /help") &&
-            stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#user]"),
+            stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#session1]"),
         );
         assert.match(stripVtAndApc(termWrites.join("")), /yolo: on\s/u);
-        assert.match(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#user\]/u);
+        assert.match(stripVtAndApc(termWrites.join("")), /🔥 \[\/~\/alpha#session1\]/u);
         termWrites.length = 0;
         inputCallback!("\x1b[Z");
         await waitUntil(() =>
             /yolo: off\s/u.test(stripVtAndApc(termWrites.join("")).replaceAll("yolo: off (Shift-Tab)", "")) &&
-            stripVtAndApc(termWrites.join("")).includes("[/~/alpha#user]") &&
-            !stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#user]"),
+            stripVtAndApc(termWrites.join("")).includes("[/~/alpha#session1]") &&
+            !stripVtAndApc(termWrites.join("")).includes("🔥 [/~/alpha#session1]"),
         );
 
         // Submit prompt while yolo: off -> inline permission review card opens
@@ -2946,12 +2946,12 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
             capabilities: { session: { prompt: {}, resume: {} } },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [],
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: { model: null, spawnModel: null },
                     providers: [],
                 },
@@ -2962,7 +2962,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: { model: null, spawnModel: null },
                     providers: [],
                 },
@@ -3060,8 +3060,8 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
                 oauthTimeoutMs: 2000,
                 cancelGraceMs: 500,
                 workspace: "alpha",
-                sessionId: "user",
-                termSession: "user",
+                sessionId: "session1",
+                termSession: "session1",
                 yolo: false,
                 auto: false,
                 json: false,
@@ -3085,7 +3085,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
             assert.ok(predicate(), `Timed out waiting for condition; writes:\n${stripVtAndApc(termWrites.join(""))}`);
         };
 
-        await waitUntil(() => inputCallback !== null && stripVtAndApc(termWrites.join("")).includes("[/~/alpha#user]"));
+        await waitUntil(() => inputCallback !== null && stripVtAndApc(termWrites.join("")).includes("[/~/alpha#session1]"));
 
         // Shift+Enter (\x1b[13;2u) and Ctrl+J (\x1b[106;5u) insert newlines; CSI-u Ctrl+Enter (\x1b[13;5u) submits!
         inputCallback!("line1");
@@ -3175,7 +3175,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-chan
             },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
+            sessionId: "1#session1",
             configOptions: [
                 {
                     type: "select" as const,
@@ -3191,7 +3191,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-chan
             _meta: {
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp" },
-                    sessionName: "user",
+                    sessionName: "session1",
                     status: { lifecycle: "idle", spend: { costUsd: null } },
                 },
             },
@@ -3264,8 +3264,8 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-chan
                 oauthTimeoutMs: 2000,
                 cancelGraceMs: 500,
                 workspace: "alpha",
-                sessionId: "user",
-                termSession: "user",
+                sessionId: "session1",
+                termSession: "session1",
                 yolo: false,
                 auto: false,
                 json: false,

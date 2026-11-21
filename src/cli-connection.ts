@@ -367,6 +367,44 @@ const applyInitialConfig = async (
     }
 };
 
+export const nextSequentialName = (prefix: "workspace" | "session", existing: Iterable<string>): string => {
+    const pattern = new RegExp(`^${prefix}([1-9]\\d*)$`, "u");
+    let max = 0;
+    for (const name of existing) {
+        const match = pattern.exec(name);
+        if (match !== null) {
+            const num = Number.parseInt(match[1]!, 10);
+            if (Number.isSafeInteger(num) && num > max) max = num;
+        }
+    }
+    return `${prefix}${String(max + 1)}`;
+};
+
+const isConflictError = (err: unknown): boolean => {
+    if (typeof err !== "object" || err === null) return false;
+    const data = (err as { data?: unknown }).data;
+    if (typeof data === "object" && data !== null) {
+        const status = (data as { status?: unknown }).status;
+        if (status === 409) return true;
+        const problem = (data as { problem?: unknown }).problem;
+        if (typeof problem === "object" && problem !== null && (problem as { status?: unknown }).status === 409) {
+            return true;
+        }
+    }
+    return false;
+};
+
+const isNotFoundActionError = (err: unknown): boolean => {
+    if (typeof err !== "object" || err === null) return false;
+    const code = (err as { code?: unknown }).code;
+    if (code === -32002) return true;
+    const data = (err as { data?: unknown }).data;
+    if (typeof data === "object" && data !== null && (data as { status?: unknown }).status === 404) {
+        return true;
+    }
+    return false;
+};
+
 export const openCliSession = async (
     client: AcpClient,
     options: CliCommonOptions,
@@ -420,7 +458,66 @@ export const openCliSession = async (
                 ? qualifiedPrefix
                 : undefined;
         const attended = options.interactive === true && !options.auto;
-        const plurnkMeta: Record<string, unknown> = {
+        let autoWorkspaceNames: Set<string> | null = null;
+        if (
+            !options.debugNoMeta &&
+            options.workspace === undefined &&
+            resolvedWorkspaceId === undefined &&
+            resolvedWorkspaceName === undefined &&
+            options.projectRoot === ""
+        ) {
+            try {
+                const listed = await client.action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>(
+                    "workspace.list",
+                    { includeArchived: true },
+                );
+                if (Array.isArray(listed.workspaces)) {
+                    autoWorkspaceNames = new Set(
+                        listed.workspaces.flatMap((w) => (typeof w?.name === "string" ? [w.name] : [])),
+                    );
+                }
+            } catch {
+                autoWorkspaceNames = null;
+            }
+        }
+        let autoSessionNames: Set<string> | null = null;
+        if (!options.debugNoMeta && resolvedSessionName === undefined) {
+            if (autoWorkspaceNames !== null) {
+                autoSessionNames = new Set();
+            } else {
+                const effectiveCwd =
+                    options.projectRoot === "" ? undefined : (options.projectRoot ?? options.cwd);
+                try {
+                    const listed = await client.action<{ readonly sessions?: ReadonlyArray<Record<string, unknown>> }>(
+                        "workspace.sessions",
+                        { includeArchived: true },
+                        {
+                            ...(options.workspace !== undefined
+                                ? { workspace: options.workspace }
+                                : resolvedWorkspaceName !== undefined
+                                  ? { workspace: resolvedWorkspaceName }
+                                  : {}),
+                            ...(resolvedWorkspaceId !== undefined ? { workspaceId: resolvedWorkspaceId } : {}),
+                            ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
+                        },
+                    );
+                    if (Array.isArray(listed.sessions)) {
+                        autoSessionNames = new Set(
+                            listed.sessions.flatMap((s) => (typeof s?.name === "string" ? [s.name] : [])),
+                        );
+                    }
+                } catch (err) {
+                    if (isNotFoundActionError(err)) {
+                        autoSessionNames = new Set();
+                    }
+                }
+            }
+        }
+        let allocatedWorkspace =
+            autoWorkspaceNames !== null ? nextSequentialName("workspace", autoWorkspaceNames) : undefined;
+        let allocatedSession =
+            autoSessionNames !== null ? nextSequentialName("session", autoSessionNames) : undefined;
+        const buildPlurnkMeta = (): Record<string, unknown> => ({
             create: true,
             interactive: attended,
             tools: attended ? ["question", "mcp_input_required"] : [],
@@ -433,13 +530,18 @@ export const openCliSession = async (
                   ? { workspaceId: resolvedWorkspaceId }
                   : resolvedWorkspaceName !== undefined
                     ? { workspace: resolvedWorkspaceName }
-                    : {}),
+                    : allocatedWorkspace !== undefined
+                      ? { workspace: allocatedWorkspace }
+                      : {}),
             ...(resolvedSessionName !== undefined
                 ? { session: resolvedSessionName, name: resolvedSessionName }
-                : {}),
+                : allocatedSession !== undefined
+                  ? { session: allocatedSession, name: allocatedSession }
+                  : {}),
             ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
             ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
-        };
+        });
+        let plurnkMeta = buildPlurnkMeta();
 
         const systemPrompt =
             options.systemPrompt !== undefined && options.systemPrompt.length > 0
@@ -474,10 +576,35 @@ export const openCliSession = async (
             }
         }
         if (nextSession === null) {
-            const created = await client.newSession(options.cwd, {
-                ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-                _meta: { plurnk: plurnkMeta },
-            });
+            let created: Awaited<ReturnType<AcpClient["newSession"]>> | null = null;
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                try {
+                    created = await client.newSession(options.cwd, {
+                        ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+                        _meta: { plurnk: plurnkMeta },
+                    });
+                    break;
+                } catch (err) {
+                    if (!isConflictError(err) || (allocatedWorkspace === undefined && allocatedSession === undefined)) {
+                        throw err;
+                    }
+                    if (allocatedWorkspace !== undefined && autoWorkspaceNames !== null) {
+                        autoWorkspaceNames.add(allocatedWorkspace);
+                        allocatedWorkspace = nextSequentialName("workspace", autoWorkspaceNames);
+                    }
+                    if (allocatedSession !== undefined && autoSessionNames !== null) {
+                        autoSessionNames.add(allocatedSession);
+                        allocatedSession = nextSequentialName("session", autoSessionNames);
+                    }
+                    plurnkMeta = buildPlurnkMeta();
+                }
+            }
+            if (created === null) {
+                created = await client.newSession(options.cwd, {
+                    ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+                    _meta: { plurnk: plurnkMeta },
+                });
+            }
             nextSession = new AcpSession(created.sessionId, {
                 configOptions: created.configOptions,
                 availableCommands: created.availableCommands,

@@ -94,7 +94,7 @@ export const runTermViewport = async (
 
     const presenter = new SessionPresenter({
         workspaceName: options.workspace ?? "default",
-        sessionName: options.sessionId ?? options.termSession ?? "user",
+        sessionName: options.sessionId ?? options.termSession ?? "session1",
         model: options.model ?? "default",
         yolo: options.yolo,
     });

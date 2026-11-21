@@ -249,7 +249,7 @@ export const runCliConfig = async (
         await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, {
             ...options,
-            sessionId: options.sessionId ?? options.termSession ?? "user",
+            sessionId: options.sessionId ?? options.termSession ?? "session1",
             ...(configId === "persona" ? { persona: undefined } : {}),
             ...(configId === "thought_level" ? { effort: undefined } : {}),
             ...(configId === "model" ? { model: undefined } : {}),

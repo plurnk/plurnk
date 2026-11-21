@@ -860,7 +860,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).
     const freshPresenter = new SessionPresenter({
         workspaceName: "sqlrite",
-        sessionName: "user",
+        sessionName: "session1",
         model: "default",
     });
     freshPresenter.ingestMeta({
@@ -941,7 +941,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     // Client-local `--yolo` / `/yolo` remains true when server `mode` is `"review"`.
     const localYoloPresenter = new SessionPresenter({
         workspaceName: "alpha",
-        sessionName: "user",
+        sessionName: "session1",
         yolo: true,
         initialConfigOptions: [
             {
@@ -1040,7 +1040,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
 test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresenter operates on pure ACPv2 updates without _meta.plurnk (#252)", () => {
     const presenter = new SessionPresenter({
         workspaceName: "default",
-        sessionName: "user",
+        sessionName: "session1",
         model: "fast",
     });
 
@@ -1151,7 +1151,7 @@ test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresen
 test("{§cli-conformance} {§cli-repl-mode} {§cli-sessions-topology}: SessionPresenter handles replay_complete boundary and projects prompt_suggestions_update lifecycle", () => {
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
-        sessionName: "user",
+        sessionName: "session1",
         model: "fast",
     });
 

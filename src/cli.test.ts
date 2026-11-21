@@ -165,7 +165,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection})
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
-        sessionName: "user",
+        sessionName: "session1",
         model: "mocktest/default",
         maxReasoningLines: 2,
     });
@@ -336,7 +336,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         sessionUpdate: "session_message",
         messageId: "m-1",
         senderSessionId: "1#helper",
-        recipientSessionId: "1#user",
+        recipientSessionId: "1#session1",
         content: [{ type: "text", text: "done" }],
     });
     assert.equal(msg[0]?.kind, "session_message");
@@ -425,7 +425,7 @@ test("{§cli-session-status} {§cli-model-selection}: session status line format
 
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
-        sessionName: "user",
+        sessionName: "session1",
         model: "mocktest/default",
     });
     presenter.apply({
@@ -543,15 +543,15 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     assert.match(painted, /\x1b\[32mok\x1b\[0m/u);
 
     // Header, title, resumeCommand, attention ({§cli-color-policy})
-    assert.equal(windowTitle("ws", "user"), "plurnk · ws · user");
+    assert.equal(windowTitle("ws", "session1"), "plurnk · ws · session1");
     assert.equal(windowTitle("ws", null), "plurnk · ws");
     assert.match(
-        buildHeader({ workspaceName: "ws", sessionName: "user", modelSelector: "fast", effort: "high", yolo: false }),
-        /workspace: ws · session: user · model: fast · effort: high · yolo: off \(Shift-Tab\) · \/help/u,
+        buildHeader({ workspaceName: "ws", sessionName: "session1", modelSelector: "fast", effort: "high", yolo: false }),
+        /workspace: ws · session: session1 · model: fast · effort: high · yolo: off \(Shift-Tab\) · \/help/u,
     );
     assert.match(
-        buildHeader({ workspaceName: "ws", sessionName: "user", modelSelector: "fast", effort: "high", yolo: true }),
-        /workspace: ws · session: user · model: fast · effort: high · yolo: on · \/help/u,
+        buildHeader({ workspaceName: "ws", sessionName: "session1", modelSelector: "fast", effort: "high", yolo: true }),
+        /workspace: ws · session: session1 · model: fast · effort: high · yolo: on · \/help/u,
     );
     assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
     assert.equal(
@@ -650,8 +650,8 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         record: (t) => surface.append(t),
     });
     surface.start();
-    surface.setTitle(windowTitle("ws", "user"));
-    assert.ok(written.some((w) => w.includes("TITLE:plurnk · ws · user")));
+    surface.setTitle(windowTitle("ws", "session1"));
+    assert.ok(written.some((w) => w.includes("TITLE:plurnk · ws · session1")));
 
     // When editor is empty, adding a permission gate opens review automatically ({§cli-inline-review})
     review.addPermissionGate({
@@ -695,7 +695,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     surface.stop();
 
     // extractChronologicalHistory filters published:false replay chunks and hydrates terminal output ({§cli-rendering})
-    const replaySess = new AcpSession("1#user");
+    const replaySess = new AcpSession("1#session1");
     replaySess.applyUpdate({
         sessionUpdate: "user_message_chunk",
         messageId: "m-unpublished",
@@ -737,7 +737,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     const rootComp = await completeInput("/session", {
         cwd: repoRoot,
         getProjectRoot: () => repoRoot,
-        getSessionNames: () => ["user", "helper"],
+        getSessionNames: () => ["session1", "helper"],
         getPendingGateIds: () => ["deadbeef"],
     });
     assert.equal(rootComp.suggestions[0]?.value, "/session", "exact match /session must sort before /sessions");
@@ -811,7 +811,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
 test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: per-runtime PLURNK_CLIENT_ACCEPT_<runtime> auto-acceptance, interactive TTY permission review menu, colored diff preview, and markdown/color modules", async () => {
     // 1. Per-runtime acceptance ({§cli-inline-review})
     const braveReq = {
-        sessionId: "default#user",
+        sessionId: "default#session1",
         title: "brave (brave_web_search)",
         toolCall: { toolCallId: "tc-1", title: "brave (brave_web_search)" },
         options: [
@@ -954,11 +954,11 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
             return () => {};
         },
         async newSession() {
-            for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
-            return { sessionId: "1#user", configOptions: [] };
+            for (const cb of listeners) cb({ sessionId: "1#session1", update: configNotice });
+            return { sessionId: "1#session1", configOptions: [] };
         },
         async resumeSession() {
-            for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
+            for (const cb of listeners) cb({ sessionId: "1#session1", update: configNotice });
             return { configOptions: [] };
         },
     };
@@ -968,9 +968,9 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
         undefined,
         true,
     );
-    for (const cb of listeners) cb({ sessionId: "1#user", update: configNotice });
-    for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
-    for (const cb of listeners) cb({ sessionId: "1#user", update: loopStatusNotice });
+    for (const cb of listeners) cb({ sessionId: "1#session1", update: configNotice });
+    for (const cb of listeners) cb({ sessionId: "1#session1", update: loopStatusNotice });
+    for (const cb of listeners) cb({ sessionId: "1#session1", update: loopStatusNotice });
     assert.equal(
         opened.items.filter(
             (item) => item.kind === "notice" && item.title === "engine:configuration:configuration_unavailable",
@@ -1085,7 +1085,7 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
         .onRequest(methods.agent.session.new, async ({ params }) => {
             observedNewSessionMetas.push((params._meta ?? {}) as Record<string, unknown>);
             return {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 configOptions: [],
             };
         })
@@ -1159,7 +1159,7 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
         credential: new Credential({ PLURNK_SECRET: "test-secret" }),
         env: { PLURNK_SECRET: "test-secret", HOME: "/tmp/mock-home" },
         cwd: "/tmp",
-        termSession: "user",
+        termSession: "session1",
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -1272,7 +1272,7 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
         });
         const cancelledRes = await cancelHandler(
             {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 mode: "form",
                 message: "Unattended question",
                 requestedSchema: { type: "object", properties: {} },
@@ -1333,12 +1333,12 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
         .onRequest(methods.agent.session.new, async () => {
             newSessionCalls += 1;
             return {
-                sessionId: "1#user",
+                sessionId: "1#session1",
                 configOptions: [],
                 _meta: {
                     plurnk: {
                         workspace: { id: 1, name: "ws-fork", projectRoot: "/tmp" },
-                        sessionName: "user",
+                        sessionName: "session1",
                     },
                 },
             };
@@ -1440,7 +1440,7 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
                 credential: new Credential({ PLURNK_SECRET: "test-secret" }),
                 env: { PLURNK_SECRET: "test-secret" },
                 cwd: "/tmp",
-                termSession: "user",
+                termSession: "session1",
                 autostart: false,
                 daemonTimeoutMs: 2000,
                 oauthTimeoutMs: 2000,
@@ -1477,7 +1477,7 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
         assert.equal(deleteSessionCalls, 0);
         assert.equal(forkCalls.length, 1);
         assert.deepEqual(forkCalls[0], {
-            sessionId: "1#user",
+            sessionId: "1#session1",
             cwd: "/tmp",
             _meta: { plurnk: { sessionName: "feature-branch" } },
         });
@@ -1538,7 +1538,7 @@ test("{§cli-invocation} {§cli-subcommands} {§cli-conformance}: ensureDaemonCo
             credential: new Credential({ PLURNK_SECRET: "test-secret" }),
             env: { PLURNK_SECRET: "test-secret", XDG_STATE_HOME: tmp },
             cwd: tmp,
-            termSession: "user",
+            termSession: "session1",
             autostart: true,
             daemonTimeoutMs: 1500,
             oauthTimeoutMs: 1000,
@@ -1661,4 +1661,119 @@ test("{§cli-invocation} {§cli-subcommands} {§cli-conformance}: ensureDaemonCo
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
+});
+
+test("{§cli-workspaces-and-sessions}: nextSequentialName and openCliSession allocate sequential workspaceX/sessionX across archived names and 409 conflicts", async () => {
+    const { nextSequentialName, openCliSession } = await import("./cli-connection.ts");
+    assert.equal(nextSequentialName("session", []), "session1");
+    assert.equal(nextSequentialName("session", ["session1", "session3", "custom"]), "session4");
+    assert.equal(nextSequentialName("workspace", ["workspace1", "workspace2", "alpha"]), "workspace3");
+
+    let newCalls = 0;
+    const seenMeta: Array<Record<string, unknown>> = [];
+    const mockClient = {
+        onSessionUpdate: () => () => {},
+        onDisconnect: () => () => {},
+        trackSession: () => {},
+        action: async (kind: string) => {
+            if (kind === "workspace.list") {
+                return {
+                    workspaces: [
+                        { name: "workspace1", archived_at: "2026-11-20T00:00:00Z" },
+                        { name: "my-repo", archived_at: null },
+                    ],
+                };
+            }
+            if (kind === "workspace.sessions") {
+                return {
+                    sessions: [
+                        { name: "session1", archived_at: null },
+                        { name: "session2", archived_at: "2026-11-20T00:00:00Z" },
+                    ],
+                };
+            }
+            return {};
+        },
+        newSession: async (_cwd: string, extra?: { _meta?: { plurnk?: Record<string, unknown> } }) => {
+            newCalls += 1;
+            const plurnk = extra?._meta?.plurnk ?? {};
+            seenMeta.push({ ...plurnk });
+            if (newCalls === 1) {
+                throw Object.assign(new Error("conflict"), { data: { status: 409 } });
+            }
+            return {
+                sessionId: `2#${String(plurnk.session ?? "session1")}`,
+                configOptions: [],
+                availableCommands: [],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 2, name: plurnk.workspace ?? "workspace2", projectRoot: null },
+                        sessionName: plurnk.session ?? "session1",
+                    },
+                },
+            };
+        },
+    } as unknown as AcpClient;
+
+    const folderless = await openCliSession(mockClient, {
+        url: "http://127.0.0.1:1066/acp",
+        explicitAcpUrl: false,
+        host: "127.0.0.1",
+        port: 1066,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        cwd: "/tmp",
+        projectRoot: "",
+        termSession: "session1",
+        yolo: false,
+        auto: false,
+        json: false,
+        repl: false,
+        bell: false,
+        debugNoMeta: false,
+        autostart: false,
+        daemonTimeoutMs: 5000,
+        oauthTimeoutMs: 5000,
+        cancelGraceMs: 5000,
+        historyEntries: 0,
+        previewLines: 3,
+        mermaidTimeoutMs: 1000,
+        color: "never",
+        env: {},
+    });
+    assert.equal(seenMeta[0]?.workspace, "workspace2", "skips archived workspace1");
+    assert.equal(seenMeta[0]?.session, "session1");
+    assert.equal(seenMeta[1]?.workspace, "workspace3", "409 conflict advances workspace2 -> workspace3");
+    assert.equal(seenMeta[1]?.session, "session2", "409 conflict advances session1 -> session2");
+    assert.equal(folderless.sessionId, "2#session2");
+    folderless.dispose();
+
+    seenMeta.length = 0;
+    const namedWsUnnamedSess = await openCliSession(mockClient, {
+        url: "http://127.0.0.1:1066/acp",
+        explicitAcpUrl: false,
+        host: "127.0.0.1",
+        port: 1066,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        cwd: "/tmp/my-repo",
+        workspace: "my-repo",
+        termSession: "session1",
+        yolo: false,
+        auto: false,
+        json: false,
+        repl: false,
+        bell: false,
+        debugNoMeta: false,
+        autostart: false,
+        daemonTimeoutMs: 5000,
+        oauthTimeoutMs: 5000,
+        cancelGraceMs: 5000,
+        historyEntries: 0,
+        previewLines: 3,
+        mermaidTimeoutMs: 1000,
+        color: "never",
+        env: {},
+    });
+    assert.equal(seenMeta[0]?.workspace, "my-repo");
+    assert.equal(seenMeta[0]?.session, "session3", "skips active session1 and archived session2");
+    namedWsUnnamedSess.dispose();
 });

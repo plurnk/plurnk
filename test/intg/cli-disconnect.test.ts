@@ -22,8 +22,8 @@ const makeOptions = (url: string, overrides?: Partial<CliCommonOptions>): CliCom
     env: {},
     cwd: "/tmp",
     workspace: "ws",
-    sessionId: "user",
-    termSession: "user",
+    sessionId: "session1",
+    termSession: "session1",
     autostart: false,
     daemonTimeoutMs: 2000,
     oauthTimeoutMs: 2000,
@@ -67,12 +67,12 @@ const runOneShotDisconnectScenario = async (mode: CutoffMode) => {
             capabilities: { session: {} },
         }))
         .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "ws#user",
+            sessionId: "ws#session1",
             configOptions: [],
             _meta: {
                 plurnk: {
                     workspace: { name: "ws", projectRoot: "/tmp" },
-                    sessionName: "user",
+                    sessionName: "session1",
                 },
             },
         }))
@@ -392,12 +392,12 @@ test(
                     capabilities: { session: {} },
                 }))
                 .onRequest(methods.agent.session.new, async () => ({
-                    sessionId: "ws#user",
+                    sessionId: "ws#session1",
                     configOptions: [],
                     _meta: {
                         plurnk: {
                             workspace: { name: "ws", projectRoot: "/tmp" },
-                            sessionName: "user",
+                            sessionName: "session1",
                         },
                     },
                 }))
@@ -406,7 +406,7 @@ test(
                     (raw) => raw as { kind?: string },
                     async ({ params }) => {
                         if (params.kind === "workspace.sessions") {
-                            return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                            return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                         }
                         if (params.kind === "workspace.list") {
                             return { workspaces: [{ id: 1, name: "ws" }] };

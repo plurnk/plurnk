@@ -58,7 +58,7 @@ server or provider key and verify a readiness turn, or [choose one below](#model
 The first launch starts the included service, which keeps running for later
 sessions ([Service](#service)). Each project folder maps to its own persistent
 workspace (`--workspace` and `--session` override). Plurnk Term returns to session
-`user` and its history; unless `--session` is given, each one-shot prompt runs
+`session1` and its history; unless `--session` is given, each one-shot prompt runs
 in a new session of its own (reported in `--json` output and on `fd 3` events).
 
 Proposals require review by default (`PLURNK_CLIENT_YOLO=0`); press `Shift+Tab`,

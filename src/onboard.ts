@@ -134,7 +134,7 @@ export const checkNeedsAutoOnboard = async (options: CliCommonOptions): Promise<
         }
         const session = await openCliSession(client, {
             ...options,
-            sessionId: options.sessionId ?? options.termSession ?? "user",
+            sessionId: options.sessionId ?? options.termSession ?? "session1",
         });
         const modelOpt = session.configOptions.find((o) => o.configId === "model");
         const currentModel =

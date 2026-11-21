@@ -405,7 +405,7 @@ try {
         throw new Error(`zero-config plurnk config did not report model (Model): none:\n${configOut.stdout}`);
     }
     const zeroRun = await runClient(clientBin, [
-        "--json", "--workspace", "zero-config", "--session", "user", "--project-root", "",
+        "--json", "--workspace", "zero-config", "--session", "session1", "--project-root", "",
         "--model", "openai/gpt-4.1-mini", "Zero-alias direct catalog model run.",
     ], { cwd: install, env: zeroClientEnv, timeout: 30_000 });
     if (JSON.parse(zeroRun.stdout).response !== "composition ok: gpt-4.1-mini") {

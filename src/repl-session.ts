@@ -55,6 +55,7 @@ export {
 
 export interface ReplSessionHooks {
     readonly onProviderModelsFetcher?: (fetcher: (provider: string) => Promise<readonly string[]>) => void;
+    readonly onModelEffortsFetcher?: (fetcher: (selector: string) => Promise<readonly string[] | null>) => void;
 }
 
 export const runReplSession = async (
@@ -418,25 +419,58 @@ export const runReplSession = async (
     try {
         await ensureDaemonConnected(client, options);
         const providerModelsCache = new Map<string, Promise<readonly string[]>>();
-        customStreams?.onProviderModelsFetcher?.((provider: string) => {
+        const effortsBySelector = new Map<string, readonly string[]>();
+        const aliasTargetByName = new Map<string, string>();
+        const recordCatalogItems = (items: ReadonlyArray<Record<string, unknown>> | undefined): void => {
+            for (const item of items ?? []) {
+                const selector = typeof item?.selector === "string" ? item.selector : "";
+                const capabilities =
+                    item?.capabilities !== null && typeof item?.capabilities === "object"
+                        ? (item.capabilities as { readonly efforts?: unknown })
+                        : undefined;
+                if (selector.length > 0 && Array.isArray(capabilities?.efforts)) {
+                    effortsBySelector.set(
+                        selector,
+                        capabilities.efforts.filter((e): e is string => typeof e === "string" && e.length > 0),
+                    );
+                }
+            }
+        };
+        const fetchProviderModels = (provider: string): Promise<readonly string[]> => {
             const existing = providerModelsCache.get(provider);
             if (existing !== undefined) return existing;
             const promise = client
-                .action<{ readonly items?: ReadonlyArray<{ readonly selector?: string }> }>("models.list", {
+                .action<{ readonly items?: ReadonlyArray<Record<string, unknown>> }>("models.list", {
                     provider,
                     limit: 100,
                 })
-                .then((res) =>
-                    (res.items ?? [])
+                .then((res) => {
+                    recordCatalogItems(res.items);
+                    return (res.items ?? [])
                         .map((item) => (typeof item?.selector === "string" ? item.selector : ""))
-                        .filter(Boolean),
-                )
+                        .filter(Boolean);
+                })
                 .catch(() => {
                     providerModelsCache.delete(provider);
                     return [];
                 });
             providerModelsCache.set(provider, promise);
             return promise;
+        };
+        customStreams?.onProviderModelsFetcher?.(fetchProviderModels);
+        customStreams?.onModelEffortsFetcher?.(async (selector: string) => {
+            const resolved = aliasTargetByName.get(selector) ?? selector;
+            if (effortsBySelector.has(resolved)) {
+                return effortsBySelector.get(resolved) ?? null;
+            }
+            const slashIdx = resolved.indexOf("/");
+            if (slashIdx > 0) {
+                await fetchProviderModels(resolved.slice(0, slashIdx));
+                if (effortsBySelector.has(resolved)) {
+                    return effortsBySelector.get(resolved) ?? null;
+                }
+            }
+            return null;
         });
 
         const bindSession = async (
@@ -502,12 +536,25 @@ export const runReplSession = async (
                     readonly items?: ReadonlyArray<{
                         readonly selector?: string;
                         readonly modelName?: string;
+                        readonly capabilities?: { readonly efforts?: readonly string[] };
                         readonly limits?: { readonly contextTokens?: number; readonly inputTokens?: number };
                         readonly readiness?: { readonly ready?: boolean };
                     }>;
                 }>("models.list", { availability: "configured", limit: 100 })
                 .catch(() => undefined),
         ]);
+        recordCatalogItems(modelsRes?.items as ReadonlyArray<Record<string, unknown>> | undefined);
+        if (Array.isArray(plurnk?.providers)) {
+            for (const p of plurnk.providers as ReadonlyArray<Record<string, unknown>>) {
+                if (
+                    typeof p?.alias === "string" &&
+                    typeof p?.provider === "string" &&
+                    typeof p?.model === "string"
+                ) {
+                    aliasTargetByName.set(p.alias, `${p.provider}/${p.model}`);
+                }
+            }
+        }
         const catalogOptions = (modelsRes?.items ?? [])
             .filter(
                 (
@@ -892,8 +939,10 @@ export const runReplSession = async (
         }
 
         let promptText = expandedLearn ?? line;
+        let isQuestionPrompt = false;
         if (expandedLearn === null && line.startsWith("?")) {
             forceReviewNextRun = true;
+            isQuestionPrompt = true;
             promptText = line.slice(1).trimStart();
         } else if (rawLine.trimStart().startsWith(": ")) {
             promptText = rawLine.trimStart().slice(2);
@@ -917,6 +966,7 @@ export const runReplSession = async (
                     control: true,
                     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     ...(options.auto ? { envelope: { auto: true } } : {}),
+                    ...(isQuestionPrompt ? { proposalPolicy: "review" } : {}),
                     ...(openPaths.length > 0 ? { openPaths } : {}),
                 },
             })

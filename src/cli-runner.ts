@@ -46,7 +46,6 @@ import {
     runCliWeb,
     runCliWorkspace,
 } from "./cli-subcommands.ts";
-import { checkNeedsAutoOnboard, runCliOnboard } from "./onboard.ts";
 import {
     buildPromptBlocks,
     formatFamilyRows,
@@ -60,7 +59,6 @@ import { runReplSession } from "./repl-session.ts";
 import { runTermViewport } from "./term-viewport.ts";
 
 export {
-    checkNeedsAutoOnboard,
     ClientCliError,
     createCliElicitationHandler,
     createCliPermissionHandler,
@@ -86,7 +84,6 @@ export {
     runCliLogRead,
     runCliModels,
     runCliNewSession,
-    runCliOnboard,
     runCliReadCoord,
     runCliResumeSession,
     runCliScript,
@@ -366,6 +363,7 @@ export const runCliPrompt = async (
                     control: true,
                     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     ...(options.auto ? { envelope: { auto: true } } : {}),
+                    ...(isQuestionPrompt ? { proposalPolicy: "review" } : {}),
                 },
             };
             const promptRes = await client.prompt(
@@ -609,9 +607,6 @@ export const runInteractiveSession = async (
 ): Promise<number> => {
     if (options.repl) {
         return await runReplSession(options, customStreams);
-    }
-    if (customStreams === undefined && (await checkNeedsAutoOnboard(options))) {
-        await runCliOnboard(options);
     }
     return await runTermViewport(options, customStreams);
 };

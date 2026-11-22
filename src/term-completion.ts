@@ -3,7 +3,7 @@
 import { readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
-import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
+import { PLURNK_OPS, PROPOSAL_POLICIES } from "@plurnk/plurnk-contracts";
 import { INTERACTIVE_COMMANDS } from "./commands.ts";
 
 export interface PathPartial {
@@ -144,7 +144,9 @@ export interface CompletionContext {
     readonly getModels?: () => readonly string[];
     readonly getProviderModels?: (provider: string) => Promise<readonly string[]>;
     readonly getEfforts?: () => readonly string[];
+    readonly getEffortsForModel?: (selector: string) => Promise<readonly string[] | null>;
     readonly getPersonas?: () => readonly string[];
+    readonly getFamilyAliases?: (family: string) => readonly string[];
     readonly getSessionNames?: () => readonly string[];
     readonly getWorkspaceNames?: () => readonly string[];
     readonly getPendingGateIds?: () => readonly string[];
@@ -152,15 +154,71 @@ export interface CompletionContext {
     readonly getPromptSuggestions?: () => readonly string[];
 }
 
-const FAMILY_SUBCOMMANDS = [
-    { value: "list", description: "List definitions" },
-    { value: "discover", description: "Discover candidates" },
-    { value: "add", description: "Add definition" },
-    { value: "replace", description: "Replace definition" },
-    { value: "enable", description: "Enable definition" },
-    { value: "disable", description: "Disable definition" },
-    { value: "remove", description: "Remove definition" },
-];
+const FAMILY_SUBCOMMANDS_BY_FAMILY: Readonly<Record<string, readonly { readonly value: string; readonly description: string }[]>> = {
+    mcp: [
+        { value: "list", description: "List definitions" },
+        { value: "discover", description: "Discover candidates" },
+        { value: "add", description: "Add definition" },
+        { value: "replace", description: "Replace definition" },
+        { value: "enable", description: "Enable definition" },
+        { value: "disable", description: "Disable definition" },
+        { value: "remove", description: "Remove definition" },
+        { value: "skills", description: "Inspect MCP server skills" },
+        { value: "complete", description: "Complete MCP prompt or resource" },
+        { value: "oauth", description: "Authorize MCP server" },
+    ],
+    skills: [
+        { value: "list", description: "List definitions" },
+        { value: "discover", description: "Discover candidates" },
+        { value: "add", description: "Add definition" },
+        { value: "replace", description: "Replace definition" },
+        { value: "enable", description: "Enable definition" },
+        { value: "disable", description: "Disable definition" },
+        { value: "remove", description: "Remove definition" },
+    ],
+    personas: [
+        { value: "list", description: "List definitions" },
+        { value: "discover", description: "Discover candidates" },
+        { value: "add", description: "Add definition" },
+        { value: "replace", description: "Replace definition" },
+        { value: "enable", description: "Enable definition" },
+        { value: "disable", description: "Disable definition" },
+        { value: "remove", description: "Remove definition" },
+    ],
+    members: [
+        { value: "list", description: "List definitions" },
+        { value: "discover", description: "Discover candidates" },
+        { value: "add", description: "Add definition" },
+        { value: "enable", description: "Enable definition" },
+        { value: "disable", description: "Disable definition" },
+        { value: "remove", description: "Remove definition" },
+    ],
+    env: [
+        { value: "list", description: "List variables" },
+        { value: "discover", description: "Discover variables" },
+        { value: "add", description: "Add variable" },
+        { value: "replace", description: "Replace variable" },
+        { value: "set", description: "Set NAME=value" },
+        { value: "unset", description: "Remove variable" },
+        { value: "enable", description: "Enable variable" },
+        { value: "disable", description: "Disable variable" },
+        { value: "remove", description: "Remove variable" },
+        { value: "import", description: "Import dotenv file" },
+        { value: "--scope", description: "Select session or workspace scope" },
+    ],
+    schedule: [
+        { value: "list", description: "List definitions" },
+        { value: "discover", description: "Preview occurrences" },
+        { value: "add", description: "Add schedule" },
+        { value: "replace", description: "Replace schedule" },
+        { value: "enable", description: "Enable schedule" },
+        { value: "disable", description: "Disable schedule" },
+        { value: "remove", description: "Remove schedule" },
+        { value: "run", description: "Trigger schedule now" },
+        { value: "done", description: "Mark schedule done" },
+        { value: "reopen", description: "Reopen schedule" },
+    ],
+};
 
 export const completeInput = async (
     line: string,
@@ -216,13 +274,22 @@ export const completeInput = async (
         return namespace(scopes, typed, (v) => (v === "plurnk" ? "user-wide Plurnk skills" : "project .agents/skills"), options);
     }
 
-    const familyMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(\w*)$/u.exec(line);
+    const envScopeMatch = /^\/env\s+--scope(?:\s+|=)(\w*)$/u.exec(line);
+    if (envScopeMatch !== null) {
+        const typed = envScopeMatch[1]!.toLowerCase();
+        return namespace(
+            ["session", "workspace"],
+            typed,
+            (v) => (v === "workspace" ? "workspace environment defaults" : "session environment overrides"),
+            options,
+        );
+    }
+
+    const familyMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?([-\w]*)$/u.exec(line);
     if (familyMatch !== null) {
+        const family = familyMatch[1]!;
         const typed = familyMatch[2]!.toLowerCase();
-        const subs =
-            familyMatch[1] === "env"
-                ? [...FAMILY_SUBCOMMANDS, { value: "import", description: "Import dotenv file" }]
-                : FAMILY_SUBCOMMANDS;
+        const subs = FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? [];
         const summaryBySub = new Map(subs.map((s) => [s.value, s.description]));
         return namespace(
             subs.map((s) => s.value),
@@ -230,6 +297,14 @@ export const completeInput = async (
             (value) => summaryBySub.get(value) ?? "subcommand",
             options,
         );
+    }
+
+    const familyAliasMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(enable|disable|remove|unset|oauth|skills|run|done|reopen)\s+(\S*)$/u.exec(line);
+    if (familyAliasMatch !== null) {
+        const family = familyAliasMatch[1]!;
+        const frag = familyAliasMatch[3]!;
+        const aliases = ctx.getFamilyAliases?.(family) ?? [];
+        return namespace(aliases, frag, () => `${family} definition`, options);
     }
 
     const gateMatch = /^\/(approve|accept|reject|cancel|edit|answer)\s+@?([0-9a-f]*)$/iu.exec(line);
@@ -284,8 +359,10 @@ export const completeInput = async (
 
     const modelEffortMatch = /^\/model\s+(\S+)\s+(\S*)$/u.exec(line);
     if (modelEffortMatch !== null) {
+        const selector = modelEffortMatch[1]!;
         const effortFrag = modelEffortMatch[2]!;
-        const efforts = ctx.getEfforts?.() ?? [];
+        const modelEfforts = await ctx.getEffortsForModel?.(selector);
+        const efforts = modelEfforts ?? ctx.getEfforts?.() ?? [];
         return namespace(efforts, effortFrag, () => "reasoning effort", options);
     }
 
@@ -294,6 +371,12 @@ export const completeInput = async (
         const frag = effortMatch[1]!;
         const efforts = ctx.getEfforts?.() ?? [];
         return namespace(efforts, frag, () => "reasoning effort", options);
+    }
+
+    const modeMatch = /^\/mode\s+(\S*)$/u.exec(line);
+    if (modeMatch !== null) {
+        const frag = modeMatch[1]!.toLowerCase();
+        return namespace(PROPOSAL_POLICIES, frag, () => "proposal review mode", options);
     }
 
     const personaMatch = /^\/persona\s+(\S*)$/u.exec(line);

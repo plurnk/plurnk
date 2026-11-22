@@ -238,80 +238,8 @@ export const extractPromptHistory = (targetSession: AcpSession, maxEntries?: num
     return prompts;
 };
 
-const localFormatFamilyRows = (family: string, result: Record<string, unknown>): string => {
-    const definitions = Array.isArray(result.definitions) ? result.definitions : [];
-    if (definitions.length === 0) {
-        return `${family}: none\n`;
-    }
-    const lines: string[] = [];
-    for (const item of definitions) {
-        const d = item as Record<string, unknown>;
-        const alias = String(d.alias ?? "");
-        const state = String(d.state ?? "active");
-        const def = (d.definition ?? {}) as Record<string, unknown>;
-        const detail = (d.detail ?? {}) as Record<string, unknown>;
-        const type = typeof def.type === "string" ? def.type : "";
-        const target =
-            typeof def.command === "string"
-                ? def.command
-                : typeof def.url === "string"
-                  ? def.url
-                  : typeof def.source === "string"
-                    ? def.source
-                    : typeof def.value === "string"
-                      ? def.value
-                      : family === "schedule"
-                        ? [
-                              typeof detail.status === "string" ? `status=${detail.status}` : "",
-                              typeof def.rule === "string" ? def.rule : def.rule === null ? "unscheduled" : "",
-                              typeof def.target === "string" ? def.target : typeof def.run === "string" ? "run" : "",
-                          ]
-                              .filter(Boolean)
-                              .join("  ")
-                        : family === "members"
-                          ? [
-                                typeof detail.effect === "string" ? detail.effect : "",
-                                typeof detail.matched === "number" ? `matched=${String(detail.matched)}` : "",
-                            ]
-                                .filter(Boolean)
-                                .join("  ")
-                          : typeof def.description === "string"
-                            ? def.description
-                            : "";
-        const extra =
-            family === "personas"
-                ? [
-                      typeof def.model === "string" && def.model.length > 0 ? `model=${def.model}` : "",
-                      typeof def.effort === "string" && def.effort.length > 0 ? `effort=${def.effort}` : "",
-                  ]
-                      .filter(Boolean)
-                      .join("  ")
-                : "";
-        const prov = (d.provenance ?? {}) as Record<string, unknown>;
-        const source = typeof prov.source === "string" ? `source=${prov.source}` : "";
-        const rowParts = [alias, state, type, target, extra, source].filter((p) => p.length > 0);
-        lines.push(rowParts.join("  "));
-    }
-    return `${lines.join("\n")}\n`;
-};
-
-const contractsFormatFamilyRows = (
-    Contracts as { readonly formatFamilyRows?: (family: string, result: Readonly<Record<string, unknown>>) => string }
-).formatFamilyRows;
-
-const contractsFormatFamilyResult = (
-    Contracts as {
-        readonly formatFamilyResult?: (
-            family: string,
-            actionName: string,
-            params: Readonly<Record<string, unknown>>,
-            result: unknown,
-        ) => string;
-    }
-).formatFamilyResult;
-
 export const formatFamilyRows = (family: string, result: Record<string, unknown>): string =>
-    contractsFormatFamilyRows !== undefined ? contractsFormatFamilyRows(family, result) : localFormatFamilyRows(family, result);
+    Contracts.formatFamilyRows(family, result);
 
 export const formatExecResultLine = (r: {
     readonly status?: number;
@@ -413,67 +341,6 @@ export const formatLogEntries = (entries: readonly unknown[]): string => {
     return out;
 };
 
-// Normalize flag shorthands so `Contracts.parseFamilyCommand` produces identical `{ actionName, params }`
-// against both published `@plurnk/plurnk-contracts@8.0.0` and packed monorepo HEAD.
-const normalizeFamilyArgs = (
-    family: string,
-    args: readonly string[],
-): { readonly rawSub: string; readonly rawRest: readonly string[]; readonly normalizedArgs: readonly string[] } => {
-    const scopeTokens: string[] = [];
-    const filteredPreserveEmpty: string[] = [];
-    for (let i = 0; i < args.length; i += 1) {
-        const tok = args[i] ?? "";
-        if (tok === "--scope" && args[i + 1] !== undefined) {
-            scopeTokens.push("--scope", args[i + 1]!);
-            i += 1;
-        } else if (tok.startsWith("--scope=")) {
-            scopeTokens.push(tok);
-        } else {
-            filteredPreserveEmpty.push(tok);
-        }
-    }
-    const rawSub = filteredPreserveEmpty[0] ?? "list";
-    const rawRest = filteredPreserveEmpty.slice(1);
-    if (contractsFormatFamilyResult !== undefined) {
-        return { rawSub, rawRest, normalizedArgs: args };
-    }
-    const rest = rawRest.filter((t) => t.length > 0);
-    if (family === "mcp" && rawSub === "complete" && rest.some((t) => t.startsWith("--"))) {
-        let server: string | undefined;
-        let prompt: string | undefined;
-        let uri: string | undefined;
-        let name: string | undefined;
-        let val: string | undefined;
-        const pos: string[] = [];
-        for (let i = 0; i < rest.length; i += 1) {
-            const tok = rest[i] ?? "";
-            if ((tok === "--server" || tok === "--alias") && rest[i + 1] !== undefined) {
-                server = rest[++i];
-            } else if (tok === "--prompt" && rest[i + 1] !== undefined) {
-                prompt = rest[++i];
-            } else if (tok === "--uri" && rest[i + 1] !== undefined) {
-                uri = rest[++i];
-            } else if (tok === "--name" && rest[i + 1] !== undefined) {
-                name = rest[++i];
-            } else if (tok === "--value" && rest[i + 1] !== undefined) {
-                val = rest[++i];
-            } else {
-                pos.push(tok);
-            }
-        }
-        const srv = server ?? pos[0] ?? "";
-        const rem = server !== undefined ? pos : pos.slice(1);
-        const kind = prompt !== undefined ? "prompt" : "resource";
-        const target = prompt ?? uri ?? "";
-        const argTok = `${name ?? rem[0] ?? ""}=${val ?? rem[1] ?? ""}`;
-        return { rawSub, rawRest, normalizedArgs: [...scopeTokens, "complete", srv, kind, target, argTok] };
-    }
-    if (family === "personas" && rawSub === "discover" && rest.length > 0 && !rest.some((t) => t.startsWith("--"))) {
-        return { rawSub, rawRest, normalizedArgs: [...scopeTokens, "discover", "--source", rest.join(" ")] };
-    }
-    return { rawSub, rawRest, normalizedArgs: args };
-};
-
 export const executeFamilyCommand = async (
     client: AcpClient,
     family: string,
@@ -500,27 +367,18 @@ export const executeFamilyCommand = async (
         }) => void;
     },
 ): Promise<void> => {
-    const { rawSub, rawRest, normalizedArgs } = normalizeFamilyArgs(family, args);
-    const baseParsed = Contracts.parseFamilyCommand(family, normalizedArgs);
-    const scopePrefix = baseParsed.scopePrefix;
-    const sub = baseParsed.sub;
-    const rest = baseParsed.rest;
-    const actionName =
-        family === "env" && rawSub === "set"
-            ? `${scopePrefix}.env.replace`
-            : family === "schedule" && rawSub === "run"
-              ? "workspace.schedule.run"
-              : family === "schedule" && (rawSub === "done" || rawSub === "reopen" || rawSub === "open")
-                ? "workspace.schedule.status"
-                : baseParsed.actionName;
-    const params =
-        family === "schedule" && rawSub === "run" && !("alias" in baseParsed.params)
-            ? { alias: rest[0] ?? "" }
-            : family === "schedule" &&
-                (rawSub === "done" || rawSub === "reopen" || rawSub === "open") &&
-                !("alias" in baseParsed.params)
-              ? { alias: rest[0] ?? "", status: rawSub === "done" ? "done" : "open" }
-              : baseParsed.params;
+    const filteredPreserveEmpty: string[] = [];
+    for (let i = 0; i < args.length; i += 1) {
+        const tok = args[i] ?? "";
+        if (tok === "--scope" && args[i + 1] !== undefined) {
+            i += 1;
+        } else if (!tok.startsWith("--scope=")) {
+            filteredPreserveEmpty.push(tok);
+        }
+    }
+    const rawSub = filteredPreserveEmpty[0] ?? "list";
+    const rawRest = filteredPreserveEmpty.slice(1);
+    const { scopePrefix, sub, actionName, params } = Contracts.parseFamilyCommand(family, args);
 
     const writeResult = (result: Record<string, unknown>): void => {
         if (io.json) {
@@ -536,8 +394,8 @@ export const executeFamilyCommand = async (
             Contracts.isRecord(result.skill) ||
             Contracts.isRecord(result.completion) ||
             result.removed === true;
-        if (hasStructuredFamilyPayload && contractsFormatFamilyResult !== undefined) {
-            io.stdout.write(`${contractsFormatFamilyResult(family, actionName, params, result)}\n`);
+        if (hasStructuredFamilyPayload) {
+            io.stdout.write(`${Contracts.formatFamilyResult(family, actionName, params, result)}\n`);
             return;
         }
         io.stdout.write(`${JSON.stringify(result)}\n`);
@@ -672,10 +530,6 @@ export const executeFamilyCommand = async (
     const result = await client.action<Record<string, unknown>>(actionName, params, binding);
     if (sub === "list") {
         io.stdout.write(io.json ? `${JSON.stringify(result, null, 2)}\n` : formatFamilyRows(family, result));
-        return;
-    }
-    if (sub === "discover" && contractsFormatFamilyResult === undefined) {
-        io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
     }
     writeResult(result);

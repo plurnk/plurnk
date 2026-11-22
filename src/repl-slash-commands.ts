@@ -230,8 +230,28 @@ export const dispatchSlashCommand = async (
         }
 
         if (cmd === "yolo") {
-            const nextYolo = !ctx.getYolo();
+            const session = ctx.getSession();
+            const modeOpt = session.configOptions.find((o) => o.configId === "mode");
+            const currentServerAccept =
+                modeOpt !== undefined &&
+                "currentValue" in modeOpt &&
+                modeOpt.currentValue === "accept";
+            const nextYolo = !(ctx.getYolo() || currentServerAccept);
             ctx.setYolo(nextYolo);
+            if (modeOpt !== undefined) {
+                const res = await client.setConfigOption(
+                    session.sessionId,
+                    "mode",
+                    nextYolo ? "accept" : "review",
+                );
+                session.configOptions = [...res.configOptions];
+                const latestMeta = (res as { _meta?: unknown })._meta;
+                writeEventJsonl(streams.events, {
+                    sessionUpdate: "config_option_update",
+                    configOptions: session.configOptions,
+                    ...(latestMeta !== undefined ? { _meta: latestMeta } : {}),
+                });
+            }
             streams.stdout.write(`yolo: ${nextYolo ? "on" : "off"}\n`);
             if (nextYolo) {
                 ctx.clearForceReviewNextRun();

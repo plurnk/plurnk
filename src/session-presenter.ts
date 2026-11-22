@@ -15,7 +15,7 @@ import {
     addDecimal,
     compactTarget,
     extractCoordinateSeqs,
-    extractMessageVoice,
+    extractMessageActor,
     extractRawString,
     extractScopeToken,
     extractTitleAside,
@@ -60,7 +60,7 @@ export {
     AVAILABLE_COMMAND_GUARDS,
     compactTarget,
     CONTENT_BLOCK_GUARDS,
-    extractMessageVoice,
+    extractMessageActor,
     extractRawString,
     extractScopeToken,
     extractTitleAside,
@@ -1728,7 +1728,7 @@ export class SessionPresenter {
                               status?: number;
                               loopSeq?: number;
                               turnSeq?: number;
-                              voice?: string;
+                              actor?: string;
                               source?: string;
                               address?: string;
                               target?: string;
@@ -1751,7 +1751,7 @@ export class SessionPresenter {
                 ? contentBlockToText(update.content)
                 : (update.content ?? []).map(contentBlockToText).join("");
             const effectiveOp = metaPlurnk?.op ?? "send";
-            const voice = effectiveOp === "wait" ? null : extractMessageVoice(metaPlurnk);
+            const actor = effectiveOp === "wait" ? null : extractMessageActor(metaPlurnk);
             if (effectiveOp === "wait") {
                 this.doing = null;
                 this.buildStatusBar();
@@ -1763,7 +1763,7 @@ export class SessionPresenter {
                 op: effectiveOp,
                 status: typeof metaPlurnk?.status === "number" ? metaPlurnk.status : 200,
                 aside: metaPlurnk?.attrs?.aside ?? null,
-                ...(voice !== null ? { voice } : {}),
+                ...(actor !== null ? { actor } : {}),
             });
             return frames;
         }

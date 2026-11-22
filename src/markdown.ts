@@ -242,26 +242,26 @@ export const renderModelReply = (
         readonly op?: string | null;
         readonly status?: number | null;
         readonly aside?: string | null;
-        readonly voice?: string | null;
+        readonly actor?: string | null;
         readonly mermaidTimeoutMs?: number | string;
     },
 ): string => {
     const op = opts?.op ?? "send";
     const status = opts?.status ?? 200;
     const failed = status >= 400 || op === "fail";
-    const trimmedVoice =
-        typeof opts?.voice === "string" && opts.voice.trim().length > 0
-            ? ModelText.plain(opts.voice.trim())
+    const trimmedActor =
+        typeof opts?.actor === "string" && opts.actor.trim().length > 0
+            ? ModelText.plain(opts.actor.trim())
             : null;
     const glyph =
         op === "wait"
             ? failed
                 ? "❌"
                 : "⏳"
-            : trimmedVoice !== null
+            : trimmedActor !== null
               ? failed
-                  ? `❌ [${trimmedVoice}]`
-                  : `[${trimmedVoice}]`
+                  ? `❌ [${trimmedActor}]`
+                  : `[${trimmedActor}]`
               : failed
                 ? "❌"
                 : "🐹";

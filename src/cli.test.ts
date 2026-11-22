@@ -343,7 +343,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
 
     // Rich Term waterfall formatting: 🐹 model replies, note bodies, operation previews, 💭 reasoning, 🎯 loop summary
     assert.match(renderModelReply("Hello **world**", 80, { op: "done", status: 200 }), /🐹[\s\S]*Hello/);
-    assert.match(renderModelReply("Hello **scout**", 80, { op: "done", status: 200, voice: "scoutproxy" }), /\[scoutproxy\][\s\S]*Hello/);
+    assert.match(renderModelReply("Hello **scout**", 80, { op: "done", status: 200, actor: "scoutproxy" }), /\[scoutproxy\][\s\S]*Hello/);
     assert.match(renderModelReply("Cancelled", 80, { op: "fail", status: 200 }), /❌/);
     assert.match(renderModelReply("Waiting", 80, { op: "wait", status: 200 }), /⏳/);
     assert.match(

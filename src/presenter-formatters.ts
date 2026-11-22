@@ -272,10 +272,10 @@ export const normalizeWorkerKey = (raw: string): string => {
     return clean.length > 0 ? clean : trimmed;
 };
 
-export const extractMessageVoice = (
+export const extractMessageActor = (
     plurnkMeta:
         | {
-              readonly voice?: unknown;
+              readonly actor?: unknown;
               readonly source?: unknown;
               readonly address?: unknown;
               readonly target?: unknown;
@@ -288,8 +288,8 @@ export const extractMessageVoice = (
         | undefined,
 ): string | null => {
     if (!plurnkMeta || typeof plurnkMeta !== "object") return null;
-    if (typeof plurnkMeta.voice === "string" && plurnkMeta.voice.trim().length > 0) {
-        return plurnkMeta.voice.trim();
+    if (typeof plurnkMeta.actor === "string" && plurnkMeta.actor.trim().length > 0) {
+        return plurnkMeta.actor.trim();
     }
     const candidates: unknown[] = [];
     if (
@@ -309,11 +309,17 @@ export const extractMessageVoice = (
     candidates.push(plurnkMeta.source, plurnkMeta.target, plurnkMeta.address);
     for (const candidate of candidates) {
         if (typeof candidate !== "string" || candidate.length === 0) continue;
-        const acpMatch = /^acp:\/\/([^/?#]+)/u.exec(candidate);
-        if (acpMatch !== null) {
+        const exteriorMatch = /^(?:acp|mcp):\/\/([^/?#]+)/u.exec(candidate);
+        if (exteriorMatch !== null) {
             try {
-                const principal = decodeURIComponent(acpMatch[1] ?? "").trim();
-                if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                const principal = decodeURIComponent(exteriorMatch[1] ?? "").trim();
+                if (
+                    principal.length > 0 &&
+                    principal !== "operator" &&
+                    principal !== "anonymous" &&
+                    principal !== "client" &&
+                    principal !== "owner"
+                ) {
                     return principal;
                 }
             } catch {
@@ -325,7 +331,7 @@ export const extractMessageVoice = (
         if (sessionMatch !== null) {
             try {
                 const worker = decodeURIComponent(sessionMatch[1] ?? "").trim();
-                if (worker.length > 0) return worker;
+                if (worker.length > 0 && worker !== "_plurnk") return worker;
             } catch {
                 // fall through
             }
@@ -334,7 +340,13 @@ export const extractMessageVoice = (
         const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
         if (messageMatch !== null) {
             const principal = (messageMatch[1] ?? "").trim();
-            if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+            if (
+                principal.length > 0 &&
+                principal !== "operator" &&
+                principal !== "anonymous" &&
+                principal !== "client" &&
+                principal !== "owner"
+            ) {
                 return principal;
             }
         }

@@ -192,7 +192,7 @@ export type PresentationFrame =
           readonly op: string;
           readonly status: number;
           readonly aside: string | null;
-          readonly voice?: string | null;
+          readonly actor?: string | null;
       }
     | {
           readonly kind: "notice";

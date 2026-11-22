@@ -19,7 +19,7 @@ import type { CliCommonOptions } from "./cli-connection.ts";
 import { expandLearnCommand } from "./commands.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import {
-    extractMessageVoice,
+    extractMessageActor,
     formatModelRoute,
     SessionPresenter,
     type PresentationFrame,
@@ -792,7 +792,7 @@ export const runTermViewport = async (
                               plurnk?: {
                                   answering?: string;
                                   source?: string;
-                                  voice?: string;
+                                  actor?: string;
                                   address?: string;
                                   target?: string;
                               };
@@ -809,12 +809,12 @@ export const runTermViewport = async (
                             : (plurnkMeta?.answering ?? "session");
                     surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(rec.text)}`);
                 } else {
-                    const userVoice = extractMessageVoice(plurnkMeta);
-                    if (addToEditorHistory && userVoice === null) {
+                    const userActor = extractMessageActor(plurnkMeta);
+                    if (addToEditorHistory && userActor === null) {
                         surface.recordPrompt(rec.text);
                     }
                     surface.append("");
-                    surface.append(renderSubmittedInput(rec.text, userVoice));
+                    surface.append(renderSubmittedInput(rec.text, userActor));
                     surface.append("");
                 }
             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
@@ -870,7 +870,7 @@ export const runTermViewport = async (
                                   status?: number;
                                   loopSeq?: number;
                                   turnSeq?: number;
-                                  voice?: string;
+                                  actor?: string;
                                   source?: string;
                                   address?: string;
                                   target?: string;
@@ -894,7 +894,7 @@ export const runTermViewport = async (
                         op: plurnkMeta?.op ?? "send",
                         status: plurnkMeta?.status ?? 200,
                         aside: plurnkMeta?.attrs?.aside ?? null,
-                        voice: extractMessageVoice(plurnkMeta),
+                        actor: extractMessageActor(plurnkMeta),
                         mermaidTimeoutMs: options.mermaidTimeoutMs,
                     }),
                 );
@@ -1102,7 +1102,7 @@ export const runTermViewport = async (
                                   published?: boolean;
                                   answering?: string;
                                   source?: string;
-                                  voice?: string;
+                                  actor?: string;
                                   address?: string;
                                   target?: string;
                                   op?: string;
@@ -1126,16 +1126,16 @@ export const runTermViewport = async (
                                 surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(userText)}`);
                             }
                         } else {
-                            const userVoice = extractMessageVoice(plurnkMeta);
-                            if (userVoice === null) {
+                            const userActor = extractMessageActor(plurnkMeta);
+                            if (userActor === null) {
                                 surface.recordPrompt(userText);
                             }
                             if (
                                 (plurnkMeta === undefined || plurnkMeta.op === "send") &&
-                                (userVoice !== null || !consumeLocalSubmittedPrompt(userText))
+                                (userActor !== null || !consumeLocalSubmittedPrompt(userText))
                             ) {
                                 surface.append("");
-                                surface.append(renderSubmittedInput(userText, userVoice));
+                                surface.append(renderSubmittedInput(userText, userActor));
                                 surface.append("");
                             }
                         }
@@ -1207,7 +1207,7 @@ export const runTermViewport = async (
                                     op: frame.op,
                                     status: frame.status,
                                     aside: frame.aside,
-                                    voice: frame.voice,
+                                    actor: frame.actor,
                                     mermaidTimeoutMs: options.mermaidTimeoutMs,
                                 }),
                                 frame.messageId,

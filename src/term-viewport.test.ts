@@ -2508,7 +2508,7 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
     }
 });
 
-test("{§cli-markdown-projection}: TermSurface attaches loop summary aside to named voice [scoutproxy] header as well as 🐹", () => {
+test("{§cli-markdown-projection}: TermSurface attaches loop summary aside to named actor [scoutproxy] header as well as 🐹", () => {
     const writes: string[] = [];
     const fakeTerm = {
         start() {},

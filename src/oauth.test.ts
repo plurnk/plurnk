@@ -781,6 +781,176 @@ test("{§cli-problems-and-notices} Credential.login registers RFC 7591 public cl
     assert.equal(await cred.token(acpUrl), null);
 });
 
+test("{§cli-problems-and-notices} Credential returns empty headers without grants, prefers openid-configuration and protected-resource client_id/scopes_supported, and stores 3-segment JWTs from id_token or access_token", async (t) => {
+    const tmpState = mkdtempSync(join(tmpdir(), "plurnk-oidc-test-"));
+    t.after(() => rmSync(tmpState, { recursive: true, force: true }));
+
+    let httpHits = 0;
+    let registrationHits = 0;
+    let openidHits = 0;
+    let oauthAsHits = 0;
+    let observedAuthScopes: string[] = [];
+    let observedClientIds: string[] = [];
+    let resourceClientId: string | undefined = "configured-oidc-client";
+    let resourceScopes: string[] | undefined = ["openid", "profile", "email", "groups"];
+    let returnJwtAccessToken = false;
+
+    const jwt1 = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ1MSJ9.c2lnMQ";
+    const jwt2 = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ1MSIsIm5vbmNlIjoiMiJ9.c2lnMg";
+    const jwtAccess = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ1MSIsImF1ZCI6ImFjcCJ9.c2lnMw";
+
+    const oidcServer = createServer((req, res) => {
+        httpHits += 1;
+        const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+        const issuer = `http://${req.headers.host}`;
+        if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(
+                JSON.stringify({
+                    resource: `${issuer}/acp`,
+                    authorization_servers: [issuer],
+                    ...(resourceClientId !== undefined ? { client_id: resourceClientId } : {}),
+                    ...(resourceScopes !== undefined ? { scopes_supported: resourceScopes } : {}),
+                }),
+            );
+            return;
+        }
+        if (req.method === "GET" && url.pathname === "/.well-known/openid-configuration") {
+            openidHits += 1;
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(
+                JSON.stringify({
+                    issuer,
+                    authorization_endpoint: `${issuer}/oidc/authorize`,
+                    token_endpoint: `${issuer}/oidc/token`,
+                    registration_endpoint: `${issuer}/oidc/register`,
+                }),
+            );
+            return;
+        }
+        if (req.method === "GET" && url.pathname === "/.well-known/oauth-authorization-server") {
+            oauthAsHits += 1;
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ issuer }));
+            return;
+        }
+        if (req.method === "POST" && url.pathname === "/oidc/register") {
+            registrationHits += 1;
+            res.writeHead(201, { "content-type": "application/json" });
+            res.end(JSON.stringify({ client_id: "dynamic-oidc-client" }));
+            return;
+        }
+        if (req.method === "POST" && url.pathname === "/oidc/token") {
+            let body = "";
+            req.on("data", (c) => {
+                body += String(c);
+            });
+            req.on("end", () => {
+                const form = new URLSearchParams(body);
+                const grantType = form.get("grant_type");
+                res.writeHead(200, { "content-type": "application/json" });
+                if (grantType === "authorization_code") {
+                    res.end(
+                        JSON.stringify(
+                            returnJwtAccessToken
+                                ? {
+                                      access_token: jwtAccess,
+                                      id_token: jwt1,
+                                      refresh_token: "oidc-ref-1",
+                                      expires_in: 3600,
+                                  }
+                                : {
+                                      access_token: "ya29.opaque-access-token",
+                                      id_token: jwt1,
+                                      refresh_token: "oidc-ref-1",
+                                      expires_in: 1,
+                                  },
+                        ),
+                    );
+                    return;
+                }
+                if (grantType === "refresh_token") {
+                    res.end(
+                        JSON.stringify({
+                            access_token: "ya29.opaque-refreshed-token",
+                            id_token: jwt2,
+                            refresh_token: "oidc-ref-2",
+                            expires_in: 3600,
+                        }),
+                    );
+                    return;
+                }
+                res.writeHead(400).end();
+            });
+            return;
+        }
+        res.writeHead(404).end();
+    });
+
+    await new Promise<void>((resolve) => oidcServer.listen(0, "127.0.0.1", resolve));
+    t.after(() =>
+        new Promise<void>((resolve) => {
+            oidcServer.closeAllConnections();
+            oidcServer.close(() => resolve());
+        }),
+    );
+    const { port } = oidcServer.address() as AddressInfo;
+    const acpUrl = `http://127.0.0.1:${port}/acp`;
+
+    const cred = new Credential({ XDG_STATE_HOME: tmpState });
+    // 1. With no stored grant for origin, headers() and operatorHeaders() return {} with zero HTTP calls
+    assert.deepEqual(await cred.headers(acpUrl), {});
+    assert.deepEqual(await cred.operatorHeaders(acpUrl), {});
+    assert.equal(httpHits, 0);
+
+    // 2. Pre-advertised client_id + scopes_supported uses openid-configuration first, skips registration, and stores id_token JWT when access_token is opaque
+    const grant1 = await cred.login(acpUrl, {
+        signal: AbortSignal.timeout(5_000),
+        write: () => {},
+        openBrowser: async (authUrlStr) => {
+            const authUrl = new URL(authUrlStr);
+            observedAuthScopes.push(authUrl.searchParams.get("scope") ?? "");
+            observedClientIds.push(authUrl.searchParams.get("client_id") ?? "");
+            const cb = new URL(authUrl.searchParams.get("redirect_uri")!);
+            cb.searchParams.set("code", "oidc-code-1");
+            cb.searchParams.set("state", authUrl.searchParams.get("state")!);
+            const res = await fetch(cb.href);
+            assert.equal(res.status, 200);
+        },
+    });
+    assert.equal(openidHits, 1);
+    assert.equal(oauthAsHits, 0);
+    assert.equal(registrationHits, 0);
+    assert.deepEqual(observedClientIds, ["configured-oidc-client"]);
+    assert.deepEqual(observedAuthScopes, ["openid profile email groups"]);
+    assert.equal(grant1.accessToken, jwt1);
+    assert.deepEqual(await cred.operatorHeaders(acpUrl), { authorization: `Bearer ${jwt1}` });
+
+    // 3. Refresh selects rotated 3-segment id_token when refreshed access_token is opaque
+    cred.invalidate();
+    assert.deepEqual(await cred.headers(acpUrl), { authorization: `Bearer ${jwt2}` });
+
+    // 4. When scopes_supported is absent on openid-configuration, scope defaults to "openid profile email", and a 3-segment JWT access_token wins over id_token
+    await cred.logout(acpUrl);
+    resourceScopes = undefined;
+    returnJwtAccessToken = true;
+    const grant2 = await cred.login(acpUrl, {
+        signal: AbortSignal.timeout(5_000),
+        write: () => {},
+        openBrowser: async (authUrlStr) => {
+            const authUrl = new URL(authUrlStr);
+            observedAuthScopes.push(authUrl.searchParams.get("scope") ?? "");
+            const cb = new URL(authUrl.searchParams.get("redirect_uri")!);
+            cb.searchParams.set("code", "oidc-code-2");
+            cb.searchParams.set("state", authUrl.searchParams.get("state")!);
+            const res = await fetch(cb.href);
+            assert.equal(res.status, 200);
+        },
+    });
+    assert.equal(observedAuthScopes.at(-1), "openid profile email");
+    assert.equal(grant2.accessToken, jwtAccess);
+});
+
 test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp skills/complete, and env set/unset", async () => {
     const calls: Array<{ readonly kind: string; readonly params: Record<string, unknown> }> = [];
     const fakeClient = {

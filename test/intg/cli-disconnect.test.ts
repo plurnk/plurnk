@@ -18,7 +18,7 @@ const makeOptions = (url: string, overrides?: Partial<CliCommonOptions>): CliCom
     explicitAcpUrl: true,
     host: "127.0.0.1",
     port: 1066,
-    credential: new Credential({ accessToken: "tok-disconnect", env: "/" }),
+    credential: new Credential({}),
     env: {},
     cwd: "/tmp",
     workspace: "ws",

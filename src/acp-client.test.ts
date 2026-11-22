@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -177,12 +177,9 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with
 
 test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated bearer token on 401 bearer-token-invalid and retries", async () => {
     const dir = mkdtempSync(join(tmpdir(), "plurnk-cred-test-"));
-    const secretFile = join(dir, "secret");
-    writeFileSync(secretFile, "secret-1\n", "utf8");
-
-    let expectedSecret = "secret-1";
+    let expectedRefreshToken = "refresh-1";
     let issuedTokenCounter = 0;
-    let validToken = "";
+    let validToken = "tok-initial";
     const promptsReceived: string[] = [];
 
     const agentApp = createAcpAgent({ name: "mock-acp-service" })
@@ -226,15 +223,25 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
             });
             req.on("end", () => {
                 const params = new URLSearchParams(body);
-                if (params.get("client_secret") !== expectedSecret) {
-                    res.writeHead(401, { "content-type": "application/json" });
-                    res.end(JSON.stringify({ error: "invalid_client" }));
+                if (
+                    params.get("grant_type") !== "refresh_token" ||
+                    params.get("refresh_token") !== expectedRefreshToken
+                ) {
+                    res.writeHead(400, { "content-type": "application/json" });
+                    res.end(JSON.stringify({ error: "invalid_grant" }));
                     return;
                 }
                 issuedTokenCounter += 1;
                 validToken = `tok-${String(issuedTokenCounter)}`;
+                expectedRefreshToken = `refresh-${String(issuedTokenCounter + 1)}`;
                 res.writeHead(200, { "content-type": "application/json" });
-                res.end(JSON.stringify({ access_token: validToken, expires_in: 3600 }));
+                res.end(
+                    JSON.stringify({
+                        access_token: validToken,
+                        refresh_token: expectedRefreshToken,
+                        expires_in: 3600,
+                    }),
+                );
             });
             return;
         }
@@ -259,15 +266,34 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
     await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
     const addr = httpServer.address();
     assert.ok(addr && typeof addr === "object");
+    const origin = `http://127.0.0.1:${String(addr.port)}`;
+
+    const cred = new Credential({ XDG_STATE_HOME: dir });
+    const grantsFile = cred.grantsPath();
+    mkdirSync(join(dir, "plurnk"), { recursive: true });
+    writeFileSync(
+        grantsFile,
+        JSON.stringify({
+            [origin]: {
+                issuer: origin,
+                clientId: "oidc-cli",
+                accessToken: "tok-initial",
+                refreshToken: "refresh-1",
+                expiresAt: Date.now() + 3600_000,
+                tokenEndpoint: `${origin}/oauth/token`,
+            },
+        }),
+        "utf8",
+    );
 
     const client = new AcpClient({
-        url: `http://127.0.0.1:${String(addr.port)}/acp`,
-        credential: new Credential({ PLURNK_SERVICE_DB_PATH: join(dir, "plurnk.db") }),
+        url: `${origin}/acp`,
+        credential: cred,
     });
 
     try {
         await client.connect();
-        assert.equal(issuedTokenCounter, 1);
+        assert.equal(issuedTokenCounter, 0);
 
         const created = await client.newSession("/tmp/ws");
         assert.equal(created.sessionId, "1#session1");
@@ -275,13 +301,11 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
         await client.prompt("1#session1", "turn before token expiry");
         assert.deepEqual(promptsReceived, ["turn before token expiry"]);
 
-        // Simulate token expiry and secret rotation on disk: the server rejects tok-1 with 401 bearer-token-invalid
-        expectedSecret = "secret-2";
-        writeFileSync(secretFile, "secret-2\n", "utf8");
+        // Simulate server-side token expiry/rotation: server rejects tok-initial with 401 bearer-token-invalid
         validToken = "expired";
 
         await client.prompt("1#session1", "turn after token expiry");
-        assert.equal(issuedTokenCounter, 2, "client exchanged rotated secret for a fresh access token on 401");
+        assert.equal(issuedTokenCounter, 1, "client refreshed stored grant for a fresh access token on 401");
         assert.deepEqual(promptsReceived, ["turn before token expiry", "turn after token expiry"]);
     } finally {
         client.close();

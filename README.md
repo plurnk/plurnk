@@ -91,10 +91,11 @@ for local endpoints and tuning.
 and `PLURNK_PORT` move it), starting the installed `plurnk-service` there when
 nothing listens. The service keeps running after the client exits and serves
 every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
-its log in `~/.local/state/plurnk/service.log`. Manage it with `plurnk daemon <start|stop|restart|reload|status|config>`, and
-open the hosted browser interface already signed in with `plurnk web` (or `/web`
-in Plurnk Term). Set `PLURNK_ACP_URL` to attach to a remote daemon, and set
-`PLURNK_CLIENT_AUTOSTART=0` to disable local autostart.
+its log in `~/.local/state/plurnk/service.log`. Manage it with `plurnk daemon <start|stop|restart|reload|status|config>`
+(`plurnk daemon status` reports the live URL, where the browser interface is
+served at `http://127.0.0.1:1066/`). Set `PLURNK_ACP_URL` to attach to a remote
+daemon (`plurnk login` signs in via OIDC), and set `PLURNK_CLIENT_AUTOSTART=0`
+to disable local autostart.
 
 To start it at login on Linux, install the service package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
 (`plurnk.service` in `@plurnk/plurnk-service`); its comments cover installation,
@@ -112,9 +113,8 @@ plurnk
 A scrollback-native interactive terminal (`Plurnk Term`) with multiline prompts, streaming reasoning when the
 provider supplies it, Markdown and Mermaid rendering, and slash commands for
 managing models, sessions, and tools. Run `/help` to explore; `/model` and
-`/child` select the session's model and its delegated model, `/learn` distills
-reusable workflows from the session into a `SKILL.md`, and `/web` opens the
-browser interface.
+`/child` select the session's model and its delegated model, and `/learn`
+distills reusable workflows from the session into a `SKILL.md`.
 
 ### CLI and pipelines
 
@@ -132,7 +132,7 @@ diagnostics, and usage. A lost connection exits with an error while preserving
 received evidence; missing final usage stays unknown. No prompt is replayed.
 
 Use `plurnk --help` for CLI options. `plurnk models` lists available model
-routes, `plurnk web` opens the web client, and `plurnk daemon` manages the local daemon.
+routes, and `plurnk daemon` manages the local daemon.
 
 ## Extend and configure
 

@@ -1,4 +1,4 @@
-// OAuth 2.1 credential exchange, PKCE browser sign-in, and grant persistence for @plurnk/plurnk ({§cli-problems-and-notices}).
+// OIDC / OAuth 2.1 PKCE browser sign-in and grant persistence for @plurnk/plurnk ({§cli-problems-and-notices}).
 
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,26 +22,6 @@ export interface CredentialLoginOptions {
     readonly openBrowser?: (url: string) => Promise<void>;
     readonly redirectUrl?: string;
 }
-
-const resolveSecretFromEnv = (env: Record<string, string | undefined>): string | null => {
-    const configured = env.PLURNK_SECRET;
-    if (typeof configured === "string" && configured.trim().length > 0) {
-        return configured.trim();
-    }
-    const dbPath = env.PLURNK_SERVICE_DB_PATH;
-    const secretFile = typeof dbPath === "string" && dbPath.trim().length > 0
-        ? join(dirname(dbPath.trim()), "secret")
-        : join(env.XDG_DATA_HOME ?? join(env.HOME ?? homedir(), ".local", "share"), "plurnk", "secret");
-    if (existsSync(secretFile)) {
-        try {
-            const minted = readFileSync(secretFile, "utf8").trim();
-            if (minted.length > 0) return minted;
-        } catch {
-            // unreadable secret file
-        }
-    }
-    return null;
-};
 
 const resolveGrantsPath = (env: Record<string, string | undefined>): string => {
     const stateHome = env.XDG_STATE_HOME;
@@ -81,89 +61,196 @@ export const toHttpOrigin = (rawUrl: string): string => {
     return url.origin;
 };
 
+const normalizeIssuerBase = (rawUrl: string): string => {
+    const url = new URL(rawUrl);
+    if (url.protocol === "ws:") url.protocol = "http:";
+    else if (url.protocol === "wss:") url.protocol = "https:";
+    url.search = "";
+    url.hash = "";
+    const cleanPath = url.pathname.replace(/\/+$/u, "");
+    return `${url.origin}${cleanPath}`;
+};
+
+const isThreeSegmentJwt = (value: unknown): value is string => {
+    if (typeof value !== "string" || value.length === 0) return false;
+    const parts = value.split(".");
+    return (
+        parts.length === 3 &&
+        parts.every((part) => part.length > 0 && /^[A-Za-z0-9_-]+$/u.test(part))
+    );
+};
+
+const selectBearerToken = (json: {
+    readonly access_token?: unknown;
+    readonly id_token?: unknown;
+}): string | null => {
+    const accessToken =
+        typeof json.access_token === "string" && json.access_token.length > 0
+            ? json.access_token
+            : null;
+    if (accessToken !== null && isThreeSegmentJwt(accessToken)) {
+        return accessToken;
+    }
+    if (isThreeSegmentJwt(json.id_token)) {
+        return json.id_token;
+    }
+    return accessToken;
+};
+
+const computeExpiresAt = (expiresIn: unknown, token: string): number => {
+    if (typeof expiresIn === "number" && Number.isFinite(expiresIn)) {
+        const ttlSec = expiresIn > 10 ? expiresIn - 5 : 60;
+        return Date.now() + ttlSec * 1000;
+    }
+    if (isThreeSegmentJwt(token)) {
+        try {
+            const payloadRaw = Buffer.from(token.split(".")[1]!, "base64url").toString("utf8");
+            const payload = JSON.parse(payloadRaw) as { exp?: unknown };
+            if (typeof payload.exp === "number" && Number.isFinite(payload.exp)) {
+                const candidate = payload.exp * 1000 - 5000;
+                if (candidate > Date.now()) {
+                    return candidate;
+                }
+            }
+        } catch {
+            // fallback to default window
+        }
+    }
+    return Date.now() + 60 * 1000;
+};
+
+interface AuthorizationServerMetadata {
+    readonly issuer?: unknown;
+    readonly authorization_endpoint?: unknown;
+    readonly token_endpoint?: unknown;
+    readonly revocation_endpoint?: unknown;
+    readonly registration_endpoint?: unknown;
+}
+
 interface DiscoveredOAuthEndpoints {
     readonly issuer: string;
     readonly authorizationEndpoint: string;
     readonly tokenEndpoint: string;
-    readonly revocationEndpoint: string;
-    readonly registrationEndpoint: string;
+    readonly revocationEndpoint?: string;
+    readonly registrationEndpoint?: string;
+    readonly clientId?: string;
+    readonly scope: string;
 }
 
-const discoverEndpoints = async (origin: string, signal?: AbortSignal): Promise<DiscoveredOAuthEndpoints> => {
-    let authServerOrigin = origin;
+const fetchJsonIfOk = async <T>(url: string, signal?: AbortSignal): Promise<T | null> => {
     try {
-        const resMeta = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
+        const res = await fetch(url, {
             headers: { accept: "application/json" },
             ...(signal !== undefined ? { signal } : {}),
         });
-        if (resMeta.ok) {
-            const doc = (await resMeta.json()) as { authorization_servers?: unknown };
-            if (Array.isArray(doc.authorization_servers) && typeof doc.authorization_servers[0] === "string") {
-                authServerOrigin = toHttpOrigin(doc.authorization_servers[0]);
+        if (!res.ok) return null;
+        const parsed: unknown = await res.json();
+        return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as T)
+            : null;
+    } catch {
+        return null;
+    }
+};
+
+const discoverEndpoints = async (origin: string, signal?: AbortSignal): Promise<DiscoveredOAuthEndpoints> => {
+    let authServerBase = origin;
+    let configuredClientId: string | undefined;
+    let resourceScopes: string | undefined;
+
+    const protectedMeta = await fetchJsonIfOk<{
+        authorization_servers?: unknown;
+        client_id?: unknown;
+        scopes_supported?: unknown;
+    }>(`${origin}/.well-known/oauth-protected-resource`, signal);
+
+    if (protectedMeta !== null) {
+        if (
+            Array.isArray(protectedMeta.authorization_servers) &&
+            typeof protectedMeta.authorization_servers[0] === "string" &&
+            protectedMeta.authorization_servers[0].trim().length > 0
+        ) {
+            authServerBase = normalizeIssuerBase(protectedMeta.authorization_servers[0].trim());
+        }
+        if (typeof protectedMeta.client_id === "string" && protectedMeta.client_id.trim().length > 0) {
+            configuredClientId = protectedMeta.client_id.trim();
+        }
+        if (Array.isArray(protectedMeta.scopes_supported)) {
+            const scopes = protectedMeta.scopes_supported
+                .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+                .map((s) => s.trim());
+            if (scopes.length > 0) {
+                resourceScopes = scopes.join(" ");
             }
         }
-    } catch {
-        // fallback to origin
     }
-    try {
-        const asMeta = await fetch(`${authServerOrigin}/.well-known/oauth-authorization-server`, {
-            headers: { accept: "application/json" },
-            ...(signal !== undefined ? { signal } : {}),
-        });
-        if (asMeta.ok) {
-            const doc = (await asMeta.json()) as {
-                issuer?: string;
-                authorization_endpoint?: string;
-                token_endpoint?: string;
-                revocation_endpoint?: string;
-                registration_endpoint?: string;
-            };
-            const issuer = typeof doc.issuer === "string" && doc.issuer.length > 0 ? doc.issuer : authServerOrigin;
-            return {
-                issuer,
-                authorizationEndpoint: typeof doc.authorization_endpoint === "string"
-                    ? doc.authorization_endpoint
-                    : `${issuer}/oauth/authorize`,
-                tokenEndpoint: typeof doc.token_endpoint === "string"
-                    ? doc.token_endpoint
-                    : `${issuer}/oauth/token`,
-                revocationEndpoint: typeof doc.revocation_endpoint === "string"
-                    ? doc.revocation_endpoint
-                    : `${issuer}/oauth/revoke`,
-                registrationEndpoint: typeof doc.registration_endpoint === "string"
-                    ? doc.registration_endpoint
-                    : `${issuer}/oauth/register`,
-            };
+
+    let usedOpenIdConfiguration = false;
+    let asMeta = await fetchJsonIfOk<AuthorizationServerMetadata>(
+        `${authServerBase}/.well-known/openid-configuration`,
+        signal,
+    );
+    if (asMeta !== null) {
+        usedOpenIdConfiguration = true;
+    } else {
+        asMeta = await fetchJsonIfOk<AuthorizationServerMetadata>(
+            `${authServerBase}/.well-known/oauth-authorization-server`,
+            signal,
+        );
+        if (asMeta === null) {
+            const authServerOrigin = toHttpOrigin(authServerBase);
+            if (authServerOrigin !== authServerBase) {
+                asMeta = await fetchJsonIfOk<AuthorizationServerMetadata>(
+                    `${authServerOrigin}/.well-known/oauth-authorization-server`,
+                    signal,
+                );
+            }
         }
-    } catch {
-        // fallback to standard endpoints on authServerOrigin
     }
+
+    const scope = resourceScopes ?? (usedOpenIdConfiguration ? "openid profile email" : "acp");
+    const issuer =
+        typeof asMeta?.issuer === "string" && asMeta.issuer.length > 0
+            ? asMeta.issuer
+            : authServerBase;
+    const issuerBase = issuer.replace(/\/+$/u, "");
+    const authorizationEndpoint =
+        typeof asMeta?.authorization_endpoint === "string" && asMeta.authorization_endpoint.length > 0
+            ? asMeta.authorization_endpoint
+            : `${issuerBase}/oauth/authorize`;
+    const tokenEndpoint =
+        typeof asMeta?.token_endpoint === "string" && asMeta.token_endpoint.length > 0
+            ? asMeta.token_endpoint
+            : `${issuerBase}/oauth/token`;
+    const revocationEndpoint =
+        typeof asMeta?.revocation_endpoint === "string" && asMeta.revocation_endpoint.length > 0
+            ? asMeta.revocation_endpoint
+            : undefined;
+    const registrationEndpoint =
+        typeof asMeta?.registration_endpoint === "string" && asMeta.registration_endpoint.length > 0
+            ? asMeta.registration_endpoint
+            : undefined;
+
     return {
-        issuer: authServerOrigin,
-        authorizationEndpoint: `${authServerOrigin}/oauth/authorize`,
-        tokenEndpoint: `${authServerOrigin}/oauth/token`,
-        revocationEndpoint: `${authServerOrigin}/oauth/revoke`,
-        registrationEndpoint: `${authServerOrigin}/oauth/register`,
+        issuer,
+        authorizationEndpoint,
+        tokenEndpoint,
+        ...(revocationEndpoint !== undefined ? { revocationEndpoint } : {}),
+        ...(registrationEndpoint !== undefined ? { registrationEndpoint } : {}),
+        ...(configuredClientId !== undefined ? { clientId: configuredClientId } : {}),
+        scope,
     };
 };
 
 export default class Credential {
-    readonly #explicitSecret: string | null;
     readonly #env: Record<string, string | undefined>;
+    #cachedOrigin: string | null = null;
     #cachedToken: string | null = null;
     #cachedExpiresAt = 0;
+    #invalidatedToken: string | null = null;
 
-    constructor(secretOrEnv?: string | Record<string, string | undefined> | null) {
-        if (typeof secretOrEnv === "string") {
-            this.#explicitSecret = secretOrEnv.trim().length > 0 ? secretOrEnv.trim() : null;
-            this.#env = process.env;
-        } else if (secretOrEnv !== undefined && secretOrEnv !== null) {
-            this.#explicitSecret = null;
-            this.#env = secretOrEnv;
-        } else {
-            this.#explicitSecret = null;
-            this.#env = process.env;
-        }
+    constructor(env?: Record<string, string | undefined> | null) {
+        this.#env = env ?? process.env;
     }
 
     grantsPath(): string {
@@ -171,115 +258,90 @@ export default class Credential {
     }
 
     invalidate(): void {
+        if (this.#cachedToken !== null) {
+            this.#invalidatedToken = this.#cachedToken;
+        }
+        this.#cachedOrigin = null;
         this.#cachedToken = null;
         this.#cachedExpiresAt = 0;
     }
 
     async token(acpUrl: string): Promise<string | null> {
-        if (this.#cachedToken !== null && Date.now() < this.#cachedExpiresAt) {
+        const origin = toHttpOrigin(acpUrl);
+        if (this.#cachedOrigin === origin && this.#cachedToken !== null && Date.now() < this.#cachedExpiresAt) {
             return this.#cachedToken;
         }
-        const origin = toHttpOrigin(acpUrl);
 
-        if (this.#explicitSecret === null) {
-            const grantsPath = this.grantsPath();
-            const store = readGrantsStore(grantsPath);
-            const stored = store[origin];
-            if (stored !== undefined) {
-                if (typeof stored.accessToken === "string" && stored.accessToken.length > 0 && Date.now() < stored.expiresAt) {
-                    this.#cachedToken = stored.accessToken;
-                    this.#cachedExpiresAt = stored.expiresAt;
-                    return this.#cachedToken;
-                }
-                if (typeof stored.refreshToken === "string" && stored.refreshToken.length > 0) {
-                    const tokenEndpoint = stored.tokenEndpoint ?? `${origin}/oauth/token`;
-                    try {
-                        const refreshBody = new URLSearchParams({
-                            grant_type: "refresh_token",
-                            client_id: stored.clientId,
-                            refresh_token: stored.refreshToken,
-                            scope: "acp",
-                        });
-                        const res = await fetch(tokenEndpoint, {
-                            method: "POST",
-                            headers: {
-                                "content-type": "application/x-www-form-urlencoded",
-                                accept: "application/json",
-                            },
-                            body: refreshBody.toString(),
-                        });
-                        if (res.ok) {
-                            const json = (await res.json()) as {
-                                access_token?: string;
-                                refresh_token?: string;
-                                expires_in?: number;
-                            };
-                            if (typeof json.access_token === "string" && json.access_token.length > 0) {
-                                const ttlSec = typeof json.expires_in === "number" && json.expires_in > 10 ? json.expires_in - 5 : 60;
-                                const expiresAt = Date.now() + ttlSec * 1000;
-                                const updated: StoredGrant = {
-                                    ...stored,
-                                    accessToken: json.access_token,
-                                    ...(typeof json.refresh_token === "string" && json.refresh_token.length > 0
-                                        ? { refreshToken: json.refresh_token }
-                                        : {}),
-                                    expiresAt,
-                                };
-                                store[origin] = updated;
-                                writeGrantsStore(grantsPath, store);
-                                this.#cachedToken = updated.accessToken;
-                                this.#cachedExpiresAt = expiresAt;
-                                return this.#cachedToken;
-                            }
-                        } else if (res.status === 400 || res.status === 401) {
-                            delete store[origin];
-                            writeGrantsStore(grantsPath, store);
-                        }
-                    } catch {
-                        // network error during refresh; fall through to secret if present
+        const grantsPath = this.grantsPath();
+        const store = readGrantsStore(grantsPath);
+        const stored = store[origin];
+        if (stored === undefined) {
+            return null;
+        }
+
+        if (
+            typeof stored.accessToken === "string" &&
+            stored.accessToken.length > 0 &&
+            stored.accessToken !== this.#invalidatedToken &&
+            Date.now() < stored.expiresAt
+        ) {
+            this.#cachedOrigin = origin;
+            this.#cachedToken = stored.accessToken;
+            this.#cachedExpiresAt = stored.expiresAt;
+            return this.#cachedToken;
+        }
+
+        if (typeof stored.refreshToken === "string" && stored.refreshToken.length > 0) {
+            const tokenEndpoint = stored.tokenEndpoint ?? `${origin}/oauth/token`;
+            try {
+                const refreshBody = new URLSearchParams({
+                    grant_type: "refresh_token",
+                    client_id: stored.clientId,
+                    refresh_token: stored.refreshToken,
+                });
+                const res = await fetch(tokenEndpoint, {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                        accept: "application/json",
+                    },
+                    body: refreshBody.toString(),
+                });
+                if (res.ok) {
+                    const json = (await res.json()) as {
+                        access_token?: unknown;
+                        id_token?: unknown;
+                        refresh_token?: unknown;
+                        expires_in?: unknown;
+                    };
+                    const bearer = selectBearerToken(json);
+                    if (bearer !== null) {
+                        const expiresAt = computeExpiresAt(json.expires_in, bearer);
+                        const updated: StoredGrant = {
+                            ...stored,
+                            accessToken: bearer,
+                            ...(typeof json.refresh_token === "string" && json.refresh_token.length > 0
+                                ? { refreshToken: json.refresh_token }
+                                : {}),
+                            expiresAt,
+                        };
+                        store[origin] = updated;
+                        writeGrantsStore(grantsPath, store);
+                        this.#invalidatedToken = null;
+                        this.#cachedOrigin = origin;
+                        this.#cachedToken = updated.accessToken;
+                        this.#cachedExpiresAt = expiresAt;
+                        return this.#cachedToken;
                     }
+                } else if (res.status === 400 || res.status === 401) {
+                    delete store[origin];
+                    writeGrantsStore(grantsPath, store);
                 }
+            } catch {
+                // network error during refresh
             }
         }
 
-        const secret = this.#explicitSecret ?? resolveSecretFromEnv(this.#env);
-        if (secret === null) return null;
-
-        const body = new URLSearchParams({
-            grant_type: "client_credentials",
-            client_id: "operator",
-            client_secret: secret,
-            scope: "acp",
-        });
-
-        try {
-            const res = await fetch(`${origin}/oauth/token`, {
-                method: "POST",
-                headers: {
-                    "content-type": "application/x-www-form-urlencoded",
-                    accept: "application/json",
-                },
-                body: body.toString(),
-            });
-            if (res.status === 404) {
-                return null;
-            }
-            if (!res.ok) {
-                return null;
-            }
-            const json = (await res.json()) as {
-                access_token?: string;
-                expires_in?: number;
-            };
-            if (typeof json.access_token === "string" && json.access_token.length > 0) {
-                this.#cachedToken = json.access_token;
-                const ttlSec = typeof json.expires_in === "number" && json.expires_in > 10 ? json.expires_in - 5 : 60;
-                this.#cachedExpiresAt = Date.now() + ttlSec * 1000;
-                return this.#cachedToken;
-            }
-        } catch {
-            // network or non-oauth mock server
-        }
         return null;
     }
 
@@ -290,7 +352,7 @@ export default class Credential {
         const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
         const state = randomBytes(24).toString("base64url");
 
-        let registeredClientId = "";
+        let resolvedClientId = "";
         let activeRedirectUri = "";
         let grantedStore: StoredGrant | null = null;
 
@@ -299,44 +361,50 @@ export default class Credential {
                 ...(options.redirectUrl !== undefined ? { redirectUrl: options.redirectUrl } : {}),
                 begin: async (boundRedirectUrl) => {
                     activeRedirectUri = boundRedirectUrl;
-                    const regRes = await fetch(endpoints.registrationEndpoint, {
-                        method: "POST",
-                        headers: {
-                            "content-type": "application/json",
-                            accept: "application/json",
-                        },
-                        body: JSON.stringify({
-                            client_name: "@plurnk/plurnk",
-                            redirect_uris: [boundRedirectUrl],
-                            token_endpoint_auth_method: "none",
-                            grant_types: ["authorization_code", "refresh_token"],
-                            response_types: ["code"],
-                            scope: "acp",
-                        }),
-                        signal: options.signal,
-                    });
-                    if (!regRes.ok) {
-                        let detail = `OAuth client registration failed (${regRes.status}).`;
-                        try {
-                            const errJson = (await regRes.json()) as { error_description?: string; error?: string };
-                            if (typeof errJson.error_description === "string") detail = errJson.error_description;
-                            else if (typeof errJson.error === "string") detail = errJson.error;
-                        } catch {
-                            // use default detail
+                    if (endpoints.clientId !== undefined) {
+                        resolvedClientId = endpoints.clientId;
+                    } else if (endpoints.registrationEndpoint !== undefined) {
+                        const regRes = await fetch(endpoints.registrationEndpoint, {
+                            method: "POST",
+                            headers: {
+                                "content-type": "application/json",
+                                accept: "application/json",
+                            },
+                            body: JSON.stringify({
+                                client_name: "@plurnk/plurnk",
+                                redirect_uris: [boundRedirectUrl],
+                                token_endpoint_auth_method: "none",
+                                grant_types: ["authorization_code", "refresh_token"],
+                                response_types: ["code"],
+                                scope: endpoints.scope,
+                            }),
+                            signal: options.signal,
+                        });
+                        if (!regRes.ok) {
+                            let detail = `OAuth client registration failed (${regRes.status}).`;
+                            try {
+                                const errJson = (await regRes.json()) as { error_description?: string; error?: string };
+                                if (typeof errJson.error_description === "string") detail = errJson.error_description;
+                                else if (typeof errJson.error === "string") detail = errJson.error;
+                            } catch {
+                                // use default detail
+                            }
+                            throw new Error(detail);
                         }
-                        throw new Error(detail);
+                        const regJson = (await regRes.json()) as { client_id?: string };
+                        if (typeof regJson.client_id !== "string" || regJson.client_id.length === 0) {
+                            throw new Error("OAuth registration did not return a client_id.");
+                        }
+                        resolvedClientId = regJson.client_id;
+                    } else {
+                        throw new Error("OAuth discovery did not advertise a client_id or registration_endpoint.");
                     }
-                    const regJson = (await regRes.json()) as { client_id?: string };
-                    if (typeof regJson.client_id !== "string" || regJson.client_id.length === 0) {
-                        throw new Error("OAuth registration did not return a client_id.");
-                    }
-                    registeredClientId = regJson.client_id;
 
                     const authUrl = new URL(endpoints.authorizationEndpoint);
                     authUrl.searchParams.set("response_type", "code");
-                    authUrl.searchParams.set("client_id", registeredClientId);
+                    authUrl.searchParams.set("client_id", resolvedClientId);
                     authUrl.searchParams.set("redirect_uri", boundRedirectUrl);
-                    authUrl.searchParams.set("scope", "acp");
+                    authUrl.searchParams.set("scope", endpoints.scope);
                     authUrl.searchParams.set("state", state);
                     authUrl.searchParams.set("code_challenge", codeChallenge);
                     authUrl.searchParams.set("code_challenge_method", "S256");
@@ -350,7 +418,10 @@ export default class Credential {
             async (callbackUrl) => {
                 const cb = new URL(callbackUrl);
                 if (cb.searchParams.has("error")) {
-                    const errDesc = cb.searchParams.get("error_description") ?? cb.searchParams.get("error") ?? "OAuth authorization failed.";
+                    const errDesc =
+                        cb.searchParams.get("error_description") ??
+                        cb.searchParams.get("error") ??
+                        "OAuth authorization failed.";
                     throw new Error(errDesc);
                 }
                 const code = cb.searchParams.get("code");
@@ -359,7 +430,7 @@ export default class Credential {
                 }
                 const tokenBody = new URLSearchParams({
                     grant_type: "authorization_code",
-                    client_id: registeredClientId,
+                    client_id: resolvedClientId,
                     code,
                     redirect_uri: activeRedirectUri,
                     code_verifier: codeVerifier,
@@ -385,32 +456,35 @@ export default class Credential {
                     throw new Error(detail);
                 }
                 const tokenJson = (await tokenRes.json()) as {
-                    access_token?: string;
-                    refresh_token?: string;
-                    expires_in?: number;
+                    access_token?: unknown;
+                    id_token?: unknown;
+                    refresh_token?: unknown;
+                    expires_in?: unknown;
                 };
-                if (typeof tokenJson.access_token !== "string" || tokenJson.access_token.length === 0) {
+                const bearer = selectBearerToken(tokenJson);
+                if (bearer === null) {
                     throw new Error("OAuth token endpoint did not return an access_token.");
                 }
-                const ttlSec = typeof tokenJson.expires_in === "number" && tokenJson.expires_in > 10
-                    ? tokenJson.expires_in - 5
-                    : 60;
-                const expiresAt = Date.now() + ttlSec * 1000;
+                const expiresAt = computeExpiresAt(tokenJson.expires_in, bearer);
                 const grant: StoredGrant = {
                     issuer: endpoints.issuer,
-                    clientId: registeredClientId,
-                    accessToken: tokenJson.access_token,
+                    clientId: resolvedClientId,
+                    accessToken: bearer,
                     ...(typeof tokenJson.refresh_token === "string" && tokenJson.refresh_token.length > 0
                         ? { refreshToken: tokenJson.refresh_token }
                         : {}),
                     expiresAt,
                     tokenEndpoint: endpoints.tokenEndpoint,
-                    revocationEndpoint: endpoints.revocationEndpoint,
+                    ...(endpoints.revocationEndpoint !== undefined
+                        ? { revocationEndpoint: endpoints.revocationEndpoint }
+                        : {}),
                 };
                 const grantsPath = this.grantsPath();
                 const store = readGrantsStore(grantsPath);
                 store[origin] = grant;
                 writeGrantsStore(grantsPath, store);
+                this.#invalidatedToken = null;
+                this.#cachedOrigin = origin;
                 this.#cachedToken = grant.accessToken;
                 this.#cachedExpiresAt = expiresAt;
                 grantedStore = grant;
@@ -441,22 +515,23 @@ export default class Credential {
         delete store[origin];
         writeGrantsStore(grantsPath, store);
 
-        const revocationEndpoint = stored.revocationEndpoint ?? `${origin}/oauth/revoke`;
-        const tokenToRevoke = stored.refreshToken ?? stored.accessToken;
-        try {
-            const body = new URLSearchParams({
-                client_id: stored.clientId,
-                token: tokenToRevoke,
-            });
-            await fetch(revocationEndpoint, {
-                method: "POST",
-                headers: {
-                    "content-type": "application/x-www-form-urlencoded",
-                },
-                body: body.toString(),
-            });
-        } catch {
-            // best-effort revocation if daemon is unreachable
+        if (typeof stored.revocationEndpoint === "string" && stored.revocationEndpoint.length > 0) {
+            const tokenToRevoke = stored.refreshToken ?? stored.accessToken;
+            try {
+                const body = new URLSearchParams({
+                    client_id: stored.clientId,
+                    token: tokenToRevoke,
+                });
+                await fetch(stored.revocationEndpoint, {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                    },
+                    body: body.toString(),
+                });
+            } catch {
+                // best-effort revocation if authorization server is unreachable
+            }
         }
         return { revoked: true, origin };
     }
@@ -467,34 +542,6 @@ export default class Credential {
     }
 
     async operatorHeaders(acpUrl: string): Promise<Record<string, string>> {
-        const secret = this.#explicitSecret ?? resolveSecretFromEnv(this.#env);
-        if (secret !== null) {
-            const origin = toHttpOrigin(acpUrl);
-            const body = new URLSearchParams({
-                grant_type: "client_credentials",
-                client_id: "operator",
-                client_secret: secret,
-                scope: "acp",
-            });
-            try {
-                const res = await fetch(`${origin}/oauth/token`, {
-                    method: "POST",
-                    headers: {
-                        "content-type": "application/x-www-form-urlencoded",
-                        accept: "application/json",
-                    },
-                    body: body.toString(),
-                });
-                if (res.ok) {
-                    const json = (await res.json()) as { access_token?: string };
-                    if (typeof json.access_token === "string" && json.access_token.length > 0) {
-                        return { authorization: `Bearer ${json.access_token}` };
-                    }
-                }
-            } catch {
-                // fall through to standard headers
-            }
-        }
         return await this.headers(acpUrl);
     }
 }

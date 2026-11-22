@@ -44,7 +44,6 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/answer @<id> <json>", summary: "Answer the identified elicitation or question (@<id> optional in Term)." },
     { usage: "/login", summary: "Sign in to the daemon through the browser and keep the grant." },
     { usage: "/logout", summary: "Revoke the kept grant at the daemon and forget it." },
-    { usage: "/web [--no-open]", summary: "Open the Plurnk Web UI signed in via a single-use loopback handoff." },
     { usage: "/learn [--scope project|plurnk] [instructions]", summary: "Distill reusable workflow from this session into a SKILL.md." },
     { usage: "/stop", summary: "Cancel the running loop." },
     { usage: "/quit", summary: "Exit the interactive client." },

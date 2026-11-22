@@ -26,7 +26,6 @@ import {
 import {
     formatConfigOption,
     formatServiceUpdateResult,
-    openWebHandoff,
     runCliCompletion,
     runCliConfig,
     runCliDaemon,
@@ -43,7 +42,6 @@ import {
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
-    runCliWeb,
     runCliWorkspace,
 } from "./cli-subcommands.ts";
 import {
@@ -70,7 +68,6 @@ export {
     matchesRuntimeAcceptance,
     openCliSession,
     openProcessStreams,
-    openWebHandoff,
     resolveServiceCommand,
     runCliCompletion,
     runCliConfig,
@@ -88,7 +85,6 @@ export {
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
-    runCliWeb,
     runCliWorkspace,
     runReplSession,
     runTermViewport,

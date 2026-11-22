@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { AcpServer } from "@agentclientprotocol/sdk/experimental/server";
 import { createNodeHttpHandler } from "@agentclientprotocol/sdk/experimental/node";
@@ -171,7 +174,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -189,7 +192,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -427,7 +430,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -445,7 +448,7 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -725,7 +728,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -743,7 +746,7 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -1150,7 +1153,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires 
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -1168,7 +1171,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires 
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -1514,7 +1517,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -1532,7 +1535,7 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -1858,7 +1861,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         autostart: false,
         daemonTimeoutMs: 2000,
         oauthTimeoutMs: 2000,
@@ -1876,7 +1879,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
         color: "never",
         bell: false,
         cwd: "/tmp",
-        env: { PLURNK_SECRET: "test-secret" },
+        env: {},
     };
 
     try {
@@ -2613,11 +2616,6 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
     const acpServer = new AcpServer({ agent: agentApp });
     const acpHandler = createNodeHttpHandler(acpServer);
     const httpServer = http.createServer((req, res) => {
-        if (req.url === "/oauth/token") {
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(JSON.stringify({ access_token: "test-oauth-token", expires_in: 3600 }));
-            return;
-        }
         if (req.url === "/acp/1/1/entry?target=log%3A%2F%2F1%2F1%2F1") {
             fetchedAuthHeader = req.headers.authorization;
             res.writeHead(200, { "content-type": "text/plain" });
@@ -2630,6 +2628,20 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
     const addr = httpServer.address();
     assert.ok(addr && typeof addr === "object");
     const baseUrl = `http://127.0.0.1:${String(addr.port)}`;
+    const tmpState = mkdtempSync(join(tmpdir(), "plurnk-reslink-state-"));
+    mkdirSync(join(tmpState, "plurnk"), { recursive: true });
+    writeFileSync(
+        join(tmpState, "plurnk", "grants.json"),
+        JSON.stringify({
+            [baseUrl]: {
+                issuer: baseUrl,
+                clientId: "oidc-cli",
+                accessToken: "test-oauth-token",
+                expiresAt: Date.now() + 60_000,
+            },
+        }),
+        "utf8",
+    );
 
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
@@ -2649,7 +2661,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
                 explicitAcpUrl: true,
                 host: "127.0.0.1",
                 port: addr.port,
-                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                credential: new Credential({ XDG_STATE_HOME: tmpState }),
                 autostart: false,
                 daemonTimeoutMs: 2000,
                 oauthTimeoutMs: 2000,
@@ -2667,7 +2679,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
                 color: "never",
                 bell: false,
                 cwd: "/tmp",
-                env: { PLURNK_SECRET: "test-secret" },
+                env: { XDG_STATE_HOME: tmpState },
             },
             {
                 stdin: new PassThrough(),
@@ -2705,6 +2717,7 @@ test("{§cli-markdown-projection} {§cli-rendering}: agent_thought_chunk never e
         await acpServer.close();
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+        rmSync(tmpState, { recursive: true, force: true });
     }
 });
 
@@ -2848,7 +2861,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
                 explicitAcpUrl: true,
                 host: "127.0.0.1",
                 port: addr.port,
-                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                credential: new Credential({}),
                 autostart: false,
                 daemonTimeoutMs: 2000,
                 oauthTimeoutMs: 2000,
@@ -2866,7 +2879,7 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
                 color: "never",
                 bell: false,
                 cwd: "/tmp",
-                env: { PLURNK_SECRET: "test-secret" },
+                env: {},
             },
             { stdin, stdout, stderr, terminal: fakeTerminal },
         );
@@ -3054,7 +3067,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
                 explicitAcpUrl: true,
                 host: "127.0.0.1",
                 port: addr.port,
-                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                credential: new Credential({}),
                 autostart: false,
                 daemonTimeoutMs: 2000,
                 oauthTimeoutMs: 2000,
@@ -3072,7 +3085,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
                 color: "never",
                 bell: false,
                 cwd: "/tmp",
-                env: { PLURNK_SECRET: "test-secret" },
+                env: {},
             },
             { stdin, stdout, stderr, terminal: fakeTerminal },
         );
@@ -3258,7 +3271,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-chan
                 explicitAcpUrl: true,
                 host: "127.0.0.1",
                 port: addr.port,
-                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+                credential: new Credential({}),
                 autostart: false,
                 daemonTimeoutMs: 2000,
                 oauthTimeoutMs: 2000,
@@ -3276,7 +3289,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-output-chan
                 color: "never",
                 bell: false,
                 cwd: "/tmp",
-                env: { PLURNK_SECRET: "test-secret" },
+                env: {},
             },
             { stdin, stdout, stderr, terminal: fakeTerminal },
         );

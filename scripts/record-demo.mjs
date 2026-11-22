@@ -9,10 +9,8 @@ import { execFileSync, spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import {
     access,
-    chmod,
     mkdir,
     mkdtemp,
-    readFile,
     realpath,
     rm,
     writeFile,
@@ -693,21 +691,12 @@ export async function main(argv = process.argv.slice(2)) {
     const chromeDir = join(sandbox, "chrome");
     const framesDir = join(sandbox, "frames");
     const projectDir = join(homeDir, "retry-budget");
-    const handoffFile = join(sandbox, "handoff-url.txt");
-    const browserCaptureScript = join(sandbox, "capture-browser.sh");
 
     await mkdir(framesDir, { recursive: true });
     await mkdir(stateDir, { recursive: true });
     await mkdir(chromeDir, { recursive: true });
     await mkdir(join(homeDir, ".config", "plurnk"), { recursive: true });
     await seedDemoProject(projectDir);
-
-    await writeFile(
-        browserCaptureScript,
-        `#!/usr/bin/env sh\nprintf '%s' "$1" > ${JSON.stringify(handoffFile)}\nexit 0\n`,
-        "utf8",
-    );
-    await chmod(browserCaptureScript, 0o755);
 
     const modelAlias = values.model;
     const configEnv = [
@@ -744,7 +733,6 @@ export async function main(argv = process.argv.slice(2)) {
                 XDG_CONFIG_HOME: join(homeDir, ".config"),
                 XDG_DATA_HOME: join(homeDir, ".local", "share"),
                 XDG_STATE_HOME: join(homeDir, ".local", "state"),
-                PLURNK_AUTH: "1",
                 OPENAI_BASE_URL: values["openai-base-url"],
                 OPENAI_API_KEY: "local",
                 [`PLURNK_MODEL_${modelAlias}`]: `openai/${modelAlias}`,
@@ -789,7 +777,6 @@ export async function main(argv = process.argv.slice(2)) {
                 PROMPT_COMMAND: "",
                 DISPLAY: "",
                 WAYLAND_DISPLAY: "",
-                BROWSER: browserCaptureScript,
                 XDG_CONFIG_HOME: join(homeDir, ".config"),
                 XDG_DATA_HOME: join(stateDir, "data"),
                 XDG_STATE_HOME: join(stateDir, "state"),
@@ -912,7 +899,7 @@ export async function main(argv = process.argv.slice(2)) {
         );
         await captureFrame(1400);
 
-        // ── ACT II: Plurnk Term (--yolo) Waterfall + 💭 Ticker + /web ──
+        // ── ACT II: Plurnk Term (--yolo) Waterfall + 💭 Ticker ──
         process.stdout.write("Act II: Recording Plurnk Term (--yolo) session...\n");
         stageState.act = "term";
         stageState.caption = "2/3 · Plurnk Term — resume session, live 💭 reasoning ticker & operation waterfall";
@@ -944,30 +931,14 @@ export async function main(argv = process.argv.slice(2)) {
         );
         await captureFrame(1300);
 
-        // Hand off live session to Plurnk Web (`/web`)
-        await typeText("/web", 2, 70);
-        await captureFrame(300);
-        shellPty.write("\r");
-
-        await waitForScreen((s) => s.includes("Opened Plurnk Web in your browser."), {
-            timeoutMs: 15_000,
-            sampleMs: 220,
-        });
-        await captureFrame(800);
-
-        const handoffUrl = (await readFile(handoffFile, "utf8")).trim();
-        if (!handoffUrl.startsWith("http://")) {
-            throw new Error(`Expected HTTP handoff URL, got: ${handoffUrl}`);
-        }
-
         // ── ACT III: 50/50 Split Terminal + Plurnk Web Live Sync ──
-        process.stdout.write("Act III: Opening Plurnk Web via OAuth handoff and streaming live across both clients...\n");
+        process.stdout.write("Act III: Opening Plurnk Web directly and streaming live across both clients...\n");
         webPage = await browser.createPage(654, 718);
-        await webPage.navigate(handoffUrl);
+        await webPage.navigate(`http://127.0.0.1:${daemonUrl.port}/`);
         await sleep(500);
 
         stageState.act = "web";
-        stageState.caption = "3/3 · Plurnk Web — /web opens the live workspace & session alongside Plurnk Term";
+        stageState.caption = "3/3 · Plurnk Web — open live workspace & session alongside Plurnk Term";
         stageState.split = true;
         shellPty.resize(SPLIT_COLS, TERM_ROWS);
         xterm.resize(SPLIT_COLS, TERM_ROWS);

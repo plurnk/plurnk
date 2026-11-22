@@ -114,6 +114,8 @@ export const runTermViewport = async (
             : null;
     let currentMode: string | null = null;
     let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
+    let modelEffortsFetcher: ((selector: string) => Promise<readonly string[] | null>) | null = null;
+    const cachedFamilyAliases = new Map<string, string[]>();
 
     const applyAvailableCommandsToCache = (rawCommands: readonly unknown[]): void => {
         const next: { readonly name: string; readonly description: string }[] = [];
@@ -184,6 +186,16 @@ export const runTermViewport = async (
             } else if (opt.configId === "mode") {
                 if (typeof opt.currentValue === "string") {
                     currentMode = opt.currentValue.length > 0 ? opt.currentValue : null;
+                }
+            } else if (typeof opt.configId === "string" && opt.configId.includes(":")) {
+                const colonIdx = opt.configId.indexOf(":");
+                const family = opt.configId.slice(0, colonIdx);
+                const alias = opt.configId.slice(colonIdx + 1);
+                if (alias.length > 0) {
+                    const existing = cachedFamilyAliases.get(family) ?? [];
+                    if (!existing.includes(alias)) {
+                        cachedFamilyAliases.set(family, [...existing, alias]);
+                    }
                 }
             }
         }
@@ -395,7 +407,13 @@ export const runTermViewport = async (
                 getProviderModels: async (provider) =>
                     providerModelsFetcher !== null ? await providerModelsFetcher(provider) : [],
                 getEfforts: () => cachedEfforts,
+                getEffortsForModel: async (selector) =>
+                    modelEffortsFetcher !== null ? await modelEffortsFetcher(selector) : null,
                 getPersonas: () => cachedPersonas,
+                getFamilyAliases: (family) =>
+                    family === "personas"
+                        ? cachedPersonas.filter((p) => p !== "none")
+                        : (cachedFamilyAliases.get(family) ?? []),
                 getSessionNames: () => cachedSessions,
                 getWorkspaceNames: () => cachedWorkspaces,
                 getPendingGateIds: () => focusedGateIds,
@@ -945,7 +963,7 @@ export const runTermViewport = async (
                             paint(
                                 hasReadyModels
                                     ? "⚠️  No model selected. /models lists ready models and /model <selector> chooses one."
-                                    : "⚠️  No model selected. Run `plurnk onboard` to configure a local or hosted model, or supply a provider's API key and choose one with /models and /model <selector>.",
+                                    : "⚠️  No model selected. Supply a provider's API key and choose one with /models and /model <selector>.",
                                 "warning",
                             ),
                         );
@@ -1306,6 +1324,9 @@ export const runTermViewport = async (
             reasoning: replReasoning,
             onProviderModelsFetcher: (fetcher) => {
                 providerModelsFetcher = fetcher;
+            },
+            onModelEffortsFetcher: (fetcher) => {
+                modelEffortsFetcher = fetcher;
             },
         });
     } finally {

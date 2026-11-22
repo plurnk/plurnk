@@ -52,9 +52,7 @@ Run from your project directory. Or try it without a global install:
 
 Give it a task in ordinary language. The model drives workspace operations
 through a single universal `mcp` tool; you do not need to learn its schemas to
-use Plurnk. If no model is configured on an
-interactive terminal, `plurnk` offers `plurnk onboard` to connect a local
-server or provider key and verify a readiness turn, or [choose one below](#models).
+use Plurnk. Choose a model [below](#models) if none is selected yet.
 The first launch starts the included service, which keeps running for later
 sessions ([Service](#service)). Each project folder maps to its own persistent
 workspace (`--workspace` and `--session` override). Plurnk Term returns to session
@@ -67,8 +65,7 @@ review for one prompt, and `! <command>` runs a shell command directly).
 
 ## Models
 
-Run `plurnk onboard` for guided first-run model setup, or supply your provider's
-API key to the backend—for example, `export DEEPSEEK_API_KEY="your-api-key"`
+Supply your provider's API key in the environment—for example, `export DEEPSEEK_API_KEY="your-api-key"`
 before launching Plurnk. The service reads environment credentials when it
 starts, so export them before the first launch, or restart the daemon
 (`plurnk daemon restart`).
@@ -135,8 +132,7 @@ diagnostics, and usage. A lost connection exits with an error while preserving
 received evidence; missing final usage stays unknown. No prompt is replayed.
 
 Use `plurnk --help` for CLI options. `plurnk models` lists available model
-routes, `plurnk onboard` bootstraps a model route, `plurnk web` opens the web
-client, and `plurnk daemon` manages the local daemon.
+routes, `plurnk web` opens the web client, and `plurnk daemon` manages the local daemon.
 
 ## Extend and configure
 

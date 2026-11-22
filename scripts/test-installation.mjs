@@ -50,7 +50,7 @@ ok(!existsSync(resolve(mods, "onnxruntime-node")) && !existsSync(resolve(mods, "
 const help = runBin(["--help"]);
 ok(help.code === 0 && /usage: plurnk /.test(help.stdout), "`--help` prints usage, exit 0");
 
-// No daemon, text mode → onboarding hints on stderr, exit 1, stdout clean.
+// No daemon, text mode → service endpoint diagnostic on stderr, exit 1, stdout clean.
 const refused = runBin(["hello"]);
 ok(refused.code === 1, "no-daemon prompt exits 1");
 ok(/Could not reach the configured service/.test(refused.stderr)

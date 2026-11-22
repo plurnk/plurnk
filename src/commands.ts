@@ -1,5 +1,7 @@
 // Interactive command reference for the terminal client ({§cli-interactive-command-discovery}).
 
+import { expandLearnCommand as expandContractsLearnCommand, type LearnCommandExpansion } from "@plurnk/plurnk-contracts";
+
 export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly summary: string }[] = [
     { usage: "/help [verb]", summary: "Show the command index or one command's usage." },
     { usage: "/update", summary: "Update the model catalog and show how to update Plurnk packages." },
@@ -12,7 +14,8 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model." },
     { usage: "/effort [policy]", summary: "Inspect or select reasoning effort." },
     { usage: "/persona [name|none]", summary: "Inspect, select, or clear this session's persona role." },
-    { usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). Off by default." },
+    { usage: "/mode [review|accept|reject]", summary: "Inspect or select this session's proposal review mode." },
+    { usage: "/yolo", summary: "Toggle proposal auto-accept (Shift-Tab)." },
     { usage: "/workspace [name]", summary: "Open or create a workspace." },
     { usage: "/rename <name>", summary: "Rename this workspace's mutable handle." },
     { usage: "/share <folder>", summary: "Write this workspace's share into <folder> for a bug report." },
@@ -47,70 +50,18 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/quit", summary: "Exit the interactive client." },
 ];
 
-export type LearnResolution =
-    | { readonly ok: true; readonly scope: "project" | "plurnk"; readonly prompt: string }
-    | { readonly ok: false; readonly error: string };
+export type LearnResolution = LearnCommandExpansion;
 
 export const resolveLearnCommand = (
     rawLine: string,
     options?: { readonly projectRoot?: string | null },
-): LearnResolution | null => {
-    const trimmed = rawLine.trim();
-    if (trimmed !== "/learn" && !trimmed.startsWith("/learn ")) {
-        return null;
-    }
-    const restText = trimmed.slice("/learn".length).trim();
-    const tokens = restText.length > 0 ? restText.split(/\s+/u) : [];
-    let explicitScope: string | undefined;
-    const instructionTokens: string[] = [];
-    for (let i = 0; i < tokens.length; i += 1) {
-        const tok = tokens[i] ?? "";
-        if (tok === "--scope") {
-            const next = tokens[i + 1];
-            if (next === undefined || next.startsWith("--")) {
-                return { ok: false, error: "Missing /learn --scope value: expected 'project' or 'plurnk'." };
-            }
-            explicitScope = next;
-            i += 1;
-        } else if (tok.startsWith("--scope=")) {
-            explicitScope = tok.slice("--scope=".length);
-        } else {
-            instructionTokens.push(tok);
-        }
-    }
-    if (explicitScope !== undefined && explicitScope !== "project" && explicitScope !== "plurnk") {
-        return {
-            ok: false,
-            error: `Invalid /learn scope '${explicitScope}': expected 'project' or 'plurnk'.`,
-        };
-    }
-    if (explicitScope === "project" && options?.projectRoot === null) {
-        return {
-            ok: false,
-            error: "This workspace has no project folder; use `/learn --scope plurnk` to save under $XDG_CONFIG_HOME/plurnk/skills.",
-        };
-    }
-    const scope = explicitScope ?? (options?.projectRoot === null ? "plurnk" : "project");
-    const targetPath =
-        scope === "plurnk"
-            ? "${XDG_CONFIG_HOME:-~/.config}/plurnk/skills/<name>/SKILL.md"
-            : ".agents/skills/<name>/SKILL.md";
-    const instructions = instructionTokens.join(" ");
-    const basePrompt =
-        `Distill reusable workflow, setup, or domain knowledge from this session into an Agent Skill at \`${targetPath}\` ` +
-        "(read `mcp:///plurnk/skills.json` first, write a concise `SKILL.md` with YAML frontmatter `name` and `description`, and verify discovery with the `skills` tool).";
-    return {
-        ok: true,
-        scope,
-        prompt: instructions.length > 0 ? `${basePrompt}\n\nFocus: ${instructions}` : basePrompt,
-    };
-};
+): LearnResolution | null => expandContractsLearnCommand(rawLine, options);
 
 export const expandLearnCommand = (
     rawLine: string,
     options?: { readonly projectRoot?: string | null },
 ): string | null => {
-    const resolved = resolveLearnCommand(rawLine, options);
+    const resolved = expandContractsLearnCommand(rawLine, options);
     return resolved?.ok === true ? resolved.prompt : null;
 };
 
@@ -119,7 +70,7 @@ export const renderCommandReference = (platform: NodeJS.Platform = process.platf
     const shortcuts = [
         [`Enter · ${mod}+Enter`, "Submit prompt or confirm review choice"],
         ["Shift+Enter · Ctrl+J · Alt+Enter", "Insert newline in composer"],
-        ["Shift+Tab", "Toggle local proposal auto-accept (YOLO)"],
+        ["Shift+Tab", "Toggle proposal auto-accept (YOLO)"],
         ["y / e / n / c", "Accept, edit, reject, or cancel focused proposal"],
         ["Alt+h / Alt+l / Alt+j / Alt+k", "Hop to parent, newest child, older, or newer sibling session"],
         ["Tab (empty composer)", "Accept or pick advertised prompt suggestion"],

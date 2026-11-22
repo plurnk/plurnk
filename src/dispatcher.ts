@@ -19,7 +19,6 @@ import {
     runCliLogRead,
     runCliModels,
     runCliNewSession,
-    runCliOnboard,
     runCliPrompt,
     runCliReadCoord,
     runCliResumeSession,
@@ -86,7 +85,6 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
        <piped stdin> | plurnk [options] [prompt...]
        plurnk daemon [start|stop|restart|reload|status|config|...]
        plurnk web [--no-open] [--json]
-       plurnk onboard
        plurnk update [--json]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
@@ -243,7 +241,6 @@ options:
 subcommands:
   daemon [subcommand...]  manage the installed plurnk-service daemon (start, stop, restart, reload, status, config, ...)
   web [--no-open]         open the Plurnk Web UI signed in via a single-use loopback handoff
-  onboard                 probe local inference or configure one provider API key and verify a live turn
   update                  update the model catalog and show how to update Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
@@ -753,8 +750,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         } else if (first === "web") {
             const noOpen = parsed.values["no-open"] === true || parsedValuesRecord.open === false;
             exitCode = await runCliWeb(noOpen, common);
-        } else if (first === "onboard") {
-            exitCode = await runCliOnboard(common);
         } else if (first === "session") {
             const sub = positionals[1] ?? "list";
             const targetId = positionals[2] ?? common.sessionId;

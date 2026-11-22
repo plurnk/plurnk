@@ -18,21 +18,6 @@
       "evidence": ["src/cli.test.ts — model catalog"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "models.local": {
-      "posture": "vm-workspace-bridge",
-      "evidence": ["src/onboard.test.ts — loopback model candidate discovery"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
-    },
-    "service.env.list": {
-      "posture": "vm-workspace-bridge",
-      "evidence": ["src/acp-client.test.ts — operator cascade inspection"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
-    },
-    "service.env.set": {
-      "posture": "vm-workspace-bridge",
-      "evidence": ["src/onboard.test.ts — operator .env cascade upsert"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
-    },
     "service.update": {
       "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — service and model catalog update"],

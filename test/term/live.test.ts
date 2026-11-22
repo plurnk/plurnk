@@ -115,7 +115,6 @@ test(
                 env: {
                     ...process.env,
                     PLURNK_SERVICE_DB_PATH: "",
-                    PLURNK_AUTH: "0",
                     PLURNK_MODEL: liveModel,
                 },
                 readyTimeoutMs: 30_000,

@@ -20,7 +20,6 @@ import type { CliCommonOptions } from "./cli-connection.ts";
 import {
     formatConfigOption,
     formatServiceUpdateResult,
-    openWebHandoff,
 } from "./cli-subcommands.ts";
 import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
 import {
@@ -855,16 +854,6 @@ export const dispatchSlashCommand = async (
             }
             const { revoked, origin } = await options.credential.logout(options.url);
             streams.stdout.write(revoked ? `logged out: ${origin}\n` : `no stored grant for ${origin}\n`);
-            return "continue";
-        }
-
-        if (cmd === "web") {
-            const noOpen = args.includes("--no-open");
-            await openWebHandoff(options, {
-                noOpen,
-                write: (message) => streams.stdout.write(message),
-                json: false,
-            });
             return "continue";
         }
 

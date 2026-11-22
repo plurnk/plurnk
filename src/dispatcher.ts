@@ -24,7 +24,6 @@ import {
     runCliResumeSession,
     runCliScript,
     runCliUpdate,
-    runCliWeb,
     runCliWorkspace,
     runInteractiveSession,
     type CliCommonOptions,
@@ -78,13 +77,11 @@ export const CLIENT_OPTIONS = {
     all: { type: "boolean" },
     offset: { type: "string" },
     width: { type: "string" },
-    "no-open": { type: "boolean" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk daemon [start|stop|restart|reload|status|config|...]
-       plurnk web [--no-open] [--json]
        plurnk update [--json]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
@@ -122,9 +119,6 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         the daemon's address, under the daemon's own key names.
   PLURNK_ACP_URL       the whole URL instead, when the daemon is reached through a
                         remote ACP portal.
-  PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
-                        tokens; unset, the client reads the secret a daemon running as
-                        you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start the installed service on local
                         connection refusal and leave it running. 0: attach only.
@@ -236,11 +230,9 @@ options:
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
-      --no-open           (web) print the single-use sign-in URL instead of opening a browser
 
 subcommands:
   daemon [subcommand...]  manage the installed plurnk-service daemon (start, stop, restart, reload, status, config, ...)
-  web [--no-open]         open the Plurnk Web UI signed in via a single-use loopback handoff
   update                  update the model catalog and show how to update Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
@@ -747,9 +739,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             exitCode = await runCliDaemon(daemonArgs, common);
         } else if (familyName !== undefined) {
             exitCode = await runCliFamily(familyName, familyArgs, common);
-        } else if (first === "web") {
-            const noOpen = parsed.values["no-open"] === true || parsedValuesRecord.open === false;
-            exitCode = await runCliWeb(noOpen, common);
         } else if (first === "session") {
             const sub = positionals[1] ?? "list";
             const targetId = positionals[2] ?? common.sessionId;

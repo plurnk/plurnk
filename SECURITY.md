@@ -22,8 +22,8 @@ which takes reports the same way.
 
 ## Scope
 
-Useful reports include the client exposing credentials, daemon tokens, or OAuth
-browser-handoff tokens, connecting to a daemon other than the one it was
+Useful reports include the client exposing credentials or OAuth tokens,
+connecting to a daemon other than the one it was
 configured to use, running a proposal or command without the approval the
 operator configured, writing outside its documented locations, and vulnerable
 release artifacts.

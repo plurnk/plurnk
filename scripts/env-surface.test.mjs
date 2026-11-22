@@ -20,8 +20,6 @@ const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     // Joins SHARED when the contracts release that declares it on the shared panel is the one installed here.
     ["PLURNK_ACP_URL", "@plurnk/plurnk-contracts — the daemon's ACP URL on the shared panel"],
-    ["PLURNK_SECRET", "@plurnk/plurnk-contracts — the operator's client secret on the shared panel; unset, the client reads the daemon's minted file"],
-    ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, beside which the client reads the secret it minted"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
     ["PLURNK_PERSONA", "ambient persona selector shorthand alongside PLURNK_CLIENT_PERSONA (#228)"],
 ]);
@@ -46,7 +44,6 @@ const ARGUMENTS = new Map([
     ["provider", "an argument of `models`"],
     ["all", "an argument of `models`"],
     ["width", "an argument of `render`"],
-    ["no-open", "an argument of `web`"],
 ]);
 
 // Numeric constants whose names confess duration, size, count, or pacing, and why each is mechanism.

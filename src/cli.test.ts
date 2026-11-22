@@ -1156,8 +1156,8 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
         explicitAcpUrl: true,
         host: "127.0.0.1",
         port: addr.port,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
-        env: { PLURNK_SECRET: "test-secret", HOME: "/tmp/mock-home" },
+        credential: new Credential({ HOME: "/tmp/mock-home" }),
+        env: { HOME: "/tmp/mock-home" },
         cwd: "/tmp",
         termSession: "session1",
         autostart: false,
@@ -1186,10 +1186,8 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
             return true;
         }) as typeof process.stdout.write;
         const prevAcpUrl = process.env.PLURNK_ACP_URL;
-        const prevSecret = process.env.PLURNK_SECRET;
         const prevStdinIsTTY = process.stdin.isTTY;
         process.env.PLURNK_ACP_URL = `http://127.0.0.1:${String(addr.port)}/acp`;
-        process.env.PLURNK_SECRET = "test-secret";
         Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
         try {
             await main(["node", "plurnk", "--no-git", "--json", "check no-git"]);
@@ -1199,8 +1197,6 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
             process.stdout.write = origWrite;
             if (prevAcpUrl === undefined) delete process.env.PLURNK_ACP_URL;
             else process.env.PLURNK_ACP_URL = prevAcpUrl;
-            if (prevSecret === undefined) delete process.env.PLURNK_SECRET;
-            else process.env.PLURNK_SECRET = prevSecret;
             assert.equal(process.exitCode ?? 0, 0);
             process.exitCode = prevExit;
         }
@@ -1437,8 +1433,8 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
                 explicitAcpUrl: true,
                 host: "127.0.0.1",
                 port: addr.port,
-                credential: new Credential({ PLURNK_SECRET: "test-secret" }),
-                env: { PLURNK_SECRET: "test-secret" },
+                credential: new Credential({}),
+                env: {},
                 cwd: "/tmp",
                 termSession: "session1",
                 autostart: false,
@@ -1500,7 +1496,7 @@ test("{§cli-sessions-topology} {§cli-repl-mode}: REPL /fork <name> passes _met
         await waitUntil(() => outText.includes('"restored":["a.ts"]'));
         const directClient = new AcpClient({
             url: `http://127.0.0.1:${String(addr.port)}/acp`,
-            credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+            credential: new Credential({}),
         });
         try {
             await directClient.connect();
@@ -1535,8 +1531,8 @@ test("{§cli-invocation} {§cli-subcommands} {§cli-conformance}: ensureDaemonCo
             explicitAcpUrl: false,
             host: "127.0.0.1",
             port: 0,
-            credential: new Credential({ PLURNK_SECRET: "test-secret" }),
-            env: { PLURNK_SECRET: "test-secret", XDG_STATE_HOME: tmp },
+            credential: new Credential({ XDG_STATE_HOME: tmp }),
+            env: { XDG_STATE_HOME: tmp },
             cwd: tmp,
             termSession: "session1",
             autostart: true,
@@ -1720,7 +1716,7 @@ test("{§cli-workspaces-and-sessions}: nextSequentialName and openCliSession all
         explicitAcpUrl: false,
         host: "127.0.0.1",
         port: 1066,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         cwd: "/tmp",
         projectRoot: "",
         termSession: "session1",
@@ -1753,7 +1749,7 @@ test("{§cli-workspaces-and-sessions}: nextSequentialName and openCliSession all
         explicitAcpUrl: false,
         host: "127.0.0.1",
         port: 1066,
-        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        credential: new Credential({}),
         cwd: "/tmp/my-repo",
         workspace: "my-repo",
         termSession: "session1",

@@ -1,4 +1,4 @@
-// Unit and mock-server coverage for `plurnk daemon`, `plurnk web` (`/web`), `/learn`,
+// Unit and mock-server coverage for `plurnk daemon`, `/learn`,
 // `/yolo` session mode binding, `?` loop review override, and slash-command completion (#254, #277)
 // ({§cli-subcommands}, {§cli-model-selection}, {§cli-interactive-command-discovery}, {§cli-inline-review}, {§cli-repl-mode}).
 
@@ -17,9 +17,7 @@ import {
     PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import {
-    openWebHandoff,
     runCliDaemon,
-    runCliWeb,
     runReplSession,
     type CliCommonOptions,
 } from "./cli-runner.ts";
@@ -32,8 +30,8 @@ const makeCommon = (overrides: Partial<CliCommonOptions>): CliCommonOptions => (
     explicitAcpUrl: true,
     host: "127.0.0.1",
     port: 9,
-    credential: new Credential({ PLURNK_SECRET: "test-operator-secret" }),
-    env: { PLURNK_SECRET: "test-operator-secret" },
+    credential: new Credential({}),
+    env: {},
     cwd: "/tmp",
     termSession: "session1",
     autostart: false,
@@ -86,9 +84,6 @@ test("{§cli-interactive-command-discovery} {§cli-model-selection} {§cli-subco
 
     const completedLearn = await completeInput("/lea", baseCtx);
     assert.ok(completedLearn.suggestions.some((s) => s.value === "/learn"));
-
-    const completedWeb = await completeInput("/we", baseCtx);
-    assert.ok(completedWeb.suggestions.some((s) => s.value === "/web"));
 
     const completedOpusEfforts = await completeInput("/model anthropic/claude-opus-4-6 ", baseCtx);
     assert.deepEqual(
@@ -179,12 +174,11 @@ process.exit(0);
     }
 });
 
-test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: runCliWeb, /learn, /yolo mode sync, and ? prompt proposalPolicy override (#254, #277)", async () => {
-    const tmp = mkdtempSync(join(tmpdir(), "plurnk-web-learn-test-"));
+test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: /learn, /yolo mode sync, and ? prompt proposalPolicy override (#254, #277)", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "plurnk-learn-test-"));
     const receivedPrompts: Array<{ text: string; meta: unknown }> = [];
     const setConfigCalls: Array<{ configId: string; value: unknown }> = [];
     let currentMode = "review";
-    let handoffCount = 0;
 
     const buildSessionOpen = () => ({
         sessionId: "1#session1",
@@ -209,7 +203,7 @@ test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: runCliWeb, /l
             },
         ],
     });
-    const agentApp = createAcpAgent({ name: "web-learn-mock" })
+    const agentApp = createAcpAgent({ name: "learn-mock" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
             info: { name: "@plurnk/plurnk-service", version: "8.0.0" },
@@ -254,48 +248,7 @@ test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: runCliWeb, /l
         });
 
     const acpServer = new AcpServer({ agent: agentApp });
-    const acpHandler = createNodeHttpHandler(acpServer);
-
-    const server = http.createServer(async (req, res) => {
-        if (req.url === "/oauth/token" && req.method === "POST") {
-            const chunks: Buffer[] = [];
-            for await (const c of req) chunks.push(Buffer.from(c));
-            const form = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
-            if (form.get("client_id") === "operator" && form.get("client_secret") === "local-op-secret") {
-                res.writeHead(200, { "content-type": "application/json" });
-                res.end(JSON.stringify({ access_token: "operator-jwt-token", expires_in: 300 }));
-                return;
-            }
-            res.writeHead(401, { "content-type": "application/json" });
-            res.end(JSON.stringify({ error: "invalid_client" }));
-            return;
-        }
-        if (req.url === "/oauth/handoff" && req.method === "POST") {
-            if (req.headers.authorization !== "Bearer operator-jwt-token") {
-                res.writeHead(403, { "content-type": "application/json" });
-                res.end(
-                    JSON.stringify({
-                        error: "unauthorized_client",
-                        error_description: "Only the operator client may mint a browser sign-in handoff.",
-                    }),
-                );
-                return;
-            }
-            handoffCount += 1;
-            const addr = server.address();
-            const port = addr && typeof addr === "object" ? addr.port : 0;
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(
-                JSON.stringify({
-                    ticket: `secret-ticket-${String(handoffCount)}`,
-                    url: `http://127.0.0.1:${String(port)}/oauth/handoff?ticket=secret-ticket-${String(handoffCount)}`,
-                    expires_in: 60,
-                }),
-            );
-            return;
-        }
-        acpHandler(req, res);
-    });
+    const server = http.createServer(createNodeHttpHandler(acpServer));
 
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const addr = server.address();
@@ -303,130 +256,25 @@ test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: runCliWeb, /l
 
     try {
         const acpUrl = `http://127.0.0.1:${String(addr.port)}/acp`;
-        const origin = `http://127.0.0.1:${String(addr.port)}`;
         const stateDir = join(tmp, "state");
-        const grantsDir = join(stateDir, "plurnk");
-        const dataDir = join(tmp, "data");
-        const secretDir = join(dataDir, "plurnk");
-        writeFileSync(join(tmp, "dummy"), "");
-        const env = {
-            XDG_STATE_HOME: stateDir,
-            XDG_DATA_HOME: dataDir,
-        };
-        const cred = new Credential(env);
-        const grantsFile = cred.grantsPath();
-        const { mkdirSync: mkdir } = await import("node:fs");
-        mkdir(grantsDir, { recursive: true });
-        mkdir(secretDir, { recursive: true });
-        writeFileSync(
-            grantsFile,
-            JSON.stringify({
-                [origin]: {
-                    issuer: origin,
-                    clientId: "pkce-non-operator",
-                    accessToken: "pkce-jwt-token",
-                    expiresAt: Date.now() + 60_000,
-                },
-            }),
-            "utf8",
-        );
-        writeFileSync(join(secretDir, "secret"), "local-op-secret\n", "utf8");
-
+        const env = { XDG_STATE_HOME: stateDir };
         const common = makeCommon({
             url: acpUrl,
             port: addr.port,
-            credential: cred,
+            credential: new Credential(env),
             env,
         });
-
-        const openedUrls: string[] = [];
-        let printed = "";
-        await openWebHandoff(common, {
-            noOpen: false,
-            openBrowser: async (u) => {
-                openedUrls.push(u);
-            },
-            write: (t) => {
-                printed += t;
-            },
-        });
-        assert.equal(openedUrls.length, 1);
-        assert.match(openedUrls[0]!, /\/oauth\/handoff\?ticket=secret-ticket-1$/u);
-        assert.doesNotMatch(printed, /secret-ticket-1/u);
-        assert.match(printed, /Opened Plurnk Web in your browser/u);
-
-        let noOpenPrinted = "";
-        await openWebHandoff(common, {
-            noOpen: true,
-            write: (t) => {
-                noOpenPrinted += t;
-            },
-        });
-        assert.match(noOpenPrinted.trim(), /\/oauth\/handoff\?ticket=secret-ticket-2$/u);
-
-        let rootMounted = false;
-        const noAuthServer = http.createServer((req, res) => {
-            if (req.url === "/" && req.method === "HEAD") {
-                res.writeHead(rootMounted ? 200 : 404);
-                res.end();
-                return;
-            }
-            res.writeHead(404, { "content-type": "application/json" });
-            res.end(JSON.stringify({ status: 404, title: "Not found" }));
-        });
-        await new Promise<void>((r) => noAuthServer.listen(0, "127.0.0.1", r));
-        try {
-            const noAuthAddr = noAuthServer.address();
-            assert.ok(noAuthAddr && typeof noAuthAddr === "object");
-            const noAuthCommon = makeCommon({
-                url: `http://127.0.0.1:${String(noAuthAddr.port)}/acp`,
-                port: noAuthAddr.port,
-                credential: new Credential({
-                    XDG_STATE_HOME: join(tmp, "empty-state"),
-                    XDG_DATA_HOME: join(tmp, "empty-data"),
-                }),
-                env: {},
-            });
-            await assert.rejects(
-                openWebHandoff(noAuthCommon, { noOpen: true, write: () => {} }),
-                (err: unknown) =>
-                    err instanceof Error &&
-                    /not mounted on this daemon/u.test(err.message),
-            );
-            rootMounted = true;
-            let noAuthPrinted = "";
-            await openWebHandoff(noAuthCommon, {
-                noOpen: true,
-                write: (t) => {
-                    noAuthPrinted += t;
-                },
-            });
-            assert.equal(noAuthPrinted.trim(), `http://127.0.0.1:${String(noAuthAddr.port)}/`);
-        } finally {
-            await new Promise<void>((r) => noAuthServer.close(() => r()));
-        }
-
-        const code = await runCliWeb(false, common, async () => {
-            throw new Error("no xdg-open");
-        });
-        assert.equal(code, 0);
 
         const stdin = new PassThrough();
         const stdout = new PassThrough();
         const stderr = new PassThrough();
         const events = new PassThrough();
         const reasoning = new PassThrough();
-        let replOut = "";
-        stdout.setEncoding("utf8");
-        stdout.on("data", (chunk: string) => {
-            replOut += chunk;
-        });
 
         const replPromise = runReplSession(
             { ...common, repl: true },
             { stdin, stdout, stderr, events, reasoning },
         );
-        stdin.write("/web --no-open\n");
         stdin.write("/yolo\n");
         stdin.write("? audit before applying\n");
         stdin.write("/learn write release notes\n");
@@ -438,7 +286,6 @@ test("{§cli-subcommands} {§cli-inline-review} {§cli-repl-mode}: runCliWeb, /l
         stdin.write("/quit\n");
         const replCode = await replPromise;
         assert.equal(replCode, 0);
-        assert.match(replOut, /\/oauth\/handoff\?ticket=secret-ticket-4/u);
         assert.deepEqual(setConfigCalls, [
             { configId: "mode", value: "accept" },
             { configId: "mode", value: "review" },

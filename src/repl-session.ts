@@ -55,6 +55,7 @@ export {
 
 export interface ReplSessionHooks {
     readonly onProviderModelsFetcher?: (fetcher: (provider: string) => Promise<readonly string[]>) => void;
+    readonly onModelSearchFetcher?: (fetcher: (query: string) => Promise<readonly string[]>) => void;
     readonly onModelEffortsFetcher?: (fetcher: (selector: string) => Promise<readonly string[] | null>) => void;
 }
 
@@ -262,11 +263,14 @@ export const runReplSession = async (
             if (
                 rawNotice?.kind === "turn_generated" ||
                 rawNotice?.kind === "turn_awaiting_model" ||
+                rawNotice?.kind === "turn_queued" ||
                 rawNotice?.kind === "loop_status"
             ) {
                 flushReasoningNewline();
             }
-            if (rawNotice?.kind === "loop_status") {
+            if (rawNotice?.kind === "turn_queued") {
+                currentLifecycle = "queued";
+            } else if (rawNotice?.kind === "loop_status") {
                 if (rawNotice.status === 202) {
                     currentLifecycle = "parked";
                 } else if (rawNotice.status === 102) {
@@ -457,7 +461,41 @@ export const runReplSession = async (
             providerModelsCache.set(provider, promise);
             return promise;
         };
+        const searchModelsCache = new Map<string, Promise<readonly string[]>>();
+        const fetchSearchedModels = (rawQuery: string): Promise<readonly string[]> => {
+            const key = rawQuery.trim().toLowerCase();
+            if (key.length === 0) return Promise.resolve([]);
+            const existing = searchModelsCache.get(key);
+            if (existing !== undefined) return existing;
+            const promise = client
+                .action<{ readonly items?: ReadonlyArray<Record<string, unknown>> }>("models.list", {
+                    search: key,
+                    availability: "configured",
+                    limit: 100,
+                })
+                .then((res) => {
+                    recordCatalogItems(res.items);
+                    return (res.items ?? [])
+                        .filter((item) => {
+                            const readiness = item?.readiness as { readonly ready?: unknown } | undefined;
+                            return readiness?.ready !== false;
+                        })
+                        .map((item) => (typeof item?.selector === "string" ? item.selector : ""))
+                        .filter(Boolean);
+                })
+                .catch(() => {
+                    searchModelsCache.delete(key);
+                    return [];
+                });
+            if (searchModelsCache.size >= 64) {
+                const oldestKey = searchModelsCache.keys().next().value;
+                if (oldestKey !== undefined) searchModelsCache.delete(oldestKey);
+            }
+            searchModelsCache.set(key, promise);
+            return promise;
+        };
         customStreams?.onProviderModelsFetcher?.(fetchProviderModels);
+        customStreams?.onModelSearchFetcher?.(fetchSearchedModels);
         customStreams?.onModelEffortsFetcher?.(async (selector: string) => {
             const resolved = aliasTargetByName.get(selector) ?? selector;
             if (effortsBySelector.has(resolved)) {
@@ -465,6 +503,10 @@ export const runReplSession = async (
             }
             const slashIdx = resolved.indexOf("/");
             if (slashIdx > 0) {
+                await fetchSearchedModels(resolved);
+                if (effortsBySelector.has(resolved)) {
+                    return effortsBySelector.get(resolved) ?? null;
+                }
                 await fetchProviderModels(resolved.slice(0, slashIdx));
                 if (effortsBySelector.has(resolved)) {
                     return effortsBySelector.get(resolved) ?? null;

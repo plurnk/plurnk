@@ -143,6 +143,7 @@ export interface CompletionContext {
     readonly getProjectRoot: () => string | null;
     readonly getModels?: () => readonly string[];
     readonly getProviderModels?: (provider: string) => Promise<readonly string[]>;
+    readonly searchModels?: (query: string) => Promise<readonly string[]>;
     readonly getEfforts?: () => readonly string[];
     readonly getEffortsForModel?: (selector: string) => Promise<readonly string[] | null>;
     readonly getPersonas?: () => readonly string[];
@@ -337,24 +338,50 @@ export const completeInput = async (
 
     const modelMatch = /^\/(model|models|child)\s+(\S*)$/u.exec(line);
     if (modelMatch !== null) {
+        const verb = modelMatch[1]!;
         const frag = modelMatch[2]!;
+        const models = ctx.getModels?.() ?? [];
+        const baseCandidates =
+            verb === "child" ? ["inherit", ...models.filter((m) => m !== "inherit")] : models;
+        const describeModel = (value: string): string => (value === "inherit" ? "inherit parent route" : "model");
+
+        if (frag.length === 0) {
+            return namespace(baseCandidates, frag, describeModel, options);
+        }
+
         const slashIdx = frag.indexOf("/");
+        const fetched: string[] = [];
+        if (ctx.searchModels !== undefined) {
+            fetched.push(...(await ctx.searchModels(frag)));
+        }
         if (slashIdx > 0 && ctx.getProviderModels !== undefined) {
             const provider = frag.slice(0, slashIdx);
-            const providerModels = await ctx.getProviderModels(provider);
-            const models = ctx.getModels?.() ?? [];
-            const merged = [...new Set([...models, ...providerModels])];
-            return namespace(merged, frag, () => "model", options);
+            fetched.push(...(await ctx.getProviderModels(provider)));
         }
-        const models = ctx.getModels?.() ?? [];
-        const candidates =
-            modelMatch[1] === "child" ? ["inherit", ...models.filter((m) => m !== "inherit")] : models;
-        return namespace(
-            candidates,
-            frag,
-            (value) => (value === "inherit" ? "inherit parent route" : "model"),
-            options,
+        const merged = [...new Set([...baseCandidates, ...fetched])];
+        const needle = frag.toLowerCase();
+        const prefixHits = merged.filter((c) => c.toLowerCase().startsWith(needle));
+        const substringHits = merged.filter(
+            (c) => !c.toLowerCase().startsWith(needle) && c.toLowerCase().includes(needle),
         );
+        const hits = [...prefixHits, ...substringHits];
+        const exactPrefixOnly = hits.length > 0 && hits.every((c) => c.startsWith(frag));
+        const lcp = exactPrefixOnly ? longestCommonPrefix(hits) : "";
+        const hasStrictLcp = exactPrefixOnly && hits.length > 1 && lcp.length > frag.length;
+        if (options?.force && hasStrictLcp) {
+            return {
+                suggestions: [{ value: lcp, description: describeModel(lcp), lcp }],
+                prefix: frag,
+            };
+        }
+        return {
+            suggestions: hits.map((value, idx) => ({
+                value,
+                description: describeModel(value),
+                ...(idx === 0 && hasStrictLcp && value !== lcp ? { lcp } : {}),
+            })),
+            prefix: frag,
+        };
     }
 
     const modelEffortMatch = /^\/model\s+(\S+)\s+(\S*)$/u.exec(line);

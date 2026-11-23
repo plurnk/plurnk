@@ -114,6 +114,7 @@ export const runTermViewport = async (
             : null;
     let currentMode: string | null = null;
     let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
+    let modelSearchFetcher: ((query: string) => Promise<readonly string[]>) | null = null;
     let modelEffortsFetcher: ((selector: string) => Promise<readonly string[] | null>) | null = null;
     const cachedFamilyAliases = new Map<string, string[]>();
 
@@ -406,6 +407,8 @@ export const runTermViewport = async (
                 getModels: () => cachedModels,
                 getProviderModels: async (provider) =>
                     providerModelsFetcher !== null ? await providerModelsFetcher(provider) : [],
+                searchModels: async (query) =>
+                    modelSearchFetcher !== null ? await modelSearchFetcher(query) : [],
                 getEfforts: () => cachedEfforts,
                 getEffortsForModel: async (selector) =>
                     modelEffortsFetcher !== null ? await modelEffortsFetcher(selector) : null,
@@ -434,6 +437,7 @@ export const runTermViewport = async (
                 if (surface.leaveReview()) return { consume: true };
                 if (
                     presenter.lifecycle === "running" ||
+                    presenter.lifecycle === "queued" ||
                     presenter.lifecycle === "parked" ||
                     presenter.lifecycle === "requires_action" ||
                     focusedGateIds.length > 0
@@ -452,6 +456,7 @@ export const runTermViewport = async (
                     replStdin.write("/quit\n");
                 } else if (
                     presenter.lifecycle === "running" ||
+                    presenter.lifecycle === "queued" ||
                     presenter.lifecycle === "parked" ||
                     presenter.lifecycle === "requires_action" ||
                     focusedGateIds.length > 0
@@ -1324,6 +1329,9 @@ export const runTermViewport = async (
             reasoning: replReasoning,
             onProviderModelsFetcher: (fetcher) => {
                 providerModelsFetcher = fetcher;
+            },
+            onModelSearchFetcher: (fetcher) => {
+                modelSearchFetcher = fetcher;
             },
             onModelEffortsFetcher: (fetcher) => {
                 modelEffortsFetcher = fetcher;

@@ -1122,8 +1122,8 @@ test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresen
     assert.equal(presenter.inputTokens, 450);
     assert.equal(presenter.outputTokens, 90);
 
-    // 5. Custom _plurnk_telemetry SessionUpdate routes workspace state and engine turn progress to the status bar
-    const telemetryFrames = presenter.apply({
+    // 5. Custom _plurnk_telemetry SessionUpdate routes workspace state and engine turn progress (including turn_queued -> turn_awaiting_model) to the status bar
+    const queuedFrames = presenter.apply({
         sessionUpdate: "_plurnk_telemetry",
         _meta: {
             plurnk: {
@@ -1135,17 +1135,37 @@ test("{§cli-invocation} {§cli-session-status} {§cli-rendering}: SessionPresen
                 },
                 notice: {
                     source: "engine:turn",
-                    kind: "turn_awaiting_model",
+                    kind: "turn_queued",
+                    queuePosition: 2,
+                    queueDepth: 4,
+                    activeCount: 1,
+                    laneLimit: 1,
                 },
             },
         },
     });
     assert.equal(presenter.workspaceName, "gookie");
+    assert.equal(presenter.lifecycle, "queued");
+    assert.equal(queuedFrames[0]?.kind, "status_update");
+    assert.match(presenter.buildStatusBar(1500).formattedStatusLine, /^⏳ {2}.*queued \(#2\/4\)/u);
+
+    const telemetryFrames = presenter.apply({
+        sessionUpdate: "_plurnk_telemetry",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:turn",
+                    kind: "turn_awaiting_model",
+                },
+            },
+        },
+    });
     assert.equal(presenter.lifecycle, "running");
     assert.equal(telemetryFrames[0]?.kind, "status_update");
     if (telemetryFrames[0]?.kind === "status_update") {
         assert.equal(telemetryFrames[0].newTurn, true);
     }
+    assert.match(presenter.buildStatusBar(2000).formattedStatusLine, /^⌛︎ {2}.*awaiting model/u);
 });
 
 test("{§cli-conformance} {§cli-repl-mode} {§cli-sessions-topology}: SessionPresenter handles replay_complete boundary and projects prompt_suggestions_update lifecycle", () => {

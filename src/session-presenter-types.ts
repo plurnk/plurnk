@@ -91,10 +91,12 @@ export interface ActiveLiveEntry {
 }
 
 export interface SessionDoing {
-    readonly phase: "awaiting" | "working";
+    readonly phase: "queued" | "awaiting" | "working";
     readonly since: number;
     readonly op: string | null;
     readonly target: string | null;
+    readonly queuePosition?: number | null;
+    readonly queueDepth?: number | null;
 }
 
 export interface WorkspacePreparationState {

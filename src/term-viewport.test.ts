@@ -2397,6 +2397,56 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
     );
     assert.equal(lazyProviderLcp?.prefix, "openai/gp");
 
+    // 8b. Live substring search across aliases + catalog beyond page 1 (without typing provider/)
+    const searchProvider = makeAutocompleteProvider({
+        cwd: "/tmp",
+        getProjectRoot: () => "/tmp",
+        getModels: () => ["sonnet-fast", "rtx5070", "alibaba/qwen-max"],
+        searchModels: async (q) => {
+            if (q.toLowerCase().includes("sonnet")) {
+                return ["anthropic/claude-sonnet-4-5", "openrouter/anthropic/claude-sonnet-4-5"];
+            }
+            if (q.toLowerCase().includes("gemini")) {
+                return ["google/gemini-2.5-pro"];
+            }
+            return [];
+        },
+        getEffortsForModel: async (selector) =>
+            selector === "anthropic/claude-sonnet-4-5" ? ["low", "medium", "high", "max"] : null,
+    });
+    const sonnetHits = await searchProvider.getSuggestions(["/model sonnet"], 0, 13, {
+        signal,
+        force: false,
+    });
+    assert.deepEqual(
+        sonnetHits?.items.map((i) => i.value),
+        ["sonnet-fast", "anthropic/claude-sonnet-4-5", "openrouter/anthropic/claude-sonnet-4-5"],
+        "prefix alias ranks before catalog substring hits without forcing an invalid LCP",
+    );
+    assert.equal((sonnetHits?.items[0] as { lcp?: string } | undefined)?.lcp, undefined);
+    const childGemini = await searchProvider.getSuggestions(["/child gemini"], 0, 13, {
+        signal,
+        force: true,
+    });
+    assert.deepEqual(
+        childGemini?.items.map((i) => i.value),
+        ["google/gemini-2.5-pro"],
+    );
+    assert.deepEqual(
+        searchProvider.applyCompletion(["/child gemini"], 0, 13, childGemini!.items[0]!, childGemini!.prefix),
+        { lines: ["/child google/gemini-2.5-pro"], cursorLine: 0, cursorCol: 28 },
+    );
+    const sonnetEffort = await searchProvider.getSuggestions(
+        ["/model anthropic/claude-sonnet-4-5 "],
+        0,
+        35,
+        { signal, force: false },
+    );
+    assert.deepEqual(
+        sonnetEffort?.items.map((i) => i.value),
+        ["low", "medium", "high", "max"],
+    );
+
     // 9. ["/model deepseek/deepseek-reasoner "] and ["/model deepseek/deepseek-reasoner h"] (slot 3 effort)
     const modelEffortOpen = await provider.getSuggestions(
         ["/model deepseek/deepseek-reasoner "],

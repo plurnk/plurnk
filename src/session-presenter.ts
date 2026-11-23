@@ -768,8 +768,18 @@ export class SessionPresenter {
         }
 
         // Right-of-status-line live activity indicators ({§cli-session-status})
-        if (this.lifecycle === "running" && this.doing !== null) {
-            if (this.doing.phase === "awaiting") {
+        if ((this.lifecycle === "running" || this.lifecycle === "queued") && this.doing !== null) {
+            if (this.doing.phase === "queued") {
+                const pos = this.doing.queuePosition;
+                const depth = this.doing.queueDepth;
+                const queueTag =
+                    typeof pos === "number" && pos > 0
+                        ? typeof depth === "number" && depth >= pos
+                            ? `queued (#${String(pos)}/${String(depth)})`
+                            : `queued (#${String(pos)})`
+                        : "queued";
+                baseParts.push(`${queueTag} ${formatLiveWait(Math.max(0, Date.now() - this.doing.since))}`);
+            } else if (this.doing.phase === "awaiting") {
                 baseParts.push(`awaiting model ${formatLiveWait(Math.max(0, Date.now() - this.doing.since))}`);
             } else if (this.doing.op !== null) {
                 baseParts.push(
@@ -870,6 +880,29 @@ export class SessionPresenter {
         const rawNotice = plurnkMeta?.notice;
 
         if (rawNotice?.source === "engine:turn" || legacyTitle?.startsWith("engine:turn:")) {
+            if (rawNotice?.kind === "turn_queued" || legacyTitle === "engine:turn:turn_queued") {
+                this.#retireReasoning(frames);
+                if (this.#loopConcluded) {
+                    this.#resetLoopTurns();
+                }
+                this.lastLoopStatus = null;
+                this.lifecycle = "queued";
+                const queuePosition = typeof rawNotice?.queuePosition === "number" ? rawNotice.queuePosition : null;
+                const queueDepth = typeof rawNotice?.queueDepth === "number" ? rawNotice.queueDepth : null;
+                this.doing = {
+                    phase: "queued",
+                    since: this.doing?.phase === "queued" ? this.doing.since : Date.now(),
+                    op: null,
+                    target: null,
+                    queuePosition,
+                    queueDepth,
+                };
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return true;
+            }
             if (rawNotice?.kind === "turn_awaiting_model" || legacyTitle === "engine:turn:turn_awaiting_model") {
                 this.#retireReasoning(frames);
                 if (this.#loopConcluded) {

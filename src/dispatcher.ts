@@ -256,7 +256,7 @@ subcommands:
   skills ...                List or manage this workspace's Agent Skills.
   members ...               List or manage this workspace's file members.
   env ...                   Manage session overrides or shared workspace environment defaults.
-  schedule ...              List or manage this workspace's scheduled messages.
+  schedule ...              List or manage this workspace's schedules and macros.
   personas ...              List or manage this workspace's persona roles.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.

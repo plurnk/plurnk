@@ -5,6 +5,10 @@ export {
     type AcpClientOptions,
     type ElicitationRequestHandler,
     type PermissionRequestHandler,
+    type ScheduleActionInput,
+    type ScheduledStepReceipt,
+    type ScheduledToolCall,
+    type ScheduleRunResult,
     type SessionUpdateHandler,
 } from "./acp-client.ts";
 export {

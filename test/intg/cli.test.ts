@@ -72,6 +72,7 @@ const runCli = (
 
 const createMockAcpServer = async () => {
     const sessions = new Map<string, { cwd: string; model: string; effort: string; persona: string; systemPrompt?: string }>();
+    const schedules = new Map<string, { alias: string; state: string; definition: Record<string, unknown> }>();
     const agentApp = createAcpAgent({ name: "mock-plurnk-service" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
@@ -240,6 +241,75 @@ const createMockAcpServer = async () => {
                         );
                     }
                     return { alias, state: "active", definition: { value } };
+                }
+                if (params.kind === "workspace.schedule.add" || params.kind === "workspace.schedule.replace") {
+                    const alias = String(params.params?.alias ?? "");
+                    const definition: Record<string, unknown> = {
+                        ...(params.params?.rule !== undefined ? { rule: params.params.rule } : {}),
+                        ...(params.params?.target !== undefined ? { target: params.params.target } : {}),
+                        ...(params.params?.persona !== undefined ? { persona: params.params.persona } : {}),
+                        ...(params.params?.prompt !== undefined ? { prompt: params.params.prompt } : {}),
+                        ...(params.params?.run !== undefined ? { run: params.params.run } : {}),
+                        ...(params.params?.catchup !== undefined ? { catchup: params.params.catchup } : {}),
+                        status: "open",
+                    };
+                    const entry = { alias, state: "active", definition };
+                    schedules.set(alias, entry);
+                    return { definition: entry };
+                }
+                if (params.kind === "workspace.schedule.list") {
+                    return { definitions: [...schedules.values()] };
+                }
+                if (params.kind === "workspace.schedule.status") {
+                    const alias = String(params.params?.alias ?? "");
+                    const status = String(params.params?.status ?? "open");
+                    const entry = schedules.get(alias);
+                    if (!entry) {
+                        throw new RequestError(-32602, `Schedule '${alias}' was not found.`, {
+                            type: "https://problems.plurnk.xyz/schedule/not-found",
+                            title: "Schedule not found",
+                            status: 404,
+                            detail: `Schedule '${alias}' was not found.`,
+                        });
+                    }
+                    entry.definition = { ...entry.definition, status };
+                    return { alias, status, definition: entry.definition };
+                }
+                if (params.kind === "workspace.schedule.run") {
+                    const alias = String(params.params?.alias ?? "");
+                    const entry = schedules.get(alias);
+                    if (!entry) {
+                        throw new RequestError(-32602, `Schedule '${alias}' was not found.`, {
+                            type: "https://problems.plurnk.xyz/schedule/not-found",
+                            title: "Schedule not found",
+                            status: 404,
+                            detail: `Schedule '${alias}' was not found.`,
+                        });
+                    }
+                    if (entry.definition.status === "done") {
+                        throw new RequestError(-32000, `Schedule '${alias}' is already done.`, {
+                            type: "https://problems.plurnk.xyz/schedule/already-done",
+                            title: "Schedule already done",
+                            status: 409,
+                            detail: `Schedule '${alias}' is already done.`,
+                        });
+                    }
+                    const steps = Array.isArray(entry.definition.run)
+                        ? (entry.definition.run as Array<{ server: string; tool: string }>)
+                        : [];
+                    return {
+                        alias,
+                        lastFiredAt: "2026-11-23T09:15:00.000Z",
+                        kind: steps.length > 0 ? "run" : "prompt",
+                        status: entry.definition.rule === "once" ? "done" : "open",
+                        results: steps.map((step, index) => ({
+                            index,
+                            server: step.server,
+                            tool: step.tool,
+                            status: 200,
+                            preview: `${step.server}.${step.tool} ok`,
+                        })),
+                    };
                 }
                 return { ok: true };
             },
@@ -831,6 +901,101 @@ test("{§cli-subcommands} {§cli-configuration-source}: CLI subcommands and Func
             "custom",
             "--system-prompt must seed session role and override ambient PLURNK_PERSONA",
         );
+
+        const schedHelpRes = await runCli(
+            ["schedule", "--help"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedHelpRes.status, 0, `stderr was: ${schedHelpRes.stderr}`);
+        assert.match(schedHelpRes.stdout, /--manual/);
+        assert.match(schedHelpRes.stdout, /--step <server>\.<tool>/);
+
+        const schedAddRes = await runCli(
+            [
+                "schedule",
+                "add",
+                "deploy-macro",
+                "--manual",
+                "--step",
+                "plurnk.sh",
+                '{"text":"echo hi"}',
+                "--aside",
+                "Run deploy",
+                "--step",
+                "github.create_release",
+                '{"tag":"v1.0.0"}',
+            ],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedAddRes.status, 0, `stderr was: ${schedAddRes.stderr}`);
+        assert.match(schedAddRes.stdout, /deploy-macro\s+active\s+macro\s+manual\s+2 steps: plurnk\.sh → github\.create_release/);
+
+        const schedShowRes = await runCli(
+            ["schedule", "show", "deploy-macro"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedShowRes.status, 0, `stderr was: ${schedShowRes.stderr}`);
+        assert.match(schedShowRes.stdout, /rule:\s+manual/);
+        assert.match(schedShowRes.stdout, /#0\s+plurnk\.sh/);
+        assert.match(schedShowRes.stdout, /#1\s+github\.create_release/);
+
+        const schedRunRes = await runCli(
+            ["schedule", "run", "deploy-macro"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedRunRes.status, 0, `stderr was: ${schedRunRes.stderr}`);
+        assert.match(schedRunRes.stdout, /#0\s+plurnk\.sh\s+200\s+— plurnk\.sh ok/);
+        assert.match(schedRunRes.stdout, /#1\s+github\.create_release\s+200\s+— github\.create_release ok/);
+
+        const schedDoneRes = await runCli(
+            ["schedule", "done", "deploy-macro"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedDoneRes.status, 0, `stderr was: ${schedDoneRes.stderr}`);
+        assert.match(schedDoneRes.stdout, /deploy-macro\s+done/);
+
+        const schedBlockedRes = await runCli(
+            ["schedule", "run", "deploy-macro"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedBlockedRes.status, 1, `expected exit 1 on 409 already-done, got ${schedBlockedRes.status}`);
+        assert.match(schedBlockedRes.stderr, /already done/);
+        assert.match(schedBlockedRes.stderr, /plurnk schedule reopen deploy-macro/);
+
+        const schedReopenRes = await runCli(
+            ["schedule", "reopen", "deploy-macro"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(schedReopenRes.status, 0, `stderr was: ${schedReopenRes.stderr}`);
+        assert.match(schedReopenRes.stdout, /deploy-macro\s+open/);
     } finally {
         await server.close();
     }

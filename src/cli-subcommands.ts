@@ -27,6 +27,7 @@ import {
     formatWorkspacesRows,
     writeErrorJsonl,
 } from "./repl-commands.ts";
+import { SCHEDULE_USAGE } from "./schedule-command.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -571,6 +572,10 @@ export const runCliFamily = async (
     options: CliCommonOptions,
 ): Promise<number> => {
     if (familyArgs.includes("--help") || familyArgs.includes("-h")) {
+        if (family === "schedule") {
+            process.stdout.write(SCHEDULE_USAGE);
+            return 0;
+        }
         const extra = family === "mcp" ? "|oauth|skills|complete" : family === "env" ? "|set|unset|import" : "";
         process.stdout.write(
             `usage: plurnk ${family} [list|discover|add|replace|enable|disable|remove${extra}] [options]\n`,
@@ -588,7 +593,7 @@ export const runCliFamily = async (
             ...options,
             sessionId: options.sessionId ?? options.termSession,
         });
-        let hadError = false;
+        let errorExitCode: number | null = null;
         await executeFamilyCommand(
             client,
             family,
@@ -602,16 +607,17 @@ export const runCliFamily = async (
             options.cwd,
             {
                 json: options.json,
+                surface: "cli",
                 stdout: process.stdout,
                 stderr: process.stderr,
                 oauthTimeoutMs: options.oauthTimeoutMs,
                 onError: (problem) => {
-                    hadError = true;
+                    errorExitCode = problem.type === "https://problems.plurnk.xyz/client/usage" ? 64 : 1;
                     writeErrorJsonl(process.stderr, problem);
                 },
             },
         );
-        return hadError ? 64 : 0;
+        return errorExitCode ?? 0;
     } finally {
         client.close();
     }

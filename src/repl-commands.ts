@@ -12,6 +12,16 @@ import * as Contracts from "@plurnk/plurnk-contracts";
 import type { AcpClient } from "./acp-client.ts";
 import type { AcpSession, AcpTranscriptItem } from "./acp-session.ts";
 import { receiveAuthorization } from "./oauth.ts";
+import {
+    extractScheduleProblem,
+    formatScheduleInspect,
+    formatScheduleRows,
+    formatScheduleRunResult,
+    formatScheduleStatusResult,
+    parseScheduleCommand,
+    SCHEDULE_USAGE,
+    ScheduleCommandUsageError,
+} from "./schedule-command.ts";
 
 export interface ClientStreams {
     readonly stdin: NodeJS.ReadableStream;
@@ -239,7 +249,7 @@ export const extractPromptHistory = (targetSession: AcpSession, maxEntries?: num
 };
 
 export const formatFamilyRows = (family: string, result: Record<string, unknown>): string =>
-    Contracts.formatFamilyRows(family, result);
+    family === "schedule" ? formatScheduleRows(result) : Contracts.formatFamilyRows(family, result);
 
 export const formatExecResultLine = (r: {
     readonly status?: number;
@@ -354,6 +364,7 @@ export const executeFamilyCommand = async (
     cwd: string,
     io: {
         readonly json?: boolean;
+        readonly surface?: "cli" | "repl";
         readonly stdout: NodeJS.WritableStream;
         readonly stderr?: NodeJS.WritableStream;
         readonly oauthTimeoutMs?: number;
@@ -364,9 +375,108 @@ export const executeFamilyCommand = async (
             readonly title: string;
             readonly status: number;
             readonly detail: string;
+            readonly recovery?: string;
         }) => void;
     },
 ): Promise<void> => {
+    if (family === "schedule") {
+        const firstTok = args.find((t) => t.length > 0);
+        if (firstTok === "help" || firstTok === "--help" || firstTok === "-h") {
+            io.stdout.write(SCHEDULE_USAGE);
+            return;
+        }
+        let parsedSchedule;
+        try {
+            parsedSchedule = parseScheduleCommand(args);
+        } catch (err) {
+            if (err instanceof ScheduleCommandUsageError) {
+                io.onError(err.problem);
+                return;
+            }
+            throw err;
+        }
+        if (parsedSchedule.kind === "inspect") {
+            const listed = await client.action<Record<string, unknown>>("workspace.schedule.list", {}, binding);
+            const defs = Array.isArray(listed.definitions)
+                ? listed.definitions
+                : Array.isArray(listed.items)
+                  ? listed.items
+                  : [];
+            const found = defs.find(
+                (item): item is Record<string, unknown> =>
+                    Contracts.isRecord(item) && item.alias === parsedSchedule.alias,
+            );
+            if (found === undefined) {
+                io.onError({
+                    type: "https://problems.plurnk.xyz/schedule/not-found",
+                    title: "Schedule not found",
+                    status: 404,
+                    detail: `Schedule '${parsedSchedule.alias}' not found.`,
+                });
+                return;
+            }
+            if (io.json) {
+                io.stdout.write(`${JSON.stringify(found, null, 2)}\n`);
+            } else {
+                io.stdout.write(formatScheduleInspect(found));
+            }
+            return;
+        }
+        const alias = typeof parsedSchedule.params.alias === "string" ? parsedSchedule.params.alias : undefined;
+        try {
+            const result = await client.action<Record<string, unknown>>(
+                parsedSchedule.actionName,
+                parsedSchedule.params,
+                binding,
+            );
+            if (io.json) {
+                io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+                return;
+            }
+            if (parsedSchedule.sub === "list") {
+                io.stdout.write(formatScheduleRows(result));
+                return;
+            }
+            if (parsedSchedule.actionName === "workspace.schedule.run") {
+                io.stdout.write(formatScheduleRunResult(alias ?? "", result));
+                return;
+            }
+            if (parsedSchedule.actionName === "workspace.schedule.status") {
+                io.stdout.write(formatScheduleStatusResult(alias ?? "", result));
+                return;
+            }
+            if (Contracts.isRecord(result.definition) && typeof result.definition.alias === "string") {
+                io.stdout.write(formatScheduleRows({ definitions: [result.definition] }));
+                return;
+            }
+            if (result.removed === true && typeof result.alias === "string") {
+                io.stdout.write(`${result.alias}  removed\n`);
+                return;
+            }
+            if (Array.isArray(result.candidates)) {
+                io.stdout.write(
+                    `${Contracts.formatFamilyResult("schedule", parsedSchedule.actionName, parsedSchedule.params, result)}\n`,
+                );
+                return;
+            }
+            io.stdout.write(`${JSON.stringify(result)}\n`);
+        } catch (err) {
+            const extracted = extractScheduleProblem(err, {
+                ...(alias !== undefined ? { alias } : {}),
+                surface: io.surface ?? "repl",
+            });
+            if (extracted !== null) {
+                if (!io.json && extracted.receiptLines.length > 0) {
+                    io.stdout.write(`${extracted.receiptLines.join("\n")}\n`);
+                }
+                io.onError(extracted.problem);
+                return;
+            }
+            throw err;
+        }
+        return;
+    }
+
     const filteredPreserveEmpty: string[] = [];
     for (let i = 0; i < args.length; i += 1) {
         const tok = args[i] ?? "";

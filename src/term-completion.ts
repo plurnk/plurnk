@@ -5,6 +5,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { PLURNK_OPS, PROPOSAL_POLICIES } from "@plurnk/plurnk-contracts";
 import { INTERACTIVE_COMMANDS } from "./commands.ts";
+import { SCHEDULE_ADD_FLAGS } from "./schedule-command.ts";
 
 export interface PathPartial {
     readonly kind: "local" | "reference" | "member" | "target";
@@ -208,16 +209,18 @@ const FAMILY_SUBCOMMANDS_BY_FAMILY: Readonly<Record<string, readonly { readonly 
         { value: "--scope", description: "Select session or workspace scope" },
     ],
     schedule: [
-        { value: "list", description: "List definitions" },
+        { value: "list", description: "List schedules and macros" },
+        { value: "show", description: "Inspect schedule definition" },
+        { value: "inspect", description: "Inspect schedule definition" },
         { value: "discover", description: "Preview occurrences" },
-        { value: "add", description: "Add schedule" },
-        { value: "replace", description: "Replace schedule" },
+        { value: "add", description: "Add schedule or macro" },
+        { value: "replace", description: "Replace schedule or macro" },
+        { value: "run", description: "Trigger schedule or macro now" },
+        { value: "done", description: "Mark obligation done" },
+        { value: "reopen", description: "Reopen obligation" },
         { value: "enable", description: "Enable schedule" },
         { value: "disable", description: "Disable schedule" },
         { value: "remove", description: "Remove schedule" },
-        { value: "run", description: "Trigger schedule now" },
-        { value: "done", description: "Mark schedule done" },
-        { value: "reopen", description: "Reopen schedule" },
     ],
 };
 
@@ -300,12 +303,28 @@ export const completeInput = async (
         );
     }
 
-    const familyAliasMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(enable|disable|remove|unset|oauth|skills|run|done|reopen)\s+(\S*)$/u.exec(line);
+    const familyAliasMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(show|inspect|replace|enable|disable|remove|unset|oauth|skills|run|done|reopen)\s+(\S*)$/u.exec(line);
     if (familyAliasMatch !== null) {
         const family = familyAliasMatch[1]!;
+        const sub = familyAliasMatch[2]!;
+        if ((sub === "show" || sub === "inspect") && family !== "schedule") {
+            return { suggestions: [], prefix: line };
+        }
         const frag = familyAliasMatch[3]!;
         const aliases = ctx.getFamilyAliases?.(family) ?? [];
         return namespace(aliases, frag, () => `${family} definition`, options);
+    }
+
+    const scheduleFlagMatch = /^\/schedule\s+(?:add|replace)\s+\S+(?:\s+[\s\S]*)?\s+(--[-\w]*)$/u.exec(line);
+    if (scheduleFlagMatch !== null) {
+        const typed = scheduleFlagMatch[1]!.toLowerCase();
+        const descByFlag = new Map(SCHEDULE_ADD_FLAGS.map((f) => [f.value, f.description]));
+        return namespace(
+            SCHEDULE_ADD_FLAGS.map((f) => f.value),
+            typed,
+            (value) => descByFlag.get(value) ?? "schedule option",
+            options,
+        );
     }
 
     const gateMatch = /^\/(approve|accept|reject|cancel|edit|answer)\s+@?([0-9a-f]*)$/iu.exec(line);

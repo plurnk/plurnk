@@ -30,7 +30,7 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/skills [subcommand]", summary: "List or manage this workspace's Agent Skills." },
     { usage: "/members [subcommand]", summary: "List or manage this workspace's file members." },
     { usage: "/env [--scope session|workspace] [subcommand]", summary: "Manage session overrides or shared workspace environment defaults." },
-    { usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages." },
+    { usage: "/schedule [subcommand]", summary: "List or manage this workspace's schedules and macros." },
     { usage: "/personas [subcommand]", summary: "List or manage this workspace's persona roles." },
     { usage: "/import <path>", summary: "Insert a local file into the composer." },
     { usage: "/script <path>", summary: "Submit a local .plk batch of MCP expressions through op.exec." },

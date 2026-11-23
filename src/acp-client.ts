@@ -130,6 +130,49 @@ export interface PlurnkFamilyListResult extends Record<string, unknown> {
     readonly definitions?: ReadonlyArray<Record<string, unknown>>;
 }
 
+export interface ScheduledToolCall {
+    readonly server: string;
+    readonly tool: string;
+    readonly arguments?: Readonly<Record<string, unknown>>;
+    readonly aside?: string;
+}
+
+export type ScheduleActionInput =
+    | {
+          readonly alias: string;
+          readonly rule?: string;
+          readonly target: string;
+          readonly prompt: string;
+          readonly persona?: string;
+          readonly catchup?: boolean;
+      }
+    | {
+          readonly alias: string;
+          readonly rule?: string;
+          readonly run: readonly ScheduledToolCall[];
+          readonly target?: string;
+          readonly catchup?: boolean;
+      };
+
+export interface ScheduledStepReceipt {
+    readonly index: number;
+    readonly server: string;
+    readonly tool: string;
+    readonly status: number;
+    readonly uri?: string;
+    readonly preview?: string;
+    readonly problem?: Readonly<Record<string, unknown>>;
+}
+
+export interface ScheduleRunResult {
+    readonly alias: string;
+    readonly status: "open" | "done" | "fail";
+    readonly loopId?: number | null;
+    readonly lastFiredAt?: string | null;
+    readonly doneAt?: string | null;
+    readonly results?: readonly ScheduledStepReceipt[];
+}
+
 export interface PlurnkActionMap {
     readonly ping: PlurnkActionEntry<Record<string, unknown>, { readonly ok?: boolean } & Record<string, unknown>>;
     readonly discover: PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
@@ -430,21 +473,11 @@ export interface PlurnkActionMap {
         Record<string, unknown>
     >;
     readonly "workspace.schedule.add": PlurnkActionEntry<
-        {
-            readonly alias: string;
-            readonly rule: string;
-            readonly target: string;
-            readonly prompt: string;
-        } & Record<string, unknown>,
+        ScheduleActionInput & Record<string, unknown>,
         Record<string, unknown>
     >;
     readonly "workspace.schedule.replace": PlurnkActionEntry<
-        {
-            readonly alias: string;
-            readonly rule: string;
-            readonly target: string;
-            readonly prompt: string;
-        } & Record<string, unknown>,
+        ScheduleActionInput & Record<string, unknown>,
         Record<string, unknown>
     >;
     readonly "workspace.schedule.enable": PlurnkActionEntry<
@@ -461,11 +494,11 @@ export interface PlurnkActionMap {
     >;
     readonly "workspace.schedule.run": PlurnkActionEntry<
         { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
+        ScheduleRunResult & Record<string, unknown>
     >;
     readonly "workspace.schedule.status": PlurnkActionEntry<
         { readonly alias: string; readonly status: "open" | "done" | "fail" } & Record<string, unknown>,
-        Record<string, unknown>
+        ScheduleRunResult & Record<string, unknown>
     >;
     readonly "workspace.mcp.oauth.begin": PlurnkActionEntry<
         { readonly alias: string } & Record<string, unknown>,

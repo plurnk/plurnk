@@ -34,6 +34,7 @@ import {
     type ClientStreams,
 } from "./repl-commands.ts";
 import { lifecycleGlyphFor } from "./session-presenter.ts";
+import { ScheduleCommandUsageError, tokenizeSlashArgs } from "./schedule-command.ts";
 
 export interface PendingPermissionGate {
     readonly kind: "permission";
@@ -130,6 +131,7 @@ export const dispatchSlashCommand = async (
         if (isLocalMcpOAuth) ctx.adjustLocalMcpOAuth(1);
         try {
             await executeFamilyCommand(client, family, familyArgs, bindingContext(), options.cwd, {
+                surface: "repl",
                 stdout: streams.stdout,
                 oauthTimeoutMs: options.oauthTimeoutMs,
                 onError: (problem) => writeErrorJsonl(streams.stderr, problem),
@@ -833,7 +835,18 @@ export const dispatchSlashCommand = async (
         }
 
         if (["mcp", "skills", "members", "env", "schedule", "personas"].includes(cmd)) {
-            await handleFamilyCommand(cmd, args);
+            const rawTail = line.replace(/^\/\S+(?:\s+)?/u, "");
+            let familyArgs: readonly string[];
+            try {
+                familyArgs = rawTail.length > 0 ? tokenizeSlashArgs(rawTail) : [];
+            } catch (err) {
+                if (err instanceof ScheduleCommandUsageError) {
+                    writeErrorJsonl(streams.stderr, err.problem);
+                    return "continue";
+                }
+                throw err;
+            }
+            await handleFamilyCommand(cmd, familyArgs);
             return "continue";
         }
 

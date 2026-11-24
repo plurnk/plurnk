@@ -6,12 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type {
-    CreateElicitationRequest,
-    CreateElicitationResponse,
-    ElicitationContentValue,
     ForkSessionResponse,
-    RequestPermissionRequest,
-    RequestPermissionResponse,
     SessionUpdate,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
@@ -33,26 +28,20 @@ import {
     writeEventJsonl,
     type ClientStreams,
 } from "./repl-commands.ts";
-import { lifecycleGlyphFor } from "./session-presenter.ts";
+import {
+    dispatchGateSlashCommand,
+    type PendingElicitationGate,
+    type PendingGate,
+    type PendingPermissionGate,
+} from "./repl-gate-commands.ts";
 import { ScheduleCommandUsageError, tokenizeSlashArgs } from "./schedule-command.ts";
+import { lifecycleGlyphFor } from "./session-presenter.ts";
 
-export interface PendingPermissionGate {
-    readonly kind: "permission";
-    readonly id: string;
-    readonly sessionId: string;
-    readonly request: RequestPermissionRequest;
-    readonly resolveGate: (res: RequestPermissionResponse) => void;
-}
-
-export interface PendingElicitationGate {
-    readonly kind: "elicitation";
-    readonly id: string;
-    readonly sessionId: string;
-    readonly request: CreateElicitationRequest;
-    readonly resolveGate: (res: CreateElicitationResponse) => void;
-}
-
-export type PendingGate = PendingPermissionGate | PendingElicitationGate;
+export {
+    type PendingElicitationGate,
+    type PendingGate,
+    type PendingPermissionGate,
+};
 
 export interface ReplSlashCommandContext {
     readonly client: AcpClient;
@@ -88,7 +77,7 @@ export const dispatchSlashCommand = async (
     line: string,
     ctx: ReplSlashCommandContext,
 ): Promise<"continue" | "quit"> => {
-    const { client, options, streams, pendingGates } = ctx;
+    const { client, options, streams } = ctx;
     const parts = line.slice(1).split(/\s+/u);
     const cmd = parts[0]?.toLowerCase() ?? "";
     const args = parts.slice(1);
@@ -98,34 +87,6 @@ export const dispatchSlashCommand = async (
         workspace: ctx.getWorkspace(),
         session: ctx.getSessionName(),
     });
-
-    const resolveRequiredGate = (
-        cmdName: string,
-        usage: string,
-        rawTarget: string | undefined,
-    ): PendingGate | undefined => {
-        if (!rawTarget || !rawTarget.startsWith("@") || rawTarget.length < 2) {
-            writeErrorJsonl(streams.stderr, {
-                type: "https://problems.plurnk.xyz/client/usage",
-                title: "Missing gate identifier",
-                status: 400,
-                detail: `usage: ${usage} (/${cmdName} requires @<id> in REPL mode; inspect pending gates with /review or fd 3 events).`,
-            });
-            return undefined;
-        }
-        const id = rawTarget.slice(1);
-        const gate = pendingGates.get(id);
-        if (!gate) {
-            writeErrorJsonl(streams.stderr, {
-                type: "https://problems.plurnk.xyz/client/gate-not-found",
-                title: "Gate not found",
-                status: 404,
-                detail: `No pending gate with id @${id}.`,
-            });
-            return undefined;
-        }
-        return gate;
-    };
 
     const handleFamilyCommand = async (family: string, familyArgs: readonly string[]): Promise<void> => {
         const isLocalMcpOAuth = family === "mcp" && familyArgs[0] === "oauth" && familyArgs.length === 2;
@@ -231,193 +192,7 @@ export const dispatchSlashCommand = async (
             return "continue";
         }
 
-        if (cmd === "yolo") {
-            const session = ctx.getSession();
-            const modeOpt = session.configOptions.find((o) => o.configId === "mode");
-            const currentAccept =
-                modeOpt !== undefined && "currentValue" in modeOpt
-                    ? modeOpt.currentValue === "accept"
-                    : ctx.getYolo();
-            const nextYolo = !currentAccept;
-            ctx.setYolo(nextYolo);
-            if (modeOpt !== undefined) {
-                const res = await client.setConfigOption(
-                    session.sessionId,
-                    "mode",
-                    nextYolo ? "accept" : "review",
-                );
-                session.configOptions = [...res.configOptions];
-                const latestMeta = (res as { _meta?: unknown })._meta;
-                writeEventJsonl(streams.events, {
-                    sessionUpdate: "config_option_update",
-                    configOptions: session.configOptions,
-                    ...(latestMeta !== undefined ? { _meta: latestMeta } : {}),
-                });
-            }
-            streams.stdout.write(`yolo: ${nextYolo ? "on" : "off"}\n`);
-            if (nextYolo) {
-                ctx.clearForceReviewNextRun();
-                for (const gate of [...pendingGates.values()]) {
-                    if (gate.kind !== "permission") continue;
-                    const allowOpt =
-                        gate.request.options.find(
-                            (o) => o.kind === "allow_once" || o.kind === "allow_always",
-                        ) ?? gate.request.options[0];
-                    gate.resolveGate({
-                        outcome: allowOpt
-                            ? { outcome: "selected", optionId: allowOpt.optionId }
-                            : { outcome: "cancelled" },
-                    });
-                }
-            }
-            return "continue";
-        }
-
-        if (cmd === "review") {
-            if (pendingGates.size === 0) {
-                streams.stdout.write("review: none\n");
-                return "continue";
-            }
-            for (const gate of pendingGates.values()) {
-                if (gate.kind === "permission") {
-                    const opts = gate.request.options.map((o) => o.optionId).join(", ");
-                    streams.stdout.write(`@${gate.id}  permission  ${gate.request.title}  [${opts}]\n`);
-                } else {
-                    streams.stdout.write(`@${gate.id}  elicitation  ${gate.request.message}\n`);
-                }
-            }
-            return "continue";
-        }
-
-        if (cmd === "approve" || cmd === "accept") {
-            const gate = resolveRequiredGate(cmd, `/${cmd} @<id> [optionId]`, args[0]);
-            if (!gate) {
-                return "continue";
-            }
-            const explicitOptionId = args[1];
-            if (gate.kind === "permission") {
-                const chosen =
-                    (explicitOptionId
-                        ? gate.request.options.find((o) => o.optionId === explicitOptionId)
-                        : undefined) ??
-                    gate.request.options.find(
-                        (o) => o.kind === "allow_once" || o.kind === "allow_always",
-                    ) ??
-                    gate.request.options[0];
-                if (!chosen) {
-                    gate.resolveGate({ outcome: { outcome: "cancelled" } });
-                } else {
-                    gate.resolveGate({
-                        outcome: { outcome: "selected", optionId: chosen.optionId },
-                    });
-                }
-            } else {
-                gate.resolveGate({ action: "accept" });
-            }
-            return "continue";
-        }
-
-        if (cmd === "reject") {
-            const gate = resolveRequiredGate(cmd, "/reject @<id> [optionId]", args[0]);
-            if (!gate) {
-                return "continue";
-            }
-            const explicitOptionId = args[1];
-            if (gate.kind === "permission") {
-                const chosen =
-                    (explicitOptionId
-                        ? gate.request.options.find((o) => o.optionId === explicitOptionId)
-                        : undefined) ??
-                    gate.request.options.find(
-                        (o) => o.kind === "reject_once" || o.kind === "reject_always",
-                    );
-                if (!chosen) {
-                    gate.resolveGate({ outcome: { outcome: "cancelled" } });
-                } else {
-                    gate.resolveGate({
-                        outcome: { outcome: "selected", optionId: chosen.optionId },
-                    });
-                }
-            } else {
-                gate.resolveGate({ action: "decline" });
-            }
-            return "continue";
-        }
-
-        if (cmd === "cancel") {
-            const gate = resolveRequiredGate(cmd, "/cancel @<id>", args[0]);
-            if (!gate) {
-                return "continue";
-            }
-            if (gate.kind === "permission") {
-                gate.resolveGate({ outcome: { outcome: "cancelled" } });
-            } else {
-                gate.resolveGate({ action: "cancel" });
-            }
-            return "continue";
-        }
-
-        if (cmd === "edit") {
-            const gate = resolveRequiredGate(cmd, "/edit @<id> <body...>", args[0]);
-            if (!gate) {
-                return "continue";
-            }
-            if (gate.kind !== "permission") {
-                writeErrorJsonl(streams.stderr, {
-                    type: "https://problems.plurnk.xyz/client/gate-not-found",
-                    title: "Gate not found",
-                    status: 404,
-                    detail: `Gate @${gate.id} is not a permission gate.`,
-                });
-                return "continue";
-            }
-            const afterTargetMatch = line.match(/^\/\S+\s+\S+(?:\r?\n|[ \t])([\s\S]*)$/u);
-            const editedBody = afterTargetMatch?.[1] ?? "";
-            const allowOpt =
-                gate.request.options.find(
-                    (o) => o.kind === "allow_once" || o.kind === "allow_always",
-                ) ?? gate.request.options[0];
-            gate.resolveGate({
-                outcome: allowOpt
-                    ? { outcome: "selected", optionId: allowOpt.optionId }
-                    : { outcome: "cancelled" },
-                ...(editedBody.length > 0 ? { _meta: { plurnk: { body: editedBody } } } : {}),
-            } as RequestPermissionResponse);
-            return "continue";
-        }
-
-        if (cmd === "answer") {
-            const gate = resolveRequiredGate(cmd, "/answer @<id> <json>", args[0]);
-            if (!gate) {
-                return "continue";
-            }
-            if (gate.kind !== "elicitation") {
-                writeErrorJsonl(streams.stderr, {
-                    type: "https://problems.plurnk.xyz/client/gate-not-found",
-                    title: "Gate not found",
-                    status: 404,
-                    detail: `Gate @${gate.id} is not an elicitation gate.`,
-                });
-                return "continue";
-            }
-            const afterTargetMatch = line.match(/^\/\S+\s+\S+(?:\r?\n|[ \t])([\s\S]*)$/u);
-            const rawPayload = (afterTargetMatch?.[1] ?? "").trim();
-            let content: Record<string, unknown> = {};
-            if (rawPayload.length > 0) {
-                try {
-                    const parsed = JSON.parse(rawPayload) as unknown;
-                    content =
-                        typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-                            ? (parsed as Record<string, unknown>)
-                            : { answer: parsed };
-                } catch {
-                    content = { answer: rawPayload };
-                }
-            }
-            gate.resolveGate({
-                action: "accept",
-                content: content as Record<string, ElicitationContentValue>,
-            });
+        if (await dispatchGateSlashCommand(cmd, args, line, ctx)) {
             return "continue";
         }
 

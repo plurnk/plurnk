@@ -544,11 +544,7 @@ const compactRuleLabel = (def: Record<string, unknown>, detail: Record<string, u
 };
 
 export const formatScheduleRows = (result: Readonly<Record<string, unknown>>): string => {
-    const definitions = Array.isArray(result.definitions)
-        ? result.definitions
-        : Array.isArray(result.items)
-          ? result.items
-          : [];
+    const definitions = Array.isArray(result.definitions) ? result.definitions : [];
     if (definitions.length === 0) {
         return "schedule: none\n";
     }

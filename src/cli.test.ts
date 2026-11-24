@@ -87,7 +87,7 @@ test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI 
     assert.match(help.stdout, /--session/);
     assert.match(help.stdout, /--persona/);
     assert.match(help.stdout, /--system-prompt/);
-    assert.match(help.stdout, /--timeout-sec/);
+    assert.match(help.stdout, /--timeout-ms/);
 
     const conflict = spawnSync(
         process.execPath,
@@ -119,13 +119,13 @@ test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI 
         fs.mkdirSync(plurnkCfg, { recursive: true });
         fs.writeFileSync(
             path.join(plurnkCfg, ".env"),
-            "PLURNK_CLIENT_MODEL=from-env\nPLURNK_CLIENT_EFFORT=low\nPLURNK_CLIENT_TIMEOUT_SEC=45\n",
+            "PLURNK_CLIENT_MODEL=from-env\nPLURNK_CLIENT_EFFORT=low\nPLURNK_CLIENT_TIMEOUT_MS=45000\n",
         );
         fs.writeFileSync(path.join(plurnkCfg, ".env.local"), "PLURNK_CLIENT_MODEL=from-env-local\n");
         const assembled = assembleClientEnv({ XDG_CONFIG_HOME: tmpXdg });
         assert.equal(assembled.PLURNK_CLIENT_MODEL, "from-env-local");
         assert.equal(assembled.PLURNK_CLIENT_EFFORT, "low");
-        assert.equal(assembled.PLURNK_CLIENT_TIMEOUT_SEC, "45");
+        assert.equal(assembled.PLURNK_CLIENT_TIMEOUT_MS, "45000");
     } finally {
         fs.rmSync(tmpXdg, { recursive: true, force: true });
     }
@@ -789,7 +789,7 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
 
     assert.equal(formatWorkspacesRows({ workspaces: [] }), "(no workspaces; run `plurnk` to create one)\n");
     const workspacesTable = formatWorkspacesRows({
-        workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha", created_at: "2026-10-31" }],
+        workspaces: [{ id: 1, name: "alpha", projectRoot: "/tmp/alpha", createdAt: "2026-10-31" }],
     });
     assert.match(workspacesTable, /name\s+project_root\s+created/u);
     assert.match(workspacesTable, /alpha\s+\/tmp\/alpha\s+2026-10-31/u);
@@ -1040,23 +1040,26 @@ test("{§cli-invocation} {§cli-configuration-source} {§cli-color-policy} {§cl
     assert.equal(envFileDoc.problem.type, "https://problems.plurnk.xyz/client/usage");
     assert.match(envFileDoc.problem.detail, /Environment file not found/u);
 
-    // Switch parsing matrix: invalid switch tokens exit 64; 1/true/yes/on and 0/false/no/off are accepted
+    // Switch parsing matrix: only strict Knob.flag tokens ("0" | "1") are accepted; legacy words exit 64
     for (const [envKey, val] of [
         ["PLURNK_CLIENT_YOLO", "maybe"],
+        ["PLURNK_CLIENT_YOLO", "yes"],
         ["PLURNK_CLIENT_AUTOSTART", "2"],
-        ["PLURNK_CLIENT_NO_GIT", "invalid"],
-        ["PLURNK_CLIENT_JSON", "sometimes"],
+        ["PLURNK_CLIENT_NO_GIT", "on"],
+        ["PLURNK_CLIENT_JSON", "true"],
+        ["PLURNK_CLIENT_BELL", "no"],
     ] as const) {
         const res = runBin(["hello"], { [envKey]: val });
         assert.equal(res.status, 64, `Expected 64 for ${envKey}=${val}`);
     }
     assert.equal(runBin(["--autostart=invalid", "hello"]).status, 64);
+    assert.equal(runBin(["--autostart=off", "hello"]).status, 64);
 
-    // Valid falsy switch spellings ("off", "no") pass switch validation (proceeding to connection refusal exit 1, not 64)
-    const validSwitch = runBin(["--autostart=off", "hello"], {
-        PLURNK_CLIENT_YOLO: "yes",
-        PLURNK_CLIENT_NO_GIT: "on",
-        PLURNK_CLIENT_BELL: "no",
+    // Valid 0/1 switch tokens and ergonomic boolean flags (--no-git) pass switch validation (connection refusal exit 1, not 64)
+    const validSwitch = runBin(["--autostart=0", "--no-git", "hello"], {
+        PLURNK_CLIENT_YOLO: "1",
+        PLURNK_CLIENT_NO_GIT: "0",
+        PLURNK_CLIENT_BELL: "0",
     });
     assert.equal(validSwitch.status, 1);
 
@@ -1675,16 +1678,16 @@ test("{§cli-workspaces-and-sessions}: nextSequentialName and openCliSession all
             if (kind === "workspace.list") {
                 return {
                     workspaces: [
-                        { name: "workspace1", archived_at: "2026-11-20T00:00:00Z" },
-                        { name: "my-repo", archived_at: null },
+                        { name: "workspace1", archivedAt: "2026-11-20T00:00:00Z" },
+                        { name: "my-repo", archivedAt: null },
                     ],
                 };
             }
             if (kind === "workspace.sessions") {
                 return {
                     sessions: [
-                        { name: "session1", archived_at: null },
-                        { name: "session2", archived_at: "2026-11-20T00:00:00Z" },
+                        { name: "session1", archivedAt: null },
+                        { name: "session2", archivedAt: "2026-11-20T00:00:00Z" },
                     ],
                 };
             }

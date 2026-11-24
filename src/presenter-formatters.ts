@@ -337,17 +337,32 @@ export const extractMessageActor = (
             }
             continue;
         }
+        const scheduleMatch = /^schedule:\/\/\/?([^/?#]+)/u.exec(candidate);
+        if (scheduleMatch !== null) {
+            try {
+                const alias = decodeURIComponent(scheduleMatch[1] ?? "").trim();
+                if (alias.length > 0) return `schedule:${alias}`;
+            } catch {
+                // fall through
+            }
+            continue;
+        }
         const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
         if (messageMatch !== null) {
-            const principal = (messageMatch[1] ?? "").trim();
-            if (
-                principal.length > 0 &&
-                principal !== "operator" &&
-                principal !== "anonymous" &&
-                principal !== "client" &&
-                principal !== "owner"
-            ) {
-                return principal;
+            try {
+                const principal = decodeURIComponent(messageMatch[1] ?? "").trim();
+                if (
+                    principal.length > 0 &&
+                    principal !== "operator" &&
+                    principal !== "anonymous" &&
+                    principal !== "client" &&
+                    principal !== "owner" &&
+                    principal !== "_plurnk"
+                ) {
+                    return principal;
+                }
+            } catch {
+                // fall through
             }
         }
     }

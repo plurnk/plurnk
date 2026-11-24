@@ -6,6 +6,7 @@ import {
     abbreviatedCount,
     addDecimal,
     compactTarget,
+    extractMessageActor,
     extractRawString,
     extractScopeToken,
     extractTitleAside,
@@ -631,8 +632,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                         entryId: 605,
                         sessionId: 1,
                         target: "exec:///sh/605",
-                        loop_seq: 6,
-                        turn_seq: 1,
+                        loopSeq: 6,
+                        turnSeq: 1,
                         sequence: 5,
                         channels: [],
                     },
@@ -757,8 +758,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
                         entryId: 701,
                         sessionId: 1,
                         target: "gitea://1",
-                        loop_seq: 6,
-                        turn_seq: 2,
+                        loopSeq: 6,
+                        turnSeq: 2,
                         sequence: 1,
                         channels: [],
                     },
@@ -867,7 +868,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         plurnk: {
             status: {
                 model: null,
-                spawnModel: null,
+                childModel: null,
             },
             providers: [
                 {
@@ -912,7 +913,7 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             plurnk: {
                 status: {
                     model: null,
-                    spawnModel: null,
+                    childModel: null,
                 },
             },
         },
@@ -938,8 +939,8 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     });
     assert.equal(freshPresenter.yolo, false);
 
-    // Client-local `--yolo` / `/yolo` remains true when server `mode` is `"review"`.
-    const localYoloPresenter = new SessionPresenter({
+    // Durable server `configOptions` `mode` is authoritative over initial constructor option (no split-brain shadow state).
+    const convergedModePresenter = new SessionPresenter({
         workspaceName: "alpha",
         sessionName: "session1",
         yolo: true,
@@ -957,13 +958,13 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             },
         ],
     });
-    assert.equal(localYoloPresenter.yolo, true);
+    assert.equal(convergedModePresenter.yolo, false);
 
     freshPresenter.ingestMeta({
         plurnk: {
             status: {
                 model: null,
-                spawnModel: null,
+                childModel: null,
             },
             providers: [
                 {
@@ -1284,8 +1285,8 @@ test("SessionPresenter preserves stream aside and openedAt across live tool_call
                         op: "sh",
                         aside: "launch Bare Pi campaign",
                         openedAt: openedAtIso,
-                        loop_seq: 1,
-                        turn_seq: 1,
+                        loopSeq: 1,
+                        turnSeq: 1,
                         sequence: 2,
                         channels: [],
                     },
@@ -1297,6 +1298,51 @@ test("SessionPresenter preserves stream aside and openedAt across live tool_call
     assert.equal(coldPresenter.activeLiveEntries[0]?.op, "sh");
     assert.equal(coldPresenter.activeLiveEntries[0]?.aside, "launch Bare Pi campaign");
     assert.equal(coldPresenter.activeLiveEntries[0]?.startedAt, Date.parse(openedAtIso));
+
+    // Failed tool_call preserves problem.title, problem.detail, problem.diagnostic, and problem.recovery ({§cli-rendering})
+    const failedFrames = coldPresenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/2/3",
+        name: "read",
+        title: "read (workspace:///missing.txt)",
+        status: "failed",
+        rawOutput: {
+            problem: {
+                title: "Entry not found",
+                detail: "No entry exists at workspace:///missing.txt.",
+                recovery: "Use find to inspect available paths.",
+            },
+        },
+        _meta: { plurnk: { op: "read", status: 404 } },
+    });
+    assert.equal(failedFrames[0]?.kind, "tool_call");
+    if (failedFrames[0]?.kind === "tool_call") {
+        assert.equal(
+            failedFrames[0].outcome,
+            "Entry not found: No entry exists at workspace:///missing.txt.: Use find to inspect available paths.",
+        );
+    }
+
+    // Elapsed clock seeds from daemon claimedAt / terminatedAt on cold attach ({§cli-session-status})
+    const timedPresenter = new SessionPresenter({ workspaceName: "ws", sessionName: "timed" });
+    timedPresenter.ingestMeta({
+        plurnk: {
+            loopSeq: 1,
+            status: {
+                lifecycle: "completed",
+                loopId: 1,
+                loopSeq: 1,
+                claimedAt: "2026-11-23T00:00:00.000Z",
+                terminatedAt: "2026-11-23T00:00:04.200Z",
+            },
+        },
+    });
+    assert.match(timedPresenter.buildStatusBar().formattedStatusLine, /4\.2s/u);
+
+    // extractMessageActor decodes URI components on message://, excludes _plurnk, and extracts schedule:<alias>
+    assert.equal(extractMessageActor({ source: "message://ws/alice%40example.com_a1b" }), "alice@example.com");
+    assert.equal(extractMessageActor({ source: "message://ws/_plurnk_a1b" }), null);
+    assert.equal(extractMessageActor({ source: "schedule:///nightly-check" }), "schedule:nightly-check");
 });
 
 

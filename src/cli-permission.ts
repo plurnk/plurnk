@@ -19,11 +19,7 @@ import { extractRawString, extractTitleTarget } from "./presenter-formatters.ts"
 
 const ACCEPT_ENV_PREFIX = `${["PLURNK", "CLIENT"].join("_")}_ACCEPT_`;
 
-const isTruthySwitch = (value: string | undefined): boolean => {
-    if (value === undefined) return false;
-    const normalized = value.trim().toLowerCase();
-    return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
-};
+const isTruthySwitch = (value: string | undefined): boolean => value !== undefined && value.trim() === "1";
 
 const extractProposalRuntimeAndTool = (
     request: RequestPermissionRequest,

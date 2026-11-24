@@ -99,7 +99,10 @@ const selectBearerToken = (json: {
 
 const computeExpiresAt = (expiresIn: unknown, token: string): number => {
     if (typeof expiresIn === "number" && Number.isFinite(expiresIn)) {
-        const ttlSec = expiresIn > 10 ? expiresIn - 5 : 60;
+        if (expiresIn <= 0) {
+            return Date.now();
+        }
+        const ttlSec = expiresIn > 10 ? expiresIn - 5 : expiresIn;
         return Date.now() + ttlSec * 1000;
     }
     if (isThreeSegmentJwt(token)) {
@@ -208,26 +211,30 @@ const discoverEndpoints = async (origin: string, signal?: AbortSignal): Promise<
         }
     }
 
+    if (
+        asMeta === null ||
+        typeof asMeta.authorization_endpoint !== "string" ||
+        asMeta.authorization_endpoint.length === 0 ||
+        typeof asMeta.token_endpoint !== "string" ||
+        asMeta.token_endpoint.length === 0
+    ) {
+        throw new Error(
+            `OAuth discovery for ${origin} did not advertise authorization_endpoint and token_endpoint.`,
+        );
+    }
     const scope = resourceScopes ?? (usedOpenIdConfiguration ? "openid profile email" : "acp");
     const issuer =
-        typeof asMeta?.issuer === "string" && asMeta.issuer.length > 0
+        typeof asMeta.issuer === "string" && asMeta.issuer.length > 0
             ? asMeta.issuer
             : authServerBase;
-    const issuerBase = issuer.replace(/\/+$/u, "");
-    const authorizationEndpoint =
-        typeof asMeta?.authorization_endpoint === "string" && asMeta.authorization_endpoint.length > 0
-            ? asMeta.authorization_endpoint
-            : `${issuerBase}/oauth/authorize`;
-    const tokenEndpoint =
-        typeof asMeta?.token_endpoint === "string" && asMeta.token_endpoint.length > 0
-            ? asMeta.token_endpoint
-            : `${issuerBase}/oauth/token`;
+    const authorizationEndpoint = asMeta.authorization_endpoint;
+    const tokenEndpoint = asMeta.token_endpoint;
     const revocationEndpoint =
-        typeof asMeta?.revocation_endpoint === "string" && asMeta.revocation_endpoint.length > 0
+        typeof asMeta.revocation_endpoint === "string" && asMeta.revocation_endpoint.length > 0
             ? asMeta.revocation_endpoint
             : undefined;
     const registrationEndpoint =
-        typeof asMeta?.registration_endpoint === "string" && asMeta.registration_endpoint.length > 0
+        typeof asMeta.registration_endpoint === "string" && asMeta.registration_endpoint.length > 0
             ? asMeta.registration_endpoint
             : undefined;
 
@@ -244,6 +251,7 @@ const discoverEndpoints = async (origin: string, signal?: AbortSignal): Promise<
 
 export default class Credential {
     readonly #env: Record<string, string | undefined>;
+    readonly #refreshInFlight = new Map<string, Promise<string | null>>();
     #cachedOrigin: string | null = null;
     #cachedToken: string | null = null;
     #cachedExpiresAt = 0;
@@ -272,6 +280,11 @@ export default class Credential {
             return this.#cachedToken;
         }
 
+        const inflight = this.#refreshInFlight.get(origin);
+        if (inflight !== undefined) {
+            return await inflight;
+        }
+
         const grantsPath = this.grantsPath();
         const store = readGrantsStore(grantsPath);
         const stored = store[origin];
@@ -292,56 +305,92 @@ export default class Credential {
         }
 
         if (typeof stored.refreshToken === "string" && stored.refreshToken.length > 0) {
-            const tokenEndpoint = stored.tokenEndpoint ?? `${origin}/oauth/token`;
-            try {
-                const refreshBody = new URLSearchParams({
-                    grant_type: "refresh_token",
-                    client_id: stored.clientId,
-                    refresh_token: stored.refreshToken,
-                });
-                const res = await fetch(tokenEndpoint, {
-                    method: "POST",
-                    headers: {
-                        "content-type": "application/x-www-form-urlencoded",
-                        accept: "application/json",
-                    },
-                    body: refreshBody.toString(),
-                });
-                if (res.ok) {
-                    const json = (await res.json()) as {
-                        access_token?: unknown;
-                        id_token?: unknown;
-                        refresh_token?: unknown;
-                        expires_in?: unknown;
-                    };
-                    const bearer = selectBearerToken(json);
-                    if (bearer !== null) {
-                        const expiresAt = computeExpiresAt(json.expires_in, bearer);
-                        const updated: StoredGrant = {
-                            ...stored,
-                            accessToken: bearer,
-                            ...(typeof json.refresh_token === "string" && json.refresh_token.length > 0
-                                ? { refreshToken: json.refresh_token }
-                                : {}),
-                            expiresAt,
-                        };
-                        store[origin] = updated;
-                        writeGrantsStore(grantsPath, store);
-                        this.#invalidatedToken = null;
-                        this.#cachedOrigin = origin;
-                        this.#cachedToken = updated.accessToken;
-                        this.#cachedExpiresAt = expiresAt;
-                        return this.#cachedToken;
-                    }
-                } else if (res.status === 400 || res.status === 401) {
-                    delete store[origin];
-                    writeGrantsStore(grantsPath, store);
+            const refreshable = { ...stored, refreshToken: stored.refreshToken };
+            const refreshPromise = this.#refreshOrigin(origin, grantsPath, refreshable).finally(() => {
+                if (this.#refreshInFlight.get(origin) === refreshPromise) {
+                    this.#refreshInFlight.delete(origin);
                 }
-            } catch {
-                // network error during refresh
-            }
+            });
+            this.#refreshInFlight.set(origin, refreshPromise);
+            return await refreshPromise;
         }
 
+        return null;
+    }
+
+    async #refreshOrigin(
+        origin: string,
+        grantsPath: string,
+        stored: StoredGrant & { readonly refreshToken: string },
+    ): Promise<string | null> {
+        if (typeof stored.tokenEndpoint !== "string" || stored.tokenEndpoint.length === 0) {
+            return null;
+        }
+        try {
+            const refreshBody = new URLSearchParams({
+                grant_type: "refresh_token",
+                client_id: stored.clientId,
+                refresh_token: stored.refreshToken,
+            });
+            const res = await fetch(stored.tokenEndpoint, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/x-www-form-urlencoded",
+                    accept: "application/json",
+                },
+                body: refreshBody.toString(),
+            });
+            if (res.ok) {
+                const json = (await res.json()) as {
+                    access_token?: unknown;
+                    id_token?: unknown;
+                    refresh_token?: unknown;
+                    expires_in?: unknown;
+                };
+                const bearer = selectBearerToken(json);
+                if (bearer !== null) {
+                    const expiresAt = computeExpiresAt(json.expires_in, bearer);
+                    const updated: StoredGrant = {
+                        ...stored,
+                        accessToken: bearer,
+                        ...(typeof json.refresh_token === "string" && json.refresh_token.length > 0
+                            ? { refreshToken: json.refresh_token }
+                            : {}),
+                        expiresAt,
+                    };
+                    const latestStore = readGrantsStore(grantsPath);
+                    latestStore[origin] = updated;
+                    writeGrantsStore(grantsPath, latestStore);
+                    this.#invalidatedToken = null;
+                    this.#cachedOrigin = origin;
+                    this.#cachedToken = updated.accessToken;
+                    this.#cachedExpiresAt = expiresAt;
+                    return this.#cachedToken;
+                }
+            } else if (res.status === 400 || res.status === 401) {
+                const latestStore = readGrantsStore(grantsPath);
+                const diskGrant = latestStore[origin];
+                if (
+                    diskGrant !== undefined &&
+                    diskGrant.refreshToken !== stored.refreshToken &&
+                    typeof diskGrant.accessToken === "string" &&
+                    diskGrant.accessToken.length > 0 &&
+                    Date.now() < diskGrant.expiresAt
+                ) {
+                    this.#invalidatedToken = null;
+                    this.#cachedOrigin = origin;
+                    this.#cachedToken = diskGrant.accessToken;
+                    this.#cachedExpiresAt = diskGrant.expiresAt;
+                    return this.#cachedToken;
+                }
+                if (diskGrant !== undefined && diskGrant.refreshToken === stored.refreshToken) {
+                    delete latestStore[origin];
+                    writeGrantsStore(grantsPath, latestStore);
+                }
+            }
+        } catch {
+            // network error during refresh
+        }
         return null;
     }
 

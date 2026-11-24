@@ -59,7 +59,7 @@ export const CLIENT_OPTIONS = {
     "env-file": { type: "string", multiple: true },
     "env-file-if-exists": { type: "string", multiple: true },
     "max-turns": { type: "string" },
-    "timeout-sec": { type: "string" },
+    "timeout-ms": { type: "string" },
     "files-items": { type: "string" },
     "preview-lines": { type: "string" },
     "history-entries": { type: "string" },
@@ -198,7 +198,7 @@ options:
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
                           descendants' turns and every bare call (else the daemon's ceiling).
-      --timeout-sec <s>   cancel each prompt loop (session/cancel) after <s> seconds;
+      --timeout-ms <ms>   cancel each prompt loop (session/cancel) after <ms> milliseconds;
                           CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
@@ -290,16 +290,16 @@ const parseSwitchValue = (name: string, raw: string | undefined, defaultValue = 
     if (raw === undefined || raw === "") {
         return defaultValue;
     }
-    const normalized = raw.trim().toLowerCase();
-    if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    const normalized = raw.trim();
+    if (normalized === "1") {
         return true;
     }
-    if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    if (normalized === "0") {
         return false;
     }
     throw usageError(
         "Invalid switch value",
-        `${name} expects 1/true/yes/on or 0/false/no/off (got ${JSON.stringify(raw)}).`,
+        `${name} expects 0 or 1 (got ${JSON.stringify(raw)}).`,
     );
 };
 
@@ -319,8 +319,7 @@ const detectInitialJsonMode = (rawArgs: readonly string[], rawEnvJson: string | 
     if (rawEnvJson === undefined) {
         return false;
     }
-    const normalized = rawEnvJson.trim().toLowerCase();
-    return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+    return rawEnvJson.trim() === "1";
 };
 
 const readVersion = (): string => {
@@ -652,10 +651,10 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             ? Number.parseInt(maxTurnsRaw, 10)
             : undefined;
 
-        const timeoutRaw = typeof parsed.values["timeout-sec"] === "string"
-            ? parsed.values["timeout-sec"]
-            : env.PLURNK_CLIENT_TIMEOUT_SEC;
-        const timeoutSec = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
+        const timeoutRaw = typeof parsed.values["timeout-ms"] === "string"
+            ? parsed.values["timeout-ms"]
+            : env.PLURNK_CLIENT_TIMEOUT_MS;
+        const timeoutMs = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
             ? Number.parseFloat(timeoutRaw)
             : undefined;
 
@@ -714,7 +713,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
             ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
             ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
-            ...(timeoutSec !== undefined && Number.isFinite(timeoutSec) ? { timeoutSec } : {}),
+            ...(timeoutMs !== undefined && Number.isFinite(timeoutMs) ? { timeoutMs } : {}),
             autostart,
             daemonTimeoutMs,
             oauthTimeoutMs,

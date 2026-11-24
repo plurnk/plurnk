@@ -335,8 +335,8 @@ export const formatWorkspacesRows = (result: Record<string, unknown>): string =>
         const w = item as Record<string, unknown>;
         return [
             String(w.name ?? w.id ?? ""),
-            typeof w.project_root === "string" && w.project_root.length > 0 ? w.project_root : "(headless)",
-            typeof w.created_at === "string" ? w.created_at : "",
+            typeof w.projectRoot === "string" && w.projectRoot.length > 0 ? w.projectRoot : "(headless)",
+            typeof w.createdAt === "string" ? w.createdAt : "",
         ];
     });
     return `${renderTable(["name", "project_root", "created"], rows)}\n`;
@@ -346,7 +346,7 @@ export const formatLogEntries = (entries: readonly unknown[]): string => {
     let out = "";
     for (const entry of entries) {
         const e = entry as Record<string, unknown>;
-        out += `${String(e.loop_seq)}/${String(e.turn_seq)}/${String(e.sequence)}\t${String(e.op ?? "")}\t${String(e.status_rx ?? e.status ?? "")}\n`;
+        out += `${String(e.loopSeq)}/${String(e.turnSeq)}/${String(e.sequence)}\t${String(e.op ?? "")}\t${String(e.statusRx ?? e.status ?? "")}\n`;
     }
     return out;
 };
@@ -397,11 +397,7 @@ export const executeFamilyCommand = async (
         }
         if (parsedSchedule.kind === "inspect") {
             const listed = await client.action<Record<string, unknown>>("workspace.schedule.list", {}, binding);
-            const defs = Array.isArray(listed.definitions)
-                ? listed.definitions
-                : Array.isArray(listed.items)
-                  ? listed.items
-                  : [];
+            const defs = Array.isArray(listed.definitions) ? listed.definitions : [];
             const found = defs.find(
                 (item): item is Record<string, unknown> =>
                     Contracts.isRecord(item) && item.alias === parsedSchedule.alias,
@@ -497,7 +493,6 @@ export const executeFamilyCommand = async (
         }
         const hasStructuredFamilyPayload =
             Array.isArray(result.definitions) ||
-            Array.isArray(result.items) ||
             Array.isArray(result.candidates) ||
             Array.isArray(result.skills) ||
             Contracts.isRecord(result.definition) ||

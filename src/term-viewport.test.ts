@@ -58,7 +58,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
                     sessionName: "session1",
                     status: {
                         model: null,
-                        spawnModel: null,
+                        childModel: null,
                     },
                     providers: [
                         {
@@ -87,7 +87,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
                     sessionName: "session1",
                     status: {
                         model: null,
-                        spawnModel: null,
+                        childModel: null,
                     },
                     providers: [
                         {
@@ -105,13 +105,13 @@ test("{§cli-repl-mode} {§cli-session-status}: runTermViewport processes typed 
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
-                    return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
+                    return { workspaceId: 1, workspaceName: "alpha", projectRoot: "/tmp/alpha", projectLabel: "alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
                     return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                    return { workspaces: [{ id: 1, name: "alpha", projectRoot: "/tmp/alpha" }] };
                 }
                 if (params.kind === "models.list") {
                     return {
@@ -299,13 +299,13 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: Term viewport 
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
-                    return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
+                    return { workspaceId: 1, workspaceName: "alpha", projectRoot: "/tmp/alpha", projectLabel: "alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
                     return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                    return { workspaces: [{ id: 1, name: "alpha", projectRoot: "/tmp/alpha" }] };
                 }
                 if (params.kind === "models.list") {
                     return {
@@ -659,13 +659,13 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
-                    return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
+                    return { workspaceId: 1, workspaceName: "alpha", projectRoot: "/tmp/alpha", projectLabel: "alpha" };
                 }
                 if (params.kind === "workspace.sessions") {
                     return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                    return { workspaces: [{ id: 1, name: "alpha", projectRoot: "/tmp/alpha" }] };
                 }
                 if (params.kind === "models.list") {
                     return {
@@ -905,13 +905,13 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport retires 
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
-                    return { id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" };
+                    return { workspaceId: 1, workspaceName: "plurnk-service", projectRoot: "/tmp/plurnk-service", projectLabel: "plurnk-service" };
                 }
                 if (params.kind === "workspace.sessions") {
                     return { sessions: [{ id: 1, name: "service", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" }] };
+                    return { workspaces: [{ id: 1, name: "plurnk-service", projectRoot: "/tmp/plurnk-service" }] };
                 }
                 return {};
             },
@@ -1287,13 +1287,13 @@ test("{§cli-markdown-projection} {§cli-session-status}: Term viewport anchors 
             (raw) => raw as { kind: string },
             async ({ params }) => {
                 if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
-                    return { id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" };
+                    return { workspaceId: 1, workspaceName: "plurnk-service", projectRoot: "/tmp/plurnk-service", projectLabel: "plurnk-service" };
                 }
                 if (params.kind === "workspace.sessions") {
                     return { sessions: [{ id: 1, name: "service", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" }] };
+                    return { workspaces: [{ id: 1, name: "plurnk-service", projectRoot: "/tmp/plurnk-service" }] };
                 }
                 return {};
             },
@@ -1755,7 +1755,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                     return { sessions: [{ id: 1, name: "session1", lifecycle: "idle" }] };
                 }
                 if (params.kind === "workspace.list") {
-                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                    return { workspaces: [{ id: 1, name: "alpha", projectRoot: "/tmp/alpha" }] };
                 }
                 if (params.kind === "models.list") {
                     return {
@@ -2985,7 +2985,6 @@ test("{§cli-inline-review} {§cli-repl-mode} {§cli-rendering}: empty-composer 
         assert.match(stripVtAndApc(termWrites.join("")), /yolo: on/u);
         assert.deepEqual(permissionOutcome, {
             outcome: { outcome: "selected", optionId: "allow" },
-            _meta: { plurnk: { outcome: "client_yolo" } },
         });
 
         inputCallback!("\x04");
@@ -3015,7 +3014,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
                     sessionName: "session1",
-                    status: { model: null, spawnModel: null },
+                    status: { model: null, childModel: null },
                     providers: [],
                 },
             },
@@ -3026,7 +3025,7 @@ test("{§cli-repl-mode} {§cli-inline-review}: CSI-u Ctrl+Enter and Super+Enter 
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
                     sessionName: "session1",
-                    status: { model: null, spawnModel: null },
+                    status: { model: null, childModel: null },
                     providers: [],
                 },
             },

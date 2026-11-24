@@ -65,7 +65,7 @@ Runtime, connection, or action failure.
 The loop reached its turn limit.
 .TP
 .B 3
-The loop was cancelled or timed out (\\-\\-timeout\\-sec).
+The loop was cancelled or timed out (\\-\\-timeout\\-ms).
 .TP
 .B 4
 The loop failed, or a script returned an unsuccessful operation.

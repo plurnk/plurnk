@@ -256,6 +256,15 @@ export const runReplSession = async (
             return;
         }
 
+        if (SessionUpdate.isConfigOptionUpdate(update)) {
+            const modeOpt = update.configOptions.find((o) => o.configId === "mode");
+            if (modeOpt !== undefined && "currentValue" in modeOpt && typeof modeOpt.currentValue === "string") {
+                currentYolo = modeOpt.currentValue === "accept";
+            }
+            writeEventJsonl(streams.events, update);
+            return;
+        }
+
         if (SessionUpdate.isCustom(update)) {
             const rawNotice = (
                 update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
@@ -692,6 +701,10 @@ export const runReplSession = async (
                 }
             }
         }
+        const boundModeOpt = nextSession.configOptions.find((o) => o.configId === "mode");
+        if (boundModeOpt !== undefined && "currentValue" in boundModeOpt && typeof boundModeOpt.currentValue === "string") {
+            currentYolo = boundModeOpt.currentValue === "accept";
+        }
         emitSessionBound(nextSession, {
             sessions: Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [],
             workspaces: Array.isArray(workspacesRes?.workspaces) ? workspacesRes.workspaces : [],
@@ -809,6 +822,10 @@ export const runReplSession = async (
                 .action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>("workspace.list", {})
                 .catch(() => undefined),
         ]);
+        const boundModeOpt = nextSession.configOptions.find((o) => o.configId === "mode");
+        if (boundModeOpt !== undefined && "currentValue" in boundModeOpt && typeof boundModeOpt.currentValue === "string") {
+            currentYolo = boundModeOpt.currentValue === "accept";
+        }
         emitSessionBound(nextSession, {
             sessions: Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [],
             workspaces: Array.isArray(workspacesRes?.workspaces) ? workspacesRes.workspaces : [],
@@ -824,6 +841,41 @@ export const runReplSession = async (
         workspace: currentWorkspace,
         session: currentSessionName,
     });
+
+    const sendPromptLine = (promptText: string, isQuestionPrompt = false): "continue" => {
+        let finalPrompt = promptText;
+        if (stagedComposerText.length > 0) {
+            finalPrompt = finalPrompt.startsWith(stagedComposerText)
+                ? finalPrompt
+                : `${stagedComposerText}\n${finalPrompt}`;
+            stagedComposerText = "";
+        }
+        const openPaths = extractOpenPaths(finalPrompt, currentProjectRoot);
+        currentLifecycle = "running";
+        void client
+            .prompt(session.sessionId, buildPromptBlocks(finalPrompt, session.availableCommands), {
+                plurnk: {
+                    interactive: !options.auto,
+                    tools: !options.auto ? ["question", "mcp_input_required"] : [],
+                    descendants: true,
+                    control: true,
+                    ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
+                    ...(options.auto ? { envelope: { auto: true } } : {}),
+                    ...(isQuestionPrompt ? { proposalPolicy: "review" } : {}),
+                    ...(openPaths.length > 0 ? { openPaths } : {}),
+                },
+            })
+            .catch((err) => {
+                currentLifecycle = "failed";
+                writeErrorJsonl(streams.stderr, {
+                    type: "https://problems.plurnk.xyz/client/prompt-failed",
+                    title: "Prompt failed",
+                    status: 500,
+                    detail: err instanceof Error ? err.message : String(err),
+                });
+            });
+        return "continue";
+    };
 
     const dispatchLine = async (rawLine: string): Promise<"continue" | "quit"> => {
         const line = rawLine.trim();
@@ -867,8 +919,9 @@ export const runReplSession = async (
         }
         const expandedLearn = resolvedLearn?.ok === true ? resolvedLearn.prompt : null;
 
-        if (expandedLearn === null && line.startsWith("/")) {
-            return await dispatchSlashCommand(line, {
+        if (expandedLearn === null && (line.startsWith("/") || line === "?")) {
+            const slashLine = line === "?" ? "/help" : line;
+            return await dispatchSlashCommand(slashLine, {
                 client,
                 options,
                 streams,
@@ -903,7 +956,19 @@ export const runReplSession = async (
                 adoptForkedSession,
                 emitSessionBound,
                 dispatchLine,
+                forwardPromptLine: async (forwarded) => sendPromptLine(forwarded, false),
             });
+        }
+
+        const leadingTrimmed = rawLine.trimStart();
+        if (leadingTrimmed === ":" || /^:\s+$/u.test(leadingTrimmed)) {
+            writeErrorJsonl(streams.stderr, {
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Empty literal prompt",
+                status: 400,
+                detail: "usage: : <prompt>",
+            });
+            return "continue";
         }
 
         if (line.startsWith("!")) {
@@ -936,7 +1001,7 @@ export const runReplSession = async (
         }
 
         const isMcpExpression =
-            !rawLine.trimStart().startsWith(": ") &&
+            !leadingTrimmed.startsWith(": ") &&
             /^(?:await\s+)?plurnk\.[a-zA-Z0-9_]+\s*\(/u.test(line.trimStart());
         if (isMcpExpression) {
             try {
@@ -959,6 +1024,7 @@ export const runReplSession = async (
         if (line.startsWith("...")) {
             const injected = line.slice(3).trimStart();
             if (injected.length === 0) return "continue";
+            const injectedOpenPaths = extractOpenPaths(injected, currentProjectRoot);
             void client
                 .prompt(session.sessionId, buildPromptBlocks(injected, session.availableCommands), {
                     plurnk: {
@@ -966,7 +1032,9 @@ export const runReplSession = async (
                         tools: !options.auto ? ["question", "mcp_input_required"] : [],
                         descendants: true,
                         control: true,
+                        ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                         ...(options.auto ? { envelope: { auto: true } } : {}),
+                        ...(injectedOpenPaths.length > 0 ? { openPaths: injectedOpenPaths } : {}),
                     },
                 })
                 .catch((err) => {
@@ -986,42 +1054,11 @@ export const runReplSession = async (
             forceReviewNextRun = true;
             isQuestionPrompt = true;
             promptText = line.slice(1).trimStart();
-        } else if (rawLine.trimStart().startsWith(": ")) {
-            promptText = rawLine.trimStart().slice(2);
+        } else if (leadingTrimmed.startsWith(": ")) {
+            promptText = leadingTrimmed.slice(2);
         }
 
-        if (stagedComposerText.length > 0) {
-            promptText = promptText.startsWith(stagedComposerText)
-                ? promptText
-                : `${stagedComposerText}\n${promptText}`;
-            stagedComposerText = "";
-        }
-
-        const openPaths = extractOpenPaths(promptText, currentProjectRoot);
-        currentLifecycle = "running";
-        void client
-            .prompt(session.sessionId, buildPromptBlocks(promptText, session.availableCommands), {
-                plurnk: {
-                    interactive: !options.auto,
-                    tools: !options.auto ? ["question", "mcp_input_required"] : [],
-                    descendants: true,
-                    control: true,
-                    ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-                    ...(options.auto ? { envelope: { auto: true } } : {}),
-                    ...(isQuestionPrompt ? { proposalPolicy: "review" } : {}),
-                    ...(openPaths.length > 0 ? { openPaths } : {}),
-                },
-            })
-            .catch((err) => {
-                currentLifecycle = "failed";
-                writeErrorJsonl(streams.stderr, {
-                    type: "https://problems.plurnk.xyz/client/prompt-failed",
-                    title: "Prompt failed",
-                    status: 500,
-                    detail: err instanceof Error ? err.message : String(err),
-                });
-            });
-        return "continue";
+        return sendPromptLine(promptText, isQuestionPrompt);
     };
 
     const rl = readline.createInterface({

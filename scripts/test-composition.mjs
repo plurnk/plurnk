@@ -222,7 +222,7 @@ try {
         try {
             completed = await runClient(clientBin, [
                 "--json", "--workspace", "packed-composition", "--session", "durable-session",
-                "--project-root", "", "--max-turns", "2", "--timeout-sec", "20",
+                "--project-root", "", "--max-turns", "2", "--timeout-ms", "20000",
                 ...(selector === undefined ? [] : ["--model", selector]),
                 prompt,
             ], { cwd: install, env, timeout: 30_000 });
@@ -289,7 +289,7 @@ try {
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
         "--json", "--yolo", "--workspace", "packed-delegation", "--session", "delegation-parent",
-        "--project-root", delegatedRoot, "--max-turns", "8", "--timeout-sec", "30",
+        "--project-root", delegatedRoot, "--max-turns", "8", "--timeout-ms", "30000",
         "Exercise descendant proposal composition.",
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
@@ -329,7 +329,7 @@ try {
     const rows = JSON.parse(log.stdout);
     const entries = Array.isArray(rows) ? rows : rows.entries;
     if (!Array.isArray(entries) || !entries.some((entry) =>
-        Number.isInteger(entry.session_id) && Number.isInteger(entry.loop_id) && Number.isInteger(entry.turn_id))) {
+        Number.isInteger(entry.sessionId) && Number.isInteger(entry.loopId) && Number.isInteger(entry.turnId))) {
         throw new Error(`packed run created no durable session/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
 

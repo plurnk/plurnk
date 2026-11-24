@@ -143,7 +143,7 @@ const createMockAcpServer = async () => {
                 if (params.kind === "workspace.list") {
                     return {
                         workspaces: [
-                            { id: 1, name: "test-ws", project_root: "/tmp", project_label: "test-ws" },
+                            { id: 1, name: "test-ws", projectRoot: "/tmp", projectLabel: "test-ws" },
                         ],
                     };
                 }
@@ -158,19 +158,21 @@ const createMockAcpServer = async () => {
                     const items = [
                         {
                             id: 1,
-                            sessionId: 1,
                             sequence: 1,
                             status: 200,
-                            prompt: "First loop question\nSecond line",
-                            promptSource: "acp://operator/sessions/1%23repl01/messages/m1",
+                            lifecycle: "completed",
+                            opening: "First loop question",
+                            continued: true,
+                            source: "acp://operator/sessions/1%23repl01/messages/m1",
                         },
                         {
                             id: 2,
-                            sessionId: 1,
                             sequence: 2,
                             status: 499,
-                            prompt: "Cancelled loop",
-                            promptSource: "session://helper",
+                            lifecycle: "cancelled",
+                            opening: "Cancelled loop",
+                            continued: false,
+                            source: "session://helper",
                         },
                     ];
                     if (typeof params.params?.loopSeq === "number") {

@@ -81,6 +81,7 @@ export interface ReplSlashCommandContext {
     adoptForkedSession(forked: ForkSessionResponse, requestedName?: string): Promise<AcpSession>;
     emitSessionBound(session: AcpSession): void;
     dispatchLine(rawLine: string): Promise<"continue" | "quit">;
+    forwardPromptLine?(rawLine: string): Promise<"continue" | "quit">;
 }
 
 export const dispatchSlashCommand = async (
@@ -233,11 +234,11 @@ export const dispatchSlashCommand = async (
         if (cmd === "yolo") {
             const session = ctx.getSession();
             const modeOpt = session.configOptions.find((o) => o.configId === "mode");
-            const currentServerAccept =
-                modeOpt !== undefined &&
-                "currentValue" in modeOpt &&
-                modeOpt.currentValue === "accept";
-            const nextYolo = !(ctx.getYolo() || currentServerAccept);
+            const currentAccept =
+                modeOpt !== undefined && "currentValue" in modeOpt
+                    ? modeOpt.currentValue === "accept"
+                    : ctx.getYolo();
+            const nextYolo = !currentAccept;
             ctx.setYolo(nextYolo);
             if (modeOpt !== undefined) {
                 const res = await client.setConfigOption(
@@ -266,8 +267,7 @@ export const dispatchSlashCommand = async (
                         outcome: allowOpt
                             ? { outcome: "selected", optionId: allowOpt.optionId }
                             : { outcome: "cancelled" },
-                        _meta: { plurnk: { outcome: "client_yolo" } },
-                    } as RequestPermissionResponse);
+                    });
                 }
             }
             return "continue";
@@ -547,30 +547,26 @@ export const dispatchSlashCommand = async (
             }
             for (const l of items) {
                 const seq = String(l.sequence ?? "");
-                const rawPrompt = typeof l.prompt === "string" ? l.prompt : "";
-                const nonEmptyLines = rawPrompt
-                    .split(/\r?\n/u)
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                const firstLine = nonEmptyLines[0] ?? "";
-                const clipped = firstLine.length > 240 ? firstLine.slice(0, 240) : firstLine;
-                const ellipsis = nonEmptyLines.length > 1 || firstLine.length > 240 ? "…" : "";
-                const rawSource = typeof l.promptSource === "string" ? l.promptSource : "";
+                const opening = typeof l.opening === "string" ? l.opening : "";
+                const clipped = opening.length > 240 ? opening.slice(0, 240) : opening;
+                const ellipsis = l.continued === true || opening.length > 240 ? "…" : "";
+                const rawSource = typeof l.source === "string" ? l.source : "";
                 const sender =
                     rawSource.length > 0 && !rawSource.startsWith("acp:")
                         ? `${rawSource.replace(/^session:\/\//u, "~")}: `
                         : "";
                 const status = typeof l.status === "number" ? l.status : 200;
+                const lifecycle = typeof l.lifecycle === "string" ? l.lifecycle : "";
                 const mark =
-                    status === 100
+                    status === 100 || lifecycle === "queued"
                         ? " ⏳"
-                        : status === 102
+                        : status === 102 || lifecycle === "running"
                           ? " ⌛︎"
-                          : status === 202
+                          : status === 202 || lifecycle === "parked"
                             ? " 💤"
-                            : status === 499
+                            : status === 499 || lifecycle === "cancelled"
                               ? " 🛑"
-                              : status >= 400
+                              : status >= 400 || lifecycle === "failed"
                                 ? " ❌"
                                 : "";
                 streams.stdout.write(`  ${seq}: ${sender}${clipped}${ellipsis}${mark}\n`);
@@ -622,15 +618,12 @@ export const dispatchSlashCommand = async (
                 }
             }
             const history = [...extractChronologicalHistory(tempSession)];
-            if (
-                typeof targetLoop.prompt === "string" &&
-                targetLoop.prompt.length > 0 &&
-                !history.some((h) => h.kind === "user_message")
-            ) {
+            const loopOpening = typeof targetLoop.opening === "string" ? targetLoop.opening : "";
+            if (loopOpening.length > 0 && !history.some((h) => h.kind === "user_message")) {
                 history.unshift({
                     kind: "user_message",
                     id: `loop-${String(targetSeq)}`,
-                    text: targetLoop.prompt,
+                    text: loopOpening,
                     blocks: [],
                 });
             }
@@ -792,7 +785,7 @@ export const dispatchSlashCommand = async (
         const configMap: Record<string, string> = {
             model: "model",
             effort: "thought_level",
-            child: "spawn_model",
+            child: "child",
             mode: "mode",
             persona: "persona",
         };
@@ -870,11 +863,19 @@ export const dispatchSlashCommand = async (
             return "continue";
         }
 
+        const rawCmd = parts[0] ?? "";
+        const advertisedMatch = ctx.getSession().availableCommands.some(
+            (c) => c.type === "command" && c.name.toLowerCase() === rawCmd.toLowerCase(),
+        );
+        if (advertisedMatch && ctx.forwardPromptLine !== undefined) {
+            return await ctx.forwardPromptLine(line);
+        }
+
         writeErrorJsonl(streams.stderr, {
             type: "https://problems.plurnk.xyz/client/unknown-command",
             title: "Unknown command",
             status: 400,
-            detail: `Unknown interactive command: /${cmd}`,
+            detail: `Unknown interactive command: /${rawCmd || cmd}`,
         });
     } catch (err) {
         writeErrorJsonl(streams.stderr, {

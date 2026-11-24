@@ -771,9 +771,13 @@ test("{§cli-problems-and-notices} Credential.login registers RFC 7591 public cl
     writeFileSync(grantsFile, JSON.stringify(storedMap), { mode: 0o600 });
     cred.invalidate();
 
-    const refreshed = await cred.token(acpUrl);
+    const [refreshed, concurrentRefreshed] = await Promise.all([
+        cred.token(acpUrl),
+        cred.token(acpUrl),
+    ]);
     assert.equal(refreshed, "rotated-access-token");
-    assert.equal(refreshCalls, 1);
+    assert.equal(concurrentRefreshed, "rotated-access-token");
+    assert.equal(refreshCalls, 1, "concurrent in-process token() calls share one single-flight refresh");
 
     const logoutRes = await cred.logout(acpUrl);
     assert.equal(logoutRes.revoked, true);

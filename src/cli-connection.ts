@@ -32,7 +32,7 @@ export interface CliCommonOptions {
     readonly workspaceSettings?: Record<string, unknown>;
     readonly sessionEnv?: Record<string, string>;
     readonly maxTurns?: number;
-    readonly timeoutSec?: number;
+    readonly timeoutMs?: number;
     readonly autostart: boolean;
     readonly daemonTimeoutMs: number;
     readonly oauthTimeoutMs: number;
@@ -352,6 +352,16 @@ const applyInitialConfig = async (
         session.configOptions = [...res.configOptions];
         if (res._meta !== undefined && res._meta !== null) {
             session.meta = mergeSessionMeta(session.meta, res._meta as Record<string, unknown>);
+        }
+    }
+    if (options.interactive === true && options.yolo) {
+        const modeOpt = session.configOptions.find((o) => o.configId === "mode");
+        if (modeOpt !== undefined && (!("currentValue" in modeOpt) || modeOpt.currentValue !== "accept")) {
+            const res = await client.setConfigOption(session.sessionId, "mode", "accept");
+            session.configOptions = [...res.configOptions];
+            if (res._meta !== undefined && res._meta !== null) {
+                session.meta = mergeSessionMeta(session.meta, res._meta as Record<string, unknown>);
+            }
         }
     }
     if (options.sessionEnv !== undefined && Object.keys(options.sessionEnv).length > 0) {

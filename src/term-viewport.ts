@@ -108,6 +108,7 @@ export const runTermViewport = async (
     let cachedSessions: string[] = [];
     let cachedWorkspaces: string[] = [];
     let cachedSkills: { readonly name: string; readonly description: string }[] = [];
+    let cachedAvailableCommands: { readonly name: string; readonly description: string }[] = [];
     let currentPersona: string | null =
         options.persona !== undefined && options.persona.length > 0 && options.persona !== "none"
             ? options.persona
@@ -119,23 +120,56 @@ export const runTermViewport = async (
     const cachedFamilyAliases = new Map<string, string[]>();
 
     const applyAvailableCommandsToCache = (rawCommands: readonly unknown[]): void => {
-        const next: { readonly name: string; readonly description: string }[] = [];
-        const seen = new Set<string>();
+        const nextSkills: { readonly name: string; readonly description: string }[] = [];
+        const nextCommands: { readonly name: string; readonly description: string }[] = [];
+        const seenSkills = new Set<string>();
+        const seenCommands = new Set<string>();
         for (const rawCmd of rawCommands) {
             if (!rawCmd || typeof rawCmd !== "object") continue;
             const cmd = rawCmd as { type?: unknown; name?: unknown; description?: unknown };
-            if (cmd.type !== "skill" || typeof cmd.name !== "string" || cmd.name.length === 0) continue;
-            if (seen.has(cmd.name)) continue;
-            seen.add(cmd.name);
-            next.push({
-                name: cmd.name,
-                description:
-                    typeof cmd.description === "string" && cmd.description.length > 0
-                        ? cmd.description
-                        : "skill",
-            });
+            if (typeof cmd.name !== "string" || cmd.name.length === 0) continue;
+            if (cmd.type === "skill") {
+                if (seenSkills.has(cmd.name)) continue;
+                seenSkills.add(cmd.name);
+                nextSkills.push({
+                    name: cmd.name,
+                    description:
+                        typeof cmd.description === "string" && cmd.description.length > 0
+                            ? cmd.description
+                            : "skill",
+                });
+            } else if (cmd.type === "command") {
+                if (seenCommands.has(cmd.name)) continue;
+                seenCommands.add(cmd.name);
+                nextCommands.push({
+                    name: cmd.name,
+                    description:
+                        typeof cmd.description === "string" && cmd.description.length > 0
+                            ? cmd.description
+                            : "command",
+                });
+            }
         }
-        cachedSkills = next;
+        cachedSkills = nextSkills;
+        cachedAvailableCommands = nextCommands;
+    };
+
+    const flattenSelectOptionValues = (optionsList: readonly unknown[] | undefined): string[] => {
+        if (!Array.isArray(optionsList)) return [];
+        const values: string[] = [];
+        for (const entry of optionsList) {
+            if (!entry || typeof entry !== "object") continue;
+            if ("options" in entry && Array.isArray((entry as { options?: unknown }).options)) {
+                for (const sub of (entry as { options: readonly unknown[] }).options) {
+                    if (sub && typeof sub === "object" && typeof (sub as { value?: unknown }).value === "string") {
+                        values.push((sub as { value: string }).value);
+                    }
+                }
+            } else if (typeof (entry as { value?: unknown }).value === "string") {
+                values.push((entry as { value: string }).value);
+            }
+        }
+        return values;
     };
 
     const applyConfigOptionsToCache = (rawOptions: readonly unknown[]): void => {
@@ -143,16 +177,16 @@ export const runTermViewport = async (
             const opt = rawOpt as {
                 configId?: string;
                 currentValue?: string;
-                options?: ReadonlyArray<{ value?: string }>;
+                options?: readonly unknown[];
             };
             if (opt.configId === "model") {
                 if (typeof opt.currentValue === "string") {
                     presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
                 }
-                if (Array.isArray(opt.options)) {
-                    const incoming = opt.options
-                        .map((o) => String(o.value ?? ""))
-                        .filter((v) => v.length > 0 && v !== "none");
+                const incoming = flattenSelectOptionValues(opt.options).filter(
+                    (v) => v.length > 0 && v !== "none",
+                );
+                if (incoming.length > 0) {
                     cachedModels = [...new Set([...incoming, ...cachedModels])];
                 }
             } else if (opt.configId === "thought_level") {
@@ -162,8 +196,9 @@ export const runTermViewport = async (
                         presenter.effortSource = "default";
                     }
                 }
-                if (Array.isArray(opt.options)) {
-                    cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
+                const efforts = flattenSelectOptionValues(opt.options).filter(Boolean);
+                if (efforts.length > 0) {
+                    cachedEfforts = efforts;
                 }
             } else if (opt.configId === "persona") {
                 if (typeof opt.currentValue === "string") {
@@ -172,14 +207,15 @@ export const runTermViewport = async (
                             ? opt.currentValue
                             : null;
                 }
-                if (Array.isArray(opt.options)) {
-                    cachedPersonas = opt.options
-                        .map((o) => String(o.value ?? ""))
-                        .filter((v) => v.length > 0 && v !== "custom");
+                const personas = flattenSelectOptionValues(opt.options).filter(
+                    (v) => v.length > 0 && v !== "custom",
+                );
+                if (personas.length > 0) {
+                    cachedPersonas = personas;
                 }
-            } else if (opt.configId === "spawn_model") {
+            } else if (opt.configId === "child") {
                 if (typeof opt.currentValue === "string") {
-                    presenter.spawnModel =
+                    presenter.childModel =
                         opt.currentValue.length > 0 && opt.currentValue !== "inherit"
                             ? opt.currentValue
                             : null;
@@ -275,7 +311,7 @@ export const runTermViewport = async (
                       yolo: presenter.yolo,
                       mode: currentMode,
                       persona: currentPersona,
-                      childModel: presenter.spawnModel,
+                      childModel: presenter.childModel,
                   }),
         );
     };
@@ -371,9 +407,15 @@ export const runTermViewport = async (
                 return;
             }
         }
+        const leadingTrimmed = rawSubmission.trimStart();
+        const slashVerb = trimmed.startsWith("/") ? (trimmed.slice(1).split(/\s+/u)[0] ?? "") : "";
+        const isAdvertisedPromptCmd =
+            slashVerb.includes(":") &&
+            cachedAvailableCommands.some((c) => c.name.toLowerCase() === slashVerb.toLowerCase());
         if (
-            (!trimmed.startsWith("/") ||
-                expandLearnCommand(trimmed, { projectRoot: boundProjectRoot }) !== null) &&
+            ((!trimmed.startsWith("/") && trimmed !== "?" && leadingTrimmed !== ":" && !/^:\s+$/u.test(leadingTrimmed)) ||
+                expandLearnCommand(trimmed, { projectRoot: boundProjectRoot }) !== null ||
+                isAdvertisedPromptCmd) &&
             !trimmed.startsWith("!")
         ) {
             retireLiveReasoning();
@@ -421,6 +463,7 @@ export const runTermViewport = async (
                 getWorkspaceNames: () => cachedWorkspaces,
                 getPendingGateIds: () => focusedGateIds,
                 getSkills: () => cachedSkills,
+                getAvailableCommands: () => cachedAvailableCommands,
                 getPromptSuggestions: () =>
                     presenter.lifecycle === "running" ||
                     presenter.lifecycle === "queued" ||

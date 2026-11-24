@@ -342,12 +342,12 @@ export const runCliPrompt = async (
         promptDispatched = true;
         session.state = "running";
 
-        if (options.timeoutSec !== undefined && options.timeoutSec > 0) {
+        if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
             timeoutHandle = setTimeout(() => {
                 timedOut = true;
                 void client.cancel(session.sessionId).catch(() => {});
                 armCancelGrace();
-            }, options.timeoutSec * 1000);
+            }, options.timeoutMs);
         }
 
         try {
@@ -359,7 +359,11 @@ export const runCliPrompt = async (
                     control: true,
                     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     ...(options.auto ? { envelope: { auto: true } } : {}),
-                    ...(isQuestionPrompt ? { proposalPolicy: "review" } : {}),
+                    ...(isQuestionPrompt
+                        ? { proposalPolicy: "review" }
+                        : options.yolo
+                          ? { proposalPolicy: "accept" }
+                          : {}),
                 },
             };
             const promptRes = await client.prompt(

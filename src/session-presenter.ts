@@ -98,13 +98,12 @@ export class SessionPresenter {
     projectLabel: string | null = null;
     lifecycle: string = "idle";
     lifecycleGlyph: string = "⏹️";
-    #localYolo: boolean;
-    #serverAcceptMode = false;
+    mode: string;
     model: string;
     effort: string | null = null;
     effortSource: "default" | "explicit" | null = null;
     supportedEfforts: readonly string[] = [];
-    spawnModel: string | null = null;
+    childModel: string | null = null;
     loopId: number | null = null;
     loopSeq: number | null = null;
     turns = 0;
@@ -133,6 +132,7 @@ export class SessionPresenter {
     #reasoningLines: string[] = [];
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
+    #seededElapsedMs: number | null = null;
     #turnBaseInputTokens = 0;
     #turnBaseOutputTokens = 0;
     #turnBaseCostUsd: string | null = null;
@@ -155,7 +155,7 @@ export class SessionPresenter {
         this.workspaceName = options.workspaceName ?? "default";
         this.sessionName = options.sessionName ?? "session1";
         this.model = options.model ?? "default";
-        this.#localYolo = options.yolo ?? false;
+        this.mode = options.yolo === true ? "accept" : "review";
         this.maxReasoningLines = options.maxReasoningLines ?? 3;
 
         if (options.initialConfigOptions) {
@@ -170,11 +170,11 @@ export class SessionPresenter {
     }
 
     get yolo(): boolean {
-        return this.#localYolo || this.#serverAcceptMode;
+        return this.mode === "accept";
     }
 
     set yolo(value: boolean) {
-        this.#localYolo = value;
+        this.mode = value ? "accept" : "review";
     }
 
     get reasoningLines(): readonly string[] {
@@ -266,6 +266,7 @@ export class SessionPresenter {
         this.#loopConcluded = false;
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
+        this.#seededElapsedMs = null;
     }
 
     #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
@@ -295,6 +296,7 @@ export class SessionPresenter {
         this.#promptSuggestions = [];
         this.lastLoopStatus = null;
         this.#loopCostUsd = null;
+        this.#seededElapsedMs = null;
         this.#turnStartedAt = now;
         this.#turnBaseInputTokens = this.inputTokens;
         this.#turnBaseOutputTokens = this.outputTokens;
@@ -408,6 +410,29 @@ export class SessionPresenter {
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
             }
+            const parseTimestampMs = (raw: unknown): number | null => {
+                if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+                if (typeof raw === "string" && raw.length > 0) {
+                    const parsed = Date.parse(raw);
+                    return Number.isFinite(parsed) ? parsed : null;
+                }
+                return null;
+            };
+            const claimedMs = parseTimestampMs(status.claimedAt);
+            const terminatedMs = parseTimestampMs(status.terminatedAt);
+            if (claimedMs !== null) {
+                if (terminatedMs !== null && terminatedMs >= claimedMs) {
+                    this.#seededElapsedMs = Math.max(1, terminatedMs - claimedMs);
+                } else if (
+                    this.lifecycle === "running" ||
+                    this.lifecycle === "queued" ||
+                    this.lifecycle === "parked" ||
+                    this.lifecycle === "requires_action"
+                ) {
+                    this.#turnStartedAt = claimedMs;
+                    this.#seededElapsedMs = null;
+                }
+            }
             if (status.model === null) {
                 const activeProvider = Array.isArray(plurnk.providers)
                     ? (plurnk.providers as unknown[]).find(
@@ -458,19 +483,19 @@ export class SessionPresenter {
                     this.effortSource = m.effortSource;
                 }
             }
-            if (status.spawnModel === null) {
-                this.spawnModel = null;
-            } else if (status.spawnModel && typeof status.spawnModel === "object") {
-                const sm = status.spawnModel as Record<string, unknown>;
+            if (status.childModel === null) {
+                this.childModel = null;
+            } else if (status.childModel && typeof status.childModel === "object") {
+                const cm = status.childModel as Record<string, unknown>;
                 const base =
-                    typeof sm.alias === "string" && sm.alias.length > 0
-                        ? sm.alias
-                        : typeof sm.provider === "string" && typeof sm.model === "string"
-                          ? `${sm.provider}/${sm.model}`
+                    typeof cm.alias === "string" && cm.alias.length > 0
+                        ? cm.alias
+                        : typeof cm.provider === "string" && typeof cm.model === "string"
+                          ? `${cm.provider}/${cm.model}`
                           : null;
-                const eff = typeof sm.effort === "string" && sm.effort.length > 0 ? sm.effort : null;
-                const src = sm.effortSource === "explicit" ? "explicit" : "default";
-                this.spawnModel = base !== null ? formatModelRoute(base, eff, src) : null;
+                const eff = typeof cm.effort === "string" && cm.effort.length > 0 ? cm.effort : null;
+                const src = cm.effortSource === "explicit" ? "explicit" : "default";
+                this.childModel = base !== null ? formatModelRoute(base, eff, src) : null;
             }
             if (Array.isArray(status.descendants)) {
                 this.activeChildren = status.descendants.filter((d) => {
@@ -552,10 +577,10 @@ export class SessionPresenter {
                               ? s.id
                               : null;
                     const coord =
-                        typeof s.loop_seq === "number" &&
-                        typeof s.turn_seq === "number" &&
+                        typeof s.loopSeq === "number" &&
+                        typeof s.turnSeq === "number" &&
                         typeof s.sequence === "number"
-                            ? `${String(s.loop_seq)}/${String(s.turn_seq)}/${String(s.sequence)}`
+                            ? `${String(s.loopSeq)}/${String(s.turnSeq)}/${String(s.sequence)}`
                             : null;
                     const alreadyConcluded =
                         (sTarget !== null && this.#concludedStreams.has(sTarget)) ||
@@ -621,8 +646,8 @@ export class SessionPresenter {
                                 aside: sAside ?? existing?.aside ?? null,
                                 startedAt: existing?.startedAt ?? sOpenedAtMs ?? Date.now(),
                                 openedTurn:
-                                    typeof s.turn_seq === "number"
-                                        ? s.turn_seq
+                                    typeof s.turnSeq === "number"
+                                        ? s.turnSeq
                                         : (existing?.openedTurn ?? this.turns),
                                 survivedTurn: true,
                             });
@@ -706,10 +731,12 @@ export class SessionPresenter {
                     }
                 }
                 this.supportedEfforts = vals;
-            } else if (opt.configId === "spawn_model" && SessionConfigOption.isSelect(opt)) {
-                this.spawnModel = opt.currentValue.length > 0 && opt.currentValue !== "inherit" ? opt.currentValue : null;
+            } else if (opt.configId === "child" && SessionConfigOption.isSelect(opt)) {
+                this.childModel = opt.currentValue.length > 0 && opt.currentValue !== "inherit" ? opt.currentValue : null;
             } else if (opt.configId === "mode" && SessionConfigOption.isSelect(opt)) {
-                this.#serverAcceptMode = opt.currentValue === "accept";
+                if (opt.currentValue.length > 0) {
+                    this.mode = opt.currentValue;
+                }
             }
         }
     }
@@ -736,7 +763,8 @@ export class SessionPresenter {
               ? "idle"
               : lifecycleGlyphFor(this.lifecycle, effectiveStatus);
         this.lifecycleGlyph = glyph === "idle" ? "⏹️" : glyph;
-        const elapsedMs = elapsedMsOverride ?? Math.max(1, Date.now() - this.#turnStartedAt);
+        const elapsedMs =
+            elapsedMsOverride ?? this.#seededElapsedMs ?? Math.max(1, Date.now() - this.#turnStartedAt);
         const used = this.contextTokens ?? this.curationWeight;
         const capacity = this.contextCapacity ?? this.curationBudget;
         const budgetPercent = capacity > 0 ? Math.min(100, Math.round((used / capacity) * 100)) : null;
@@ -1465,6 +1493,7 @@ export class SessionPresenter {
                           detail?: unknown;
                           title?: unknown;
                           diagnostic?: unknown;
+                          recovery?: unknown;
                       })
                     : undefined;
 
@@ -1538,23 +1567,30 @@ export class SessionPresenter {
                         ? 500
                         : 200;
             const failed = statusCode >= 400 || effectiveStatus === "failed";
-            const problemTitle =
-                typeof problemRec?.title === "string" && problemRec.title.length > 0
-                    ? problemRec.title
-                    : typeof problemRec?.detail === "string" && problemRec.detail.length > 0
-                      ? problemRec.detail
-                      : null;
-            const problemDiagnostic =
-                typeof problemRec?.diagnostic === "string" &&
-                problemRec.diagnostic.trim().length > 0 &&
-                problemRec.diagnostic.trim() !== problemTitle
-                    ? problemRec.diagnostic.trim()
-                    : null;
+            const problemParts: string[] = [];
+            for (const candidate of [
+                problemRec?.title,
+                problemRec?.detail,
+                problemRec?.diagnostic,
+                problemRec?.recovery,
+            ]) {
+                if (typeof candidate !== "string") continue;
+                const trimmedCandidate = candidate.trim();
+                if (trimmedCandidate.length === 0) continue;
+                if (
+                    problemParts.some(
+                        (existing) =>
+                            existing.toLowerCase() === trimmedCandidate.toLowerCase() ||
+                            existing.includes(trimmedCandidate),
+                    )
+                ) {
+                    continue;
+                }
+                problemParts.push(trimmedCandidate);
+            }
             const outcome = failed
-                ? problemTitle !== null
-                    ? problemDiagnostic !== null
-                        ? `${problemTitle}: ${problemDiagnostic}`
-                        : problemTitle
+                ? problemParts.length > 0
+                    ? problemParts.join(": ")
                     : typeof rawOutput?.detail === "string" && rawOutput.detail.length > 0
                       ? rawOutput.detail
                       : typeof rawOutput?.message === "string" && rawOutput.message.length > 0

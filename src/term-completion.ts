@@ -153,6 +153,7 @@ export interface CompletionContext {
     readonly getWorkspaceNames?: () => readonly string[];
     readonly getPendingGateIds?: () => readonly string[];
     readonly getSkills?: () => readonly { readonly name: string; readonly description: string }[];
+    readonly getAvailableCommands?: () => readonly { readonly name: string; readonly description: string }[];
     readonly getPromptSuggestions?: () => readonly string[];
 }
 
@@ -242,15 +243,28 @@ export const completeInput = async (
         }
     }
 
-    const rootMatch = /^\/(\w*)$/u.exec(line);
+    const rootMatch = /^\/([\w:-]*)$/u.exec(line);
     if (rootMatch !== null) {
         const typed = rootMatch[1]!.toLowerCase();
-        const commands = INTERACTIVE_COMMANDS.map((c) => {
+        const builtinNames = new Set<string>();
+        const allCommands = INTERACTIVE_COMMANDS.map((c) => {
             const name = c.usage.split(/\s+/u)[0]!.slice(1);
+            builtinNames.add(name.toLowerCase());
             return { name, value: `/${name}`, description: c.summary };
-        })
-            .filter((c) => c.name.startsWith(typed))
-            .sort((a, b) => (a.name === typed ? 0 : 1) - (b.name === typed ? 0 : 1));
+        });
+        for (const adv of ctx.getAvailableCommands?.() ?? []) {
+            const cleanName = adv.name.replace(/^\/+/u, "");
+            if (cleanName.length === 0 || builtinNames.has(cleanName.toLowerCase())) continue;
+            builtinNames.add(cleanName.toLowerCase());
+            allCommands.push({
+                name: cleanName,
+                value: `/${cleanName}`,
+                description: adv.description,
+            });
+        }
+        const commands = allCommands
+            .filter((c) => c.name.toLowerCase().startsWith(typed))
+            .sort((a, b) => (a.name.toLowerCase() === typed ? 0 : 1) - (b.name.toLowerCase() === typed ? 0 : 1));
         return {
             suggestions: commands.map(({ value, description }) => ({ value, description })),
             prefix: line,

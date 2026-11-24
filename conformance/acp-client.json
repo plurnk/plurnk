@@ -584,7 +584,7 @@
       },
       "isConfigOptionUpdate": {
         "posture": "native",
-        "evidence": ["src/session-presenter.ts — model, thought_level, spawn_model, and mode sync"]
+        "evidence": ["src/session-presenter.ts — model, thought_level, child, and mode sync"]
       },
       "isSessionInfoUpdate": {
         "posture": "native",

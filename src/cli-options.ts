@@ -201,7 +201,7 @@ options:
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
-      --limit <n>         (models / log read) page limit (log read default 100)
+      --limit <n>         (models / log read) page limit (models default 10, log read default 100)
       --provider <name>   (models) restrict the catalog to one provider
       --all               (models) include unconfigured models with readiness causes
       --offset <n>        (models) catalog page offset (default 0)

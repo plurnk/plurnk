@@ -53,6 +53,7 @@ const TIMER_LITERAL = /\b(?:setTimeout|setInterval|delay|sleep|AbortSignal\.time
 const MECHANISM = new Map([
     ["src/runtime-floor.ts:NODE_MAJOR_FLOOR", "package.json engines.node floor"],
     ["src/cli-connection.ts:DAEMON_POLL_MS", "loopback socket readiness polling cadence under PLURNK_CLIENT_DAEMON_TIMEOUT_MS"],
+    ["src/collection-commands.ts:COLLECTION_PAGE_SIZE", "shared 10-item collection browsing page size"],
 ]);
 
 const tracked = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src"], { cwd: ROOT, encoding: "utf8" })

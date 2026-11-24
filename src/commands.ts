@@ -5,7 +5,7 @@ import { expandLearnCommand as expandContractsLearnCommand, type LearnCommandExp
 export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly summary: string }[] = [
     { usage: "/help [verb]", summary: "Show the command index or one command's usage." },
     { usage: "/update", summary: "Update the model catalog and show how to update Plurnk packages." },
-    { usage: "/models [search]", summary: "Search the bounded model catalog." },
+    { usage: "/models [search] [--provider <id>] [--all] [--offset <n>] [--limit <n>]", summary: "Search and page the model catalog (10 per page by default)." },
     { usage: "/workspaces", summary: "List daemon workspaces." },
     { usage: "/sessions", summary: "List this workspace's sessions as a tree, each with its state." },
     { usage: "/loops", summary: "List this session's loops: each one's number and opening line." },

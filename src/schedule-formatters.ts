@@ -2,30 +2,13 @@
 // and structured problem extraction (`409 already-done` reopen hint).
 
 import type { ScheduledStepReceipt } from "./acp-client.ts";
+import {
+    formatListPageFooter,
+    ScheduleCommandUsageError,
+    type ScheduleUsageProblem,
+} from "./collection-commands.ts";
 
-export interface ScheduleUsageProblem {
-    readonly type: string;
-    readonly title: string;
-    readonly status: number;
-    readonly detail: string;
-    readonly recovery?: string;
-}
-
-export class ScheduleCommandUsageError extends Error {
-    readonly problem: ScheduleUsageProblem;
-
-    constructor(title: string, detail: string, recovery?: string) {
-        super(detail);
-        this.name = "ScheduleCommandUsageError";
-        this.problem = {
-            type: "https://problems.plurnk.xyz/client/usage",
-            title,
-            status: 400,
-            detail,
-            ...(recovery !== undefined ? { recovery } : {}),
-        };
-    }
-}
+export { ScheduleCommandUsageError, type ScheduleUsageProblem };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -67,8 +50,9 @@ const compactRuleLabel = (def: Record<string, unknown>, detail: Record<string, u
 
 export const formatScheduleRows = (result: Readonly<Record<string, unknown>>): string => {
     const definitions = Array.isArray(result.definitions) ? result.definitions : [];
+    const footer = formatListPageFooter(result);
     if (definitions.length === 0) {
-        return "schedule: none\n";
+        return footer !== null ? `schedule: none\n${footer}\n` : "schedule: none\n";
     }
     const lines: string[] = [];
     for (const rawItem of definitions) {
@@ -98,6 +82,7 @@ export const formatScheduleRows = (result: Readonly<Record<string, unknown>>): s
             .filter((p) => p.length > 0);
         lines.push(parts.join("  "));
     }
+    if (footer !== null) lines.push(footer);
     return `${lines.join("\n")}\n`;
 };
 

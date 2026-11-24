@@ -1,22 +1,18 @@
-// Standard ACP v2 client built on `@agentclientprotocol/sdk` (Streamable HTTP + WebSocket).
+// Standard ACP v2 client built on `@agentclientprotocol/sdk` (Streamable HTTP + WebSocket)
+// ({§cli-conformance}, {§cli-sessions-topology}, {§cli-inline-review}).
 
-import { readFileSync } from "node:fs";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
 import { createWebSocketStream, type WebSocketConstructor } from "@agentclientprotocol/sdk/experimental/ws-client";
 import {
-    ContentBlock,
-    PROTOCOL_VERSION,
-    SessionUpdate,
-    ToolCallContent,
     client,
     methods,
+    PROTOCOL_VERSION,
     type ArchiveSessionResponse,
     type AuthStatusResponse,
-    type AuthStatusUpdateNotification,
     type CancelTerminalResponse,
     type CancelToolCallResponse,
     type ClientConnection,
-    type CreateElicitationRequest,
+    type ContentBlock,
     type CreateElicitationResponse,
     type DeleteSessionResponse,
     type ForkSessionRequest,
@@ -28,7 +24,6 @@ import {
     type NewSessionRequest,
     type NewSessionResponse,
     type PromptResponse,
-    type RequestPermissionRequest,
     type RequestPermissionResponse,
     type ResumeSessionRequest,
     type ResumeSessionResponse,
@@ -39,741 +34,62 @@ import {
     type SetSessionConfigOptionResponse,
     type SetSessionTitleResponse,
     type UnarchiveSessionResponse,
-    type UpdateSessionNotification,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
+import {
+    ACP_ACTION_KINDS,
+    type AcpClientOptions,
+    type AuthStatusUpdateHandler,
+    type ElicitationRequestHandler,
+    type PermissionRequestHandler,
+    type PlurnkActionContext,
+    type PlurnkActionEntry,
+    type PlurnkActionKind,
+    type PlurnkActionMap,
+    type PlurnkFamilyListResult,
+    type ScheduleActionInput,
+    type ScheduledStepReceipt,
+    type ScheduledToolCall,
+    type ScheduleRunResult,
+    type SessionUpdateHandler,
+} from "./acp-client-actions.ts";
+import {
+    classifyPreFlightDisconnect,
+    fetchWithCredentialRetry,
+    hydrateSessionUpdate,
+    isTruthyKnob,
+    NodeWebSocket,
+    normalizeAcpUrl,
+    PACKAGE_CLIENT_VERSION,
+    reconnectBoundSessions,
+    scrubAcpMeta,
+    toAcpWebSocketUrl,
+    wrapStreamWithMetaScrubber,
+    type BoundSessionEntry,
+} from "./acp-client-transport.ts";
 import type { AcpSession } from "./acp-session.ts";
 import Credential from "./credential.ts";
 
-const readPackageClientVersion = (): string => {
-    try {
-        const pkg = JSON.parse(
-            readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-        ) as { readonly version?: unknown };
-        if (typeof pkg.version === "string" && pkg.version.length > 0) {
-            return pkg.version;
-        }
-    } catch {
-        // fallback if package.json is unreadable
-    }
-    return "1.0.0";
+export {
+    ACP_ACTION_KINDS,
+    classifyPreFlightDisconnect,
+    normalizeAcpUrl,
+    scrubAcpMeta,
+    toAcpWebSocketUrl,
+    type AcpClientOptions,
+    type AuthStatusUpdateHandler,
+    type ElicitationRequestHandler,
+    type PermissionRequestHandler,
+    type PlurnkActionContext,
+    type PlurnkActionEntry,
+    type PlurnkActionKind,
+    type PlurnkActionMap,
+    type PlurnkFamilyListResult,
+    type ScheduleActionInput,
+    type ScheduledStepReceipt,
+    type ScheduledToolCall,
+    type ScheduleRunResult,
+    type SessionUpdateHandler,
 };
-
-const PACKAGE_CLIENT_VERSION = readPackageClientVersion();
-
-class NodeWebSocket extends globalThis.WebSocket {
-    constructor(
-        url: string,
-        protocols?: string | string[],
-        options?: { headers?: Record<string, string> },
-    ) {
-        if (options?.headers !== undefined && Object.keys(options.headers).length > 0) {
-            super(url, {
-                ...(protocols !== undefined
-                    ? { protocols: Array.isArray(protocols) ? protocols : [protocols] }
-                    : {}),
-                headers: options.headers,
-            } as unknown as string[]);
-        } else if (protocols !== undefined) {
-            super(url, protocols);
-        } else {
-            super(url);
-        }
-    }
-}
-
-export const normalizeAcpUrl = (rawUrl: string): string => {
-    const url = new URL(rawUrl);
-    if (url.pathname === "/" || url.pathname === "") {
-        url.pathname = "/acp";
-    }
-    return url.toString();
-};
-
-export const toAcpWebSocketUrl = (rawUrl: string): string => {
-    const url = new URL(normalizeAcpUrl(rawUrl));
-    if (url.protocol === "http:") url.protocol = "ws:";
-    else if (url.protocol === "https:") url.protocol = "wss:";
-    return url.toString();
-};
-
-export type SessionUpdateHandler = (notification: UpdateSessionNotification) => void | Promise<void>;
-
-export type AuthStatusUpdateHandler = (notification: AuthStatusUpdateNotification) => void | Promise<void>;
-
-export type PermissionRequestHandler = (
-    request: RequestPermissionRequest,
-    signal: AbortSignal,
-) => Promise<RequestPermissionResponse>;
-
-export type ElicitationRequestHandler = (
-    request: CreateElicitationRequest,
-    signal: AbortSignal,
-) => Promise<CreateElicitationResponse>;
-
-export interface PlurnkActionContext {
-    readonly workspace?: string;
-    readonly workspaceId?: number;
-    readonly session?: string;
-    readonly sessionId?: string;
-    readonly cwd?: string;
-}
-
-export interface PlurnkActionEntry<
-    P extends Record<string, unknown> = Record<string, unknown>,
-    R = Record<string, unknown>,
-> {
-    readonly params: P;
-    readonly result: R;
-}
-
-export interface PlurnkFamilyListResult extends Record<string, unknown> {
-    readonly definitions?: ReadonlyArray<Record<string, unknown>>;
-}
-
-export interface ScheduledToolCall {
-    readonly server: string;
-    readonly tool: string;
-    readonly arguments?: Readonly<Record<string, unknown>>;
-    readonly aside?: string;
-}
-
-export type ScheduleActionInput =
-    | {
-          readonly alias: string;
-          readonly rule?: string;
-          readonly target: string;
-          readonly prompt: string;
-          readonly persona?: string;
-          readonly catchup?: boolean;
-      }
-    | {
-          readonly alias: string;
-          readonly rule?: string;
-          readonly run: readonly ScheduledToolCall[];
-          readonly target?: string;
-          readonly catchup?: boolean;
-      };
-
-export interface ScheduledStepReceipt {
-    readonly index: number;
-    readonly server: string;
-    readonly tool: string;
-    readonly status: number;
-    readonly uri?: string;
-    readonly preview?: string;
-    readonly problem?: Readonly<Record<string, unknown>>;
-}
-
-export interface ScheduleRunResult {
-    readonly alias: string;
-    readonly status: "open" | "done" | "fail";
-    readonly loopId?: number | null;
-    readonly lastFiredAt?: string | null;
-    readonly doneAt?: string | null;
-    readonly results?: readonly ScheduledStepReceipt[];
-}
-
-export interface PlurnkActionMap {
-    readonly ping: PlurnkActionEntry<Record<string, unknown>, { readonly ok?: boolean } & Record<string, unknown>>;
-    readonly discover: PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
-    readonly "models.list": PlurnkActionEntry<
-        {
-            readonly search?: string;
-            readonly provider?: string;
-            readonly availability?: "configured" | "all";
-            readonly all?: boolean;
-            readonly offset?: number;
-            readonly limit?: number;
-        },
-        {
-            readonly total: number;
-            readonly offset: number;
-            readonly nextOffset?: number;
-            readonly items: ReadonlyArray<Record<string, unknown>>;
-        } & Record<string, unknown>
-    >;
-    readonly "service.update": PlurnkActionEntry<
-        Record<string, never>,
-        { readonly catalog: Record<string, unknown>; readonly service: Record<string, unknown> } & Record<string, unknown>
-    >;
-    readonly "workspace.list": PlurnkActionEntry<
-        { readonly archived?: boolean; readonly includeArchived?: boolean },
-        { readonly workspaces: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
-    >;
-    readonly "workspace.create": PlurnkActionEntry<
-        {
-            readonly name?: string;
-            readonly projectRoot?: string | null;
-            readonly settings?: string | Record<string, unknown>;
-        },
-        Record<string, unknown>
-    >;
-    readonly "workspace.attach": PlurnkActionEntry<
-        {
-            readonly id?: number;
-            readonly workspaceId?: number;
-            readonly name?: string;
-            readonly projectRoot?: string;
-        },
-        Record<string, unknown>
-    >;
-    readonly "workspace.sessions": PlurnkActionEntry<
-        { readonly archived?: boolean; readonly includeArchived?: boolean } & Record<string, unknown>,
-        { readonly sessions: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
-    >;
-    readonly "log.read": PlurnkActionEntry<
-        {
-            readonly loopId?: number;
-            readonly turnId?: number;
-            readonly sinceId?: number;
-            readonly beforeId?: number;
-            readonly limit?: number;
-            readonly loopSeq?: number;
-            readonly turnSeq?: number;
-            readonly sequence?: number;
-        } & Record<string, unknown>,
-        { readonly entries: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
-    >;
-    readonly "workspace.prompts": PlurnkActionEntry<
-        { readonly limit?: number } & Record<string, unknown>,
-        { readonly prompts: readonly string[] } & Record<string, unknown>
-    >;
-    readonly "session.loops": PlurnkActionEntry<
-        { readonly loopSeq?: number } & Record<string, unknown>,
-        {
-            readonly items: ReadonlyArray<Record<string, unknown>>;
-            readonly updates?: ReadonlyArray<SessionUpdate>;
-        } & Record<string, unknown>
-    >;
-    readonly "workspace.share": PlurnkActionEntry<
-        { readonly folder: string } & Record<string, unknown>,
-        { readonly folder: string } & Record<string, unknown>
-    >;
-    readonly "workspace.rename": PlurnkActionEntry<
-        { readonly from?: string; readonly name?: string; readonly to?: string } & Record<string, unknown>,
-        { readonly id: number; readonly name: string } & Record<string, unknown>
-    >;
-    readonly "workspace.archive": PlurnkActionEntry<
-        { readonly archived?: boolean } & Record<string, unknown>,
-        { readonly id: number; readonly archivedAt: string | null } & Record<string, unknown>
-    >;
-    readonly "session.rollback": PlurnkActionEntry<
-        { readonly to: string } & Record<string, unknown>,
-        {
-            readonly to: string;
-            readonly restored: ReadonlyArray<unknown>;
-            readonly skipped: ReadonlyArray<unknown>;
-            readonly stopped: Record<string, unknown> | null;
-        } & Record<string, unknown>
-    >;
-    readonly "entry.read": PlurnkActionEntry<
-        {
-            readonly target: string;
-            readonly channel?: string;
-            readonly offset?: number;
-        } & Record<string, unknown>,
-        {
-            readonly status: number;
-            readonly entry?: Record<string, unknown> | null;
-            readonly problem?: Record<string, unknown>;
-        } & Record<string, unknown>
-    >;
-    readonly "op.exec": PlurnkActionEntry<
-        { readonly text: string } & Record<string, unknown>,
-        {
-            readonly results: ReadonlyArray<{
-                readonly status?: number;
-                readonly content?: string;
-                readonly message?: string;
-                readonly problem?: { readonly detail?: string } & Record<string, unknown>;
-            } & Record<string, unknown>>;
-        } & Record<string, unknown>
-    >;
-    readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.skills.discover": PlurnkActionEntry<
-        { readonly source?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.skills.add": PlurnkActionEntry<
-        { readonly alias: string; readonly source?: string; readonly ref?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.skills.replace": PlurnkActionEntry<
-        { readonly alias: string; readonly source?: string; readonly ref?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.skills.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.skills.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.skills.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.personas.discover": PlurnkActionEntry<
-        { readonly query?: string; readonly source?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.add": PlurnkActionEntry<
-        {
-            readonly alias: string;
-            readonly source?: string;
-            readonly description?: string;
-            readonly body?: string;
-            readonly model?: string;
-            readonly effort?: string;
-        } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.replace": PlurnkActionEntry<
-        {
-            readonly alias: string;
-            readonly source?: string;
-            readonly description?: string;
-            readonly body?: string;
-            readonly model?: string;
-            readonly effort?: string;
-        } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.personas.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.members.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.members.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.members.add": PlurnkActionEntry<
-        { readonly files: readonly string[] } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.members.enable": PlurnkActionEntry<
-        { readonly file: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.members.disable": PlurnkActionEntry<
-        { readonly file: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.members.remove": PlurnkActionEntry<
-        { readonly file: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.env.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.add": PlurnkActionEntry<
-        { readonly alias: string; readonly value: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.replace": PlurnkActionEntry<
-        { readonly alias: string; readonly value: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.env.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "session.env.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.add": PlurnkActionEntry<
-        { readonly alias: string; readonly value: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.replace": PlurnkActionEntry<
-        { readonly alias: string; readonly value: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "session.env.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.mcp.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.add": PlurnkActionEntry<
-        (
-            | { readonly alias: string; readonly type: "streamable-http"; readonly url: string }
-            | {
-                  readonly alias: string;
-                  readonly type: "stdio";
-                  readonly command: string;
-                  readonly args?: readonly string[];
-              }
-        ) &
-            Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.replace": PlurnkActionEntry<
-        (
-            | { readonly alias: string; readonly type: "streamable-http"; readonly url: string }
-            | {
-                  readonly alias: string;
-                  readonly type: "stdio";
-                  readonly command: string;
-                  readonly args?: readonly string[];
-              }
-        ) &
-            Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
-    readonly "workspace.schedule.discover": PlurnkActionEntry<
-        { readonly rule?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.add": PlurnkActionEntry<
-        ScheduleActionInput & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.replace": PlurnkActionEntry<
-        ScheduleActionInput & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.enable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.disable": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.remove": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.schedule.run": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        ScheduleRunResult & Record<string, unknown>
-    >;
-    readonly "workspace.schedule.status": PlurnkActionEntry<
-        { readonly alias: string; readonly status: "open" | "done" | "fail" } & Record<string, unknown>,
-        ScheduleRunResult & Record<string, unknown>
-    >;
-    readonly "workspace.mcp.oauth.begin": PlurnkActionEntry<
-        { readonly alias: string } & Record<string, unknown>,
-        { readonly authorizationUrl?: string } & Record<string, unknown>
-    >;
-    readonly "workspace.mcp.oauth.complete": PlurnkActionEntry<
-        { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
-        Record<string, unknown>
-    >;
-    readonly "workspace.mcp.complete": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
-    readonly "workspace.mcp.skills": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
-}
-
-export type PlurnkActionKind = keyof PlurnkActionMap;
-
-export const ACP_ACTION_KINDS = [
-    "ping",
-    "discover",
-    "models.list",
-    "service.update",
-    "workspace.list",
-    "workspace.create",
-    "workspace.attach",
-    "workspace.sessions",
-    "log.read",
-    "workspace.prompts",
-    "session.loops",
-    "workspace.share",
-    "workspace.rename",
-    "workspace.archive",
-    "session.rollback",
-    "entry.read",
-    "op.exec",
-    "workspace.skills.list",
-    "workspace.skills.discover",
-    "workspace.skills.add",
-    "workspace.skills.replace",
-    "workspace.skills.enable",
-    "workspace.skills.disable",
-    "workspace.skills.remove",
-    "workspace.personas.list",
-    "workspace.personas.discover",
-    "workspace.personas.add",
-    "workspace.personas.replace",
-    "workspace.personas.enable",
-    "workspace.personas.disable",
-    "workspace.personas.remove",
-    "workspace.members.list",
-    "workspace.members.discover",
-    "workspace.members.add",
-    "workspace.members.enable",
-    "workspace.members.disable",
-    "workspace.members.remove",
-    "workspace.env.list",
-    "workspace.env.discover",
-    "workspace.env.add",
-    "workspace.env.replace",
-    "workspace.env.enable",
-    "workspace.env.disable",
-    "workspace.env.remove",
-    "session.env.list",
-    "session.env.discover",
-    "session.env.add",
-    "session.env.replace",
-    "session.env.enable",
-    "session.env.disable",
-    "session.env.remove",
-    "workspace.mcp.list",
-    "workspace.mcp.discover",
-    "workspace.mcp.add",
-    "workspace.mcp.replace",
-    "workspace.mcp.enable",
-    "workspace.mcp.disable",
-    "workspace.mcp.remove",
-    "workspace.schedule.list",
-    "workspace.schedule.discover",
-    "workspace.schedule.add",
-    "workspace.schedule.replace",
-    "workspace.schedule.enable",
-    "workspace.schedule.disable",
-    "workspace.schedule.remove",
-    "workspace.schedule.run",
-    "workspace.schedule.status",
-    "workspace.mcp.oauth.begin",
-    "workspace.mcp.oauth.complete",
-    "workspace.mcp.complete",
-    "workspace.mcp.skills",
-] as const satisfies readonly PlurnkActionKind[];
-
-type _AssertExhaustivePlurnkActionKinds = Exclude<
-    PlurnkActionKind,
-    (typeof ACP_ACTION_KINDS)[number]
-> extends never
-    ? true
-    : never;
-const _exhaustivePlurnkActionKinds: _AssertExhaustivePlurnkActionKinds = true;
-void _exhaustivePlurnkActionKinds;
-
-const CREDENTIAL_PROBLEM_CODES = new Set([
-    "acp/http/bearer-token-invalid",
-    "acp/http/credential-revoked",
-]);
-
-const CREDENTIAL_PROBLEM_TYPES = new Set([
-    "https://problems.plurnk.xyz/acp/http/bearer-token-invalid",
-    "https://problems.plurnk.xyz/acp/http/credential-revoked",
-]);
-
-const isCredentialProblemRecord = (rec: Record<string, unknown>): boolean =>
-    (typeof rec.code === "string" && CREDENTIAL_PROBLEM_CODES.has(rec.code)) ||
-    (typeof rec.type === "string" && CREDENTIAL_PROBLEM_TYPES.has(rec.type));
-
-export const classifyPreFlightDisconnect = (
-    err: unknown,
-    connSignal?: AbortSignal,
-): { readonly staleConnection: boolean; readonly credentialInvalid: boolean } => {
-    if (!err || typeof err !== "object") {
-        return { staleConnection: false, credentialInvalid: false };
-    }
-    const errRec = err as {
-        readonly status?: unknown;
-        readonly code?: unknown;
-        readonly body?: unknown;
-        readonly data?: unknown;
-        readonly message?: unknown;
-    };
-
-    const directStatus = typeof errRec.status === "number" ? errRec.status : undefined;
-    const dataRec =
-        errRec.data !== null && typeof errRec.data === "object"
-            ? (errRec.data as Record<string, unknown>)
-            : undefined;
-    const dataStatus = typeof dataRec?.status === "number" ? dataRec.status : undefined;
-    const status = directStatus ?? dataStatus;
-
-    // 409 Conflict (e.g. session already active or state conflict) is a domain refusal, never a dropped connection.
-    if (status === 409) {
-        return { staleConnection: false, credentialInvalid: false };
-    }
-
-    let bodyRec: Record<string, unknown> | undefined;
-    if (typeof errRec.body === "string" && errRec.body.trim().startsWith("{")) {
-        try {
-            const parsed = JSON.parse(errRec.body) as unknown;
-            if (parsed !== null && typeof parsed === "object") {
-                bodyRec = parsed as Record<string, unknown>;
-            }
-        } catch {
-            // Non-JSON response body
-        }
-    } else if (errRec.body !== null && typeof errRec.body === "object") {
-        bodyRec = errRec.body as Record<string, unknown>;
-    }
-
-    const credentialInvalid =
-        status === 401 ||
-        (dataRec !== undefined && isCredentialProblemRecord(dataRec)) ||
-        (bodyRec !== undefined && isCredentialProblemRecord(bodyRec));
-    if (credentialInvalid) {
-        return { staleConnection: true, credentialInvalid: true };
-    }
-
-    const dataType = typeof dataRec?.type === "string" ? dataRec.type : undefined;
-    const isDomainProblem =
-        dataType !== undefined && !dataType.startsWith("https://problems.plurnk.xyz/acp/http/");
-    if (isDomainProblem) {
-        return { staleConnection: false, credentialInvalid: false };
-    }
-
-    // HTTP 404 on an active ACP stream (HttpResponseError or SDK http-stream 404 wrapper)
-    // indicates an expired or unknown Acp-Connection-Id on the server.
-    if (directStatus === 404 || (dataStatus === 404 && !isDomainProblem)) {
-        return { staleConnection: true, credentialInvalid: false };
-    }
-
-    // If the error is a structured JSON-RPC domain error (numeric code without transport abort), do not reconnect.
-    if (typeof errRec.code === "number" && !connSignal?.aborted) {
-        return { staleConnection: false, credentialInvalid: false };
-    }
-
-    // Transport stream closure aborts conn.signal or throws the SDK's uncoded "ACP HTTP stream is closed" Error.
-    if (
-        connSignal?.aborted === true ||
-        (errRec.code === undefined &&
-            status === undefined &&
-            errRec.message === "ACP HTTP stream is closed")
-    ) {
-        return { staleConnection: true, credentialInvalid: false };
-    }
-
-    return { staleConnection: false, credentialInvalid: false };
-};
-
-export const scrubAcpMeta = <T>(value: T): T => {
-    if (Array.isArray(value)) {
-        return value.map((item) => scrubAcpMeta(item)) as unknown as T;
-    }
-    if (value !== null && typeof value === "object") {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            if (k === "_meta") {
-                if (v !== null && typeof v === "object" && !Array.isArray(v)) {
-                    const kept: Record<string, unknown> = {};
-                    for (const [mk, mv] of Object.entries(v as Record<string, unknown>)) {
-                        if (mk.startsWith("io.modelcontextprotocol/")) {
-                            kept[mk] = scrubAcpMeta(mv);
-                        }
-                    }
-                    if (Object.keys(kept).length > 0) {
-                        out._meta = kept;
-                    }
-                }
-                continue;
-            }
-            out[k] = scrubAcpMeta(v);
-        }
-        return out as T;
-    }
-    return value;
-};
-
-const wrapStreamWithMetaScrubber = <M>(stream: {
-    readonly readable: ReadableStream<M>;
-    readonly writable: WritableStream<M>;
-}): {
-    readonly readable: ReadableStream<M>;
-    readonly writable: WritableStream<M>;
-} => {
-    const readable = stream.readable.pipeThrough(
-        new TransformStream<M, M>({
-            transform(msg, controller) {
-                controller.enqueue(scrubAcpMeta(msg));
-            },
-        }),
-    );
-    const writer = stream.writable.getWriter();
-    const writable = new WritableStream<M>({
-        async write(msg) {
-            await writer.write(scrubAcpMeta(msg));
-        },
-        async close() {
-            await writer.close();
-        },
-        async abort(reason) {
-            await writer.abort(reason);
-        },
-    });
-    return { readable, writable };
-};
-
-const isTruthyKnob = (val: string | undefined): boolean =>
-    val === "1" || val === "true" || val === "yes" || val === "on";
-
-export interface AcpClientOptions {
-    readonly url: string;
-    readonly token?: string;
-    readonly credential?: Credential;
-    readonly env?: Record<string, string | undefined>;
-    readonly headers?: Readonly<Record<string, string>>;
-    readonly clientName?: string;
-    readonly clientVersion?: string;
-    readonly debugNoMeta?: boolean;
-    readonly onSessionUpdate?: SessionUpdateHandler;
-    readonly onAuthStatusUpdate?: AuthStatusUpdateHandler;
-    readonly onPermissionRequest?: PermissionRequestHandler;
-    readonly onElicitationRequest?: ElicitationRequestHandler;
-    readonly onDisconnect?: () => void | Promise<void>;
-}
-
-interface BoundSessionEntry {
-    cwd: string;
-    interactive?: boolean;
-    window?: boolean;
-    session?: AcpSession;
-}
 
 export class AcpClient {
     readonly #url: string;
@@ -883,153 +199,12 @@ export class AcpClient {
         input: Parameters<typeof globalThis.fetch>[0],
         init?: Parameters<typeof globalThis.fetch>[1],
     ): Promise<Response> {
-        const currentHeaders = await this.#resolveHeaders();
-        const merged = new Headers(init?.headers);
-        for (const [k, v] of Object.entries(currentHeaders)) {
-            if (!merged.has(k)) merged.set(k, v);
-        }
-        const res = await globalThis.fetch(input, { ...init, headers: merged });
-        if (res.status === 401 && this.#credential !== null) {
-            this.#credential.invalidate();
-            const refreshedHeaders = await this.#resolveHeaders();
-            if (
-                refreshedHeaders.authorization !== undefined &&
-                refreshedHeaders.authorization !== currentHeaders.authorization
-            ) {
-                void res.body?.cancel().catch(() => undefined);
-                const retryMerged = new Headers(init?.headers);
-                for (const [k, v] of Object.entries(refreshedHeaders)) {
-                    if (!retryMerged.has(k)) retryMerged.set(k, v);
-                }
-                return await globalThis.fetch(input, { ...init, headers: retryMerged });
-            }
-        }
-        return res;
-    }
-
-    async #fetchResourceLinkText(uri: string): Promise<string | null> {
-        let targetUrl: string;
-        try {
-            targetUrl = new URL(uri, this.#url).href;
-        } catch {
-            return null;
-        }
-        if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-            return null;
-        }
-        try {
-            const res = await this.#fetchWithAuth(targetUrl, { method: "GET" });
-            if (!res.ok) {
-                void res.body?.cancel().catch(() => undefined);
-                return null;
-            }
-            return await res.text();
-        } catch {
-            return null;
-        }
-    }
-
-    async #hydrateSessionUpdate(params: UpdateSessionNotification): Promise<UpdateSessionNotification> {
-        const update = params.update;
-        if (
-            SessionUpdate.isUserMessageChunk(update) ||
-            SessionUpdate.isAgentMessageChunk(update) ||
-            SessionUpdate.isAgentThoughtChunk(update)
-        ) {
-            if (ContentBlock.isResourceLink(update.content)) {
-                const fetched = await this.#fetchResourceLinkText(update.content.uri);
-                if (fetched !== null) {
-                    return {
-                        ...params,
-                        update: {
-                            ...update,
-                            content: { type: "text", text: fetched },
-                        },
-                    };
-                }
-            }
-            return params;
-        }
-        if (
-            SessionUpdate.isUserMessage(update) ||
-            SessionUpdate.isAgentMessage(update) ||
-            SessionUpdate.isAgentThought(update)
-        ) {
-            if (Array.isArray(update.content) && update.content.some((b) => ContentBlock.isResourceLink(b))) {
-                const hydratedBlocks: ContentBlock[] = [];
-                for (const block of update.content) {
-                    if (ContentBlock.isResourceLink(block)) {
-                        const fetched = await this.#fetchResourceLinkText(block.uri);
-                        if (fetched !== null) {
-                            hydratedBlocks.push({ type: "text", text: fetched });
-                            continue;
-                        }
-                    }
-                    hydratedBlocks.push(block);
-                }
-                return {
-                    ...params,
-                    update: {
-                        ...update,
-                        content: hydratedBlocks,
-                    },
-                };
-            }
-            return params;
-        }
-        if (SessionUpdate.isToolCallUpdate(update)) {
-            const metaOp = (update._meta as { plurnk?: { op?: unknown } } | undefined)?.plurnk?.op;
-            const opName = (
-                typeof update.name === "string"
-                    ? update.name
-                    : typeof metaOp === "string"
-                      ? metaOp
-                      : ""
-            ).toLowerCase();
-            const rawInputRec =
-                update.rawInput && typeof update.rawInput === "object" && !Array.isArray(update.rawInput)
-                    ? (update.rawInput as Record<string, unknown>)
-                    : null;
-            const hasInlineInputBody =
-                typeof rawInputRec?.body === "string" ||
-                (rawInputRec?.body !== null &&
-                    typeof rawInputRec?.body === "object" &&
-                    !Array.isArray(rawInputRec.body));
-            if (
-                !hasInlineInputBody &&
-                (opName === "note" ||
-                    opName === "edit" ||
-                    opName === "work" ||
-                    opName === "fork" ||
-                    opName === "send") &&
-                Array.isArray(update.content) &&
-                update.content.some((c) => ToolCallContent.isContent(c) && ContentBlock.isResourceLink(c.content))
-            ) {
-                const hydratedContent: ToolCallContent[] = [];
-                for (const item of update.content) {
-                    if (ToolCallContent.isContent(item) && ContentBlock.isResourceLink(item.content)) {
-                        const fetched = await this.#fetchResourceLinkText(item.content.uri);
-                        if (fetched !== null) {
-                            hydratedContent.push({
-                                ...item,
-                                content: { type: "text", text: fetched },
-                            });
-                            continue;
-                        }
-                    }
-                    hydratedContent.push(item);
-                }
-                return {
-                    ...params,
-                    update: {
-                        ...update,
-                        content: hydratedContent,
-                    },
-                };
-            }
-            return params;
-        }
-        return params;
+        return await fetchWithCredentialRetry(
+            this.#credential,
+            () => this.#resolveHeaders(),
+            input,
+            init,
+        );
     }
 
     async connect(): Promise<InitializeResponse> {
@@ -1039,14 +214,17 @@ export class AcpClient {
         this.#explicitlyClosed = false;
 
         const initialHeaders = await this.#resolveHeaders();
-
         const app = client({ name: this.#clientName });
 
         let updateChain = Promise.resolve();
         app.onNotification(methods.client.session.update, (ctx) => {
             updateChain = updateChain
                 .then(async () => {
-                    const hydrated = await this.#hydrateSessionUpdate(ctx.params);
+                    const hydrated = await hydrateSessionUpdate(
+                        this.#url,
+                        ctx.params,
+                        (input, init) => this.#fetchWithAuth(input, init),
+                    );
                     for (const listener of this.#updateListeners) {
                         await listener(hydrated);
                     }
@@ -1112,17 +290,11 @@ export class AcpClient {
                 },
                 capabilities: {
                     session: {
-                        commands: {
-                            skill: {},
-                        },
+                        commands: { skill: {} },
                         promptSuggestions: {},
                     },
                     ...(this.#elicitationHandler !== undefined
-                        ? {
-                              elicitation: {
-                                  form: {},
-                              },
-                          }
+                        ? { elicitation: { form: {} } }
                         : {}),
                 },
             });
@@ -1157,49 +329,7 @@ export class AcpClient {
                 throw new Error("AcpClient failed to reconnect.");
             }
             if (this.#boundSessions.size > 0) {
-                for (const [sessionId, entry] of this.#boundSessions) {
-                    if (sessionId === options?.excludeSessionId) continue;
-                    const trackedSession = entry.session;
-                    const interactive = trackedSession?.interactive ?? entry.interactive;
-                    const window = trackedSession?.window ?? entry.window ?? true;
-                    trackedSession?.beginReplay();
-                    try {
-                        const resumed = await conn.agent.request(methods.agent.session.resume, {
-                            sessionId,
-                            cwd: entry.cwd,
-                            replayFrom: { type: "start" },
-                            _meta: {
-                                plurnk: {
-                                    window,
-                                    ...(window ? { bodies: "link" } : {}),
-                                    ...(interactive !== undefined ? { interactive } : {}),
-                                },
-                            },
-                        });
-                        if (trackedSession !== undefined) {
-                            if (resumed.configOptions && resumed.configOptions.length > 0) {
-                                trackedSession.configOptions = [...resumed.configOptions];
-                            }
-                            if (Array.isArray(resumed.availableCommands)) {
-                                trackedSession.availableCommands = [...resumed.availableCommands];
-                            }
-                            if (resumed._meta !== undefined && resumed._meta !== null) {
-                                const prevPlurnk = (trackedSession.meta?.plurnk ?? {}) as Record<string, unknown>;
-                                const nextPlurnk = (
-                                    (resumed._meta as Record<string, unknown>).plurnk ?? {}
-                                ) as Record<string, unknown>;
-                                trackedSession.meta = {
-                                    ...(trackedSession.meta ?? {}),
-                                    ...(resumed._meta as Record<string, unknown>),
-                                    plurnk: { ...prevPlurnk, ...nextPlurnk },
-                                };
-                            }
-                        }
-                    } finally {
-                        await new Promise<void>((r) => setImmediate(r));
-                        trackedSession?.endReplay();
-                    }
-                }
+                await reconnectBoundSessions(conn, this.#boundSessions, options?.excludeSessionId);
             }
             return conn;
         })();
@@ -1275,12 +405,8 @@ export class AcpClient {
         const existing = this.#boundSessions.get(session.sessionId);
         const interactive = options?.interactive ?? session.interactive ?? existing?.interactive;
         const window = options?.window ?? session.window ?? existing?.window;
-        if (interactive !== undefined) {
-            session.interactive = interactive;
-        }
-        if (window !== undefined) {
-            session.window = window;
-        }
+        if (interactive !== undefined) session.interactive = interactive;
+        if (window !== undefined) session.window = window;
         this.#boundSessions.set(session.sessionId, {
             cwd: options?.cwd ?? existing?.cwd ?? process.cwd(),
             ...(interactive !== undefined ? { interactive } : {}),
@@ -1291,10 +417,7 @@ export class AcpClient {
 
     async newSession(cwd: string, extra?: Omit<NewSessionRequest, "cwd">): Promise<NewSessionResponse> {
         const res = await this.#withAutoReconnect((conn) =>
-            conn.agent.request(methods.agent.session.new, {
-                cwd,
-                ...extra,
-            }),
+            conn.agent.request(methods.agent.session.new, { cwd, ...extra }),
         );
         this.#recordSessionBinding(res.sessionId, cwd, extra?._meta);
         return res;
@@ -1306,12 +429,7 @@ export class AcpClient {
         extra?: Omit<ResumeSessionRequest, "sessionId" | "cwd">,
     ): Promise<ResumeSessionResponse> {
         const res = await this.#withAutoReconnect(
-            (conn) =>
-                conn.agent.request(methods.agent.session.resume, {
-                    sessionId,
-                    cwd,
-                    ...extra,
-                }),
+            (conn) => conn.agent.request(methods.agent.session.resume, { sessionId, cwd, ...extra }),
             { excludeSessionId: sessionId },
         );
         this.#recordSessionBinding(sessionId, cwd, extra?._meta);
@@ -1320,9 +438,7 @@ export class AcpClient {
 
     async listSessions(cwd?: string): Promise<ListSessionsResponse> {
         return await this.#withAutoReconnect((conn) =>
-            conn.agent.request(methods.agent.session.list, {
-                ...(cwd !== undefined ? { cwd } : {}),
-            }),
+            conn.agent.request(methods.agent.session.list, { ...(cwd !== undefined ? { cwd } : {}) }),
         );
     }
 
@@ -1407,10 +523,7 @@ export class AcpClient {
         extra?: Omit<SessionOptionsRequest, "cwd">,
     ): Promise<SessionOptionsResponse> {
         return await this.#withAutoReconnect((conn) =>
-            conn.agent.request(methods.agent.session.options, {
-                cwd,
-                ...extra,
-            }),
+            conn.agent.request(methods.agent.session.options, { cwd, ...extra }),
         );
     }
 

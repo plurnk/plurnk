@@ -1,4 +1,4 @@
-// SessionPresenter public frame/status/options types and SDK exhaustiveness guards
+// SessionPresenter public frame/status/options types, internal state interfaces, and SDK exhaustiveness guards
 // ({§cli-conformance}, {§cli-rendering}, {§cli-session-status}, #232).
 
 import {
@@ -263,3 +263,91 @@ export interface ActiveWorkerState {
     readonly target: string;
     readonly startedAt: number;
 }
+
+export interface PresenterState {
+    workspaceName: string;
+    sessionName: string;
+    projectLabel: string | null;
+    lifecycle: string;
+    lifecycleGlyph: string;
+    mode: string;
+    model: string;
+    effort: string | null;
+    effortSource: "default" | "explicit" | null;
+    supportedEfforts: readonly string[];
+    childModel: string | null;
+    loopId: number | null;
+    loopSeq: number | null;
+    turns: number;
+    waitUntil: number | null;
+    curationWeight: number;
+    curationBudget: number;
+    contextTokens: number | null;
+    contextCapacity: number | null;
+    activeChildren: number;
+    gatedCount: number;
+    inboxCount: number;
+    openStreams: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: string | null;
+    hasUnknownCost: boolean;
+    doing: SessionDoing | null;
+    preparation: WorkspacePreparationState | null;
+    activity: SearchActivityState | null;
+    disconnected: boolean;
+    lastLoopStatus: number | null;
+    lastStatusLine: string;
+    readonly maxReasoningLines: number;
+    readonly yolo: boolean;
+}
+
+export interface PresenterInternals {
+    reasoningBuffer: string;
+    reasoningLines: string[];
+    lastStreamTarget: string;
+    turnStartedAt: number;
+    seededElapsedMs: number | null;
+    turnBaseInputTokens: number;
+    turnBaseOutputTokens: number;
+    turnBaseCostUsd: string | null;
+    loopCostUsd: string | null;
+    readonly pendingToolCalls: Map<string, PendingToolCallState>;
+    readonly renderedToolCalls: Set<string>;
+    readonly concludedStreams: Map<string, number>;
+    readonly openStreamKeys: Set<string>;
+    readonly activeStreams: Map<string, ActiveStreamState>;
+    readonly activeWorkers: Map<string, ActiveWorkerState>;
+    readonly bindingsWithLoops: Set<string>;
+    replayingHistory: boolean;
+    pendingHistoryLost: boolean;
+    awaitingTurnCount: number;
+    budgetNoticeSeq: number;
+    loopConcluded: boolean;
+    promptSuggestions: readonly string[];
+}
+
+export const createPresenterInternals = (): PresenterInternals => ({
+    reasoningBuffer: "",
+    reasoningLines: [],
+    lastStreamTarget: "",
+    turnStartedAt: Date.now(),
+    seededElapsedMs: null,
+    turnBaseInputTokens: 0,
+    turnBaseOutputTokens: 0,
+    turnBaseCostUsd: null,
+    loopCostUsd: null,
+    pendingToolCalls: new Map<string, PendingToolCallState>(),
+    renderedToolCalls: new Set<string>(),
+    concludedStreams: new Map<string, number>(),
+    openStreamKeys: new Set<string>(),
+    activeStreams: new Map<string, ActiveStreamState>(),
+    activeWorkers: new Map<string, ActiveWorkerState>(),
+    bindingsWithLoops: new Set<string>(),
+    replayingHistory: false,
+    pendingHistoryLost: false,
+    awaitingTurnCount: 0,
+    budgetNoticeSeq: 0,
+    loopConcluded: false,
+    promptSuggestions: [],
+});

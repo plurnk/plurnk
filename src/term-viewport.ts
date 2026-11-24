@@ -1,605 +1,58 @@
 // Pure Term viewport composed atop the 5-stream contract ([stdin, stdout, stderr, events, reasoning]).
-// Holds no reference to AcpClient or AcpSession ({§cli-repl-mode}, {§cli-output-channels}).
+// Holds no reference to AcpClient or AcpSession ({§cli-repl-mode}, {§cli-output-channels}, {§cli-rendering}, {§cli-markdown-projection}).
 
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 import * as readline from "node:readline";
 import { PassThrough } from "node:stream";
-import type {
-    SessionUpdate,
-    ToolCallContent,
-    ToolCallLocation,
-    ToolCallStatus,
-} from "@agentclientprotocol/sdk/experimental/v2/unstable";
-import { matchesKey, wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-tui";
+import { wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-tui";
 import stringWidth from "string-width";
 import type { CliCommonOptions } from "./cli-connection.ts";
-import { expandLearnCommand } from "./commands.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import {
-    extractMessageActor,
     formatModelRoute,
     SessionPresenter,
     type PresentationFrame,
 } from "./session-presenter.ts";
-import { makeAutocompleteProvider } from "./term-completion.ts";
-import Review, { isElicitationGateEvent, isPermissionGateEvent } from "./term-review.ts";
+import Review from "./term-review.ts";
 import TermSurface, {
     attention,
     bell,
     buildHeader,
-    concluded,
     formatComposerHint,
-    formatLoopMetrics,
     ModelText,
     paint,
     renderActiveLiveLine,
-    renderLoopSummary,
-    renderModelReply,
     renderNoteBlock,
     renderOperationBlock,
     renderReasoning,
-    renderSubmittedInput,
     windowTitle,
 } from "./term-surface.ts";
+import { attachViewportOutputListeners } from "./term-viewport-events.ts";
+import {
+    ALT_SHORTCUTS,
+    altShortcut,
+    attachViewportSurfaceInput,
+    backTabShortcut,
+    editInExternalEditor,
+    routeAndSendLine,
+    type TermViewportState,
+} from "./term-viewport-input.ts";
 
-export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models",
-    s: "/workspaces",
-    R: "/sessions",
-    L: "/loops",
-    N: "/workspace",
-    M: "/members",
-    x: "/stop",
-    "?": "/help",
-    e: "/editor",
-    h: "/parent",
-    l: "/enter",
-    j: "/older",
-    k: "/newer",
-});
+export { ALT_SHORTCUTS, altShortcut, backTabShortcut };
 
-export const altShortcut = (forward: string): string | null => {
-    const m = forward.match(/^\x1b([a-zA-Z?])$/u);
-    return m ? (ALT_SHORTCUTS[m[1]!] ?? null) : null;
-};
-
-export const backTabShortcut = (forward: string): string | null =>
-    matchesKey(forward, "shift+tab") || forward === "\x1b[Z" ? "/yolo" : null;
-
-export const runTermViewport = async (
-    options: CliCommonOptions,
-    outerStreams?: Partial<Pick<ClientStreams, "stdin" | "stdout" | "stderr">> & {
-        readonly terminal?: Terminal;
-    },
-): Promise<number> => {
-    const replStdin = new PassThrough();
-    const replStdout = new PassThrough();
-    const replStderr = new PassThrough();
-    const replEvents = new PassThrough();
-    const replReasoning = new PassThrough();
-
-    const termIn = outerStreams?.stdin ?? process.stdin;
-    const termOut = outerStreams?.stdout ?? process.stdout;
-    const termErr = outerStreams?.stderr ?? process.stderr;
-
-    const useSurface =
-        outerStreams?.terminal !== undefined ||
-        (outerStreams === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true);
-    const surface = useSurface ? new TermSurface(outerStreams?.terminal) : null;
-
-    const attend = attention(options.bell ? [bell(termOut as { readonly isTTY?: boolean; write(chunk: string): unknown })] : []);
-
-    const presenter = new SessionPresenter({
-        workspaceName: options.workspace ?? "default",
-        sessionName: options.sessionId ?? options.termSession ?? "session1",
-        model: options.model ?? "default",
-        yolo: options.yolo,
-    });
-
-    let initialPromptPrinted = false;
-    let initialWorkspaceConsumed = false;
-    let boundProjectRoot: string | null = options.projectRoot ?? options.cwd;
-    let cachedModels: string[] = [];
-    let cachedEfforts: string[] = ["low", "medium", "high"];
-    let cachedPersonas: string[] = ["none"];
-    let cachedSessions: string[] = [];
-    let cachedWorkspaces: string[] = [];
-    let cachedSkills: { readonly name: string; readonly description: string }[] = [];
-    let cachedAvailableCommands: { readonly name: string; readonly description: string }[] = [];
-    let currentPersona: string | null =
-        options.persona !== undefined && options.persona.length > 0 && options.persona !== "none"
-            ? options.persona
-            : null;
-    let currentMode: string | null = null;
-    let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
-    let modelSearchFetcher: ((query: string) => Promise<readonly string[]>) | null = null;
-    let modelEffortsFetcher: ((selector: string) => Promise<readonly string[] | null>) | null = null;
-    const cachedFamilyAliases = new Map<string, string[]>();
-
-    const applyAvailableCommandsToCache = (rawCommands: readonly unknown[]): void => {
-        const nextSkills: { readonly name: string; readonly description: string }[] = [];
-        const nextCommands: { readonly name: string; readonly description: string }[] = [];
-        const seenSkills = new Set<string>();
-        const seenCommands = new Set<string>();
-        for (const rawCmd of rawCommands) {
-            if (!rawCmd || typeof rawCmd !== "object") continue;
-            const cmd = rawCmd as { type?: unknown; name?: unknown; description?: unknown };
-            if (typeof cmd.name !== "string" || cmd.name.length === 0) continue;
-            if (cmd.type === "skill") {
-                if (seenSkills.has(cmd.name)) continue;
-                seenSkills.add(cmd.name);
-                nextSkills.push({
-                    name: cmd.name,
-                    description:
-                        typeof cmd.description === "string" && cmd.description.length > 0
-                            ? cmd.description
-                            : "skill",
-                });
-            } else if (cmd.type === "command") {
-                if (seenCommands.has(cmd.name)) continue;
-                seenCommands.add(cmd.name);
-                nextCommands.push({
-                    name: cmd.name,
-                    description:
-                        typeof cmd.description === "string" && cmd.description.length > 0
-                            ? cmd.description
-                            : "command",
-                });
-            }
-        }
-        cachedSkills = nextSkills;
-        cachedAvailableCommands = nextCommands;
-    };
-
-    const flattenSelectOptionValues = (optionsList: readonly unknown[] | undefined): string[] => {
-        if (!Array.isArray(optionsList)) return [];
-        const values: string[] = [];
-        for (const entry of optionsList) {
-            if (!entry || typeof entry !== "object") continue;
-            if ("options" in entry && Array.isArray((entry as { options?: unknown }).options)) {
-                for (const sub of (entry as { options: readonly unknown[] }).options) {
-                    if (sub && typeof sub === "object" && typeof (sub as { value?: unknown }).value === "string") {
-                        values.push((sub as { value: string }).value);
-                    }
-                }
-            } else if (typeof (entry as { value?: unknown }).value === "string") {
-                values.push((entry as { value: string }).value);
-            }
-        }
-        return values;
-    };
-
-    const applyConfigOptionsToCache = (rawOptions: readonly unknown[]): void => {
-        for (const rawOpt of rawOptions) {
-            const opt = rawOpt as {
-                configId?: string;
-                currentValue?: string;
-                options?: readonly unknown[];
-            };
-            if (opt.configId === "model") {
-                if (typeof opt.currentValue === "string") {
-                    presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
-                }
-                const incoming = flattenSelectOptionValues(opt.options).filter(
-                    (v) => v.length > 0 && v !== "none",
-                );
-                if (incoming.length > 0) {
-                    cachedModels = [...new Set([...incoming, ...cachedModels])];
-                }
-            } else if (opt.configId === "thought_level") {
-                if (typeof opt.currentValue === "string") {
-                    presenter.effort = opt.currentValue.length > 0 ? opt.currentValue : null;
-                    if (presenter.effort !== null && presenter.effortSource === null) {
-                        presenter.effortSource = "default";
-                    }
-                }
-                const efforts = flattenSelectOptionValues(opt.options).filter(Boolean);
-                if (efforts.length > 0) {
-                    cachedEfforts = efforts;
-                }
-            } else if (opt.configId === "persona") {
-                if (typeof opt.currentValue === "string") {
-                    currentPersona =
-                        opt.currentValue.length > 0 && opt.currentValue !== "none"
-                            ? opt.currentValue
-                            : null;
-                }
-                const personas = flattenSelectOptionValues(opt.options).filter(
-                    (v) => v.length > 0 && v !== "custom",
-                );
-                if (personas.length > 0) {
-                    cachedPersonas = personas;
-                }
-            } else if (opt.configId === "child") {
-                if (typeof opt.currentValue === "string") {
-                    presenter.childModel =
-                        opt.currentValue.length > 0 && opt.currentValue !== "inherit"
-                            ? opt.currentValue
-                            : null;
-                }
-            } else if (opt.configId === "mode") {
-                if (typeof opt.currentValue === "string") {
-                    currentMode = opt.currentValue.length > 0 ? opt.currentValue : null;
-                }
-            } else if (typeof opt.configId === "string" && opt.configId.includes(":")) {
-                const colonIdx = opt.configId.indexOf(":");
-                const family = opt.configId.slice(0, colonIdx);
-                const alias = opt.configId.slice(colonIdx + 1);
-                if (alias.length > 0) {
-                    const existing = cachedFamilyAliases.get(family) ?? [];
-                    if (!existing.includes(alias)) {
-                        cachedFamilyAliases.set(family, [...existing, alias]);
-                    }
-                }
-            }
-        }
-    };
+const createLiveReasoningController = (surface: TermSurface | null) => {
     const liveReasoningLines: string[] = [];
     let liveReasoningPending = "";
     let liveReasoningTurnEnded = false;
     let liveReasoningFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    let currentTurns = 0;
-    const focusedGateIds: string[] = [];
-    const suppressedStdoutQueue: string[] = [];
 
-    const editInExternalEditor = (initialText: string): string | null => {
-        const editorCmd = options.env.VISUAL || options.env.EDITOR || "vi";
-        const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-term-editor-"));
-        const tmpFile = join(tmpDir, "buffer.md");
-        try {
-            writeFileSync(tmpFile, initialText, "utf8");
-            const res = spawnSync(editorCmd, [tmpFile], {
-                stdio: "inherit",
-                shell: true,
-                env: options.env as NodeJS.ProcessEnv,
-            });
-            if (res.status === 0) {
-                return readFileSync(tmpFile, "utf8");
-            }
-            return null;
-        } finally {
-            rmSync(tmpDir, { recursive: true, force: true });
-        }
-    };
-
-    const review =
-        surface !== null
-            ? new Review(surface, {
-                  sendStdin: (cmd) => {
-                      replStdin.write(cmd);
-                  },
-                  editBody: async (initialBody) => {
-                      return await surface.handOff(() => editInExternalEditor(initialBody));
-                  },
-                  record: (text) => {
-                      surface.append(text);
-                  },
-              })
-            : null;
-
-    const updateSurfaceStatus = (): void => {
-        if (surface === null) return;
-        const isLoopActive =
-            presenter.lifecycle === "running" ||
-            presenter.lifecycle === "queued" ||
-            presenter.lifecycle === "parked" ||
-            presenter.lifecycle === "requires_action";
-        surface.setLoopActive(isLoopActive);
-        const activeLine = renderActiveLiveLine(presenter.activeLiveEntries, surface.columns);
-        surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
-        const loopNum = presenter.loopSeq ?? 1;
-        const turns = presenter.turns > 0 ? presenter.turns : currentTurns;
-        const yoloLead = presenter.yolo || currentMode === "accept" ? "🔥 " : "";
-        const place =
-            turns > 0
-                ? `[/~/${presenter.workspaceName}#${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
-                : `[/~/${presenter.workspaceName}#${presenter.sessionName}]`;
-        const modelLabel = formatModelRoute(presenter.model, presenter.effort, presenter.effortSource);
-        const activity =
-            presenter.lastStatusLine.length > 0
-                ? presenter.lastStatusLine
-                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
-        surface.setStatus(`${yoloLead}${place} ${activity}`);
-        const leadSuggestion = !isLoopActive ? presenter.promptSuggestions[0] : undefined;
-        surface.setPlaceholder(
-            leadSuggestion !== undefined
-                ? `→ ${leadSuggestion.replace(/\s+/gu, " ").trim()} (Tab)`
-                : formatComposerHint({
-                      yolo: presenter.yolo,
-                      mode: currentMode,
-                      persona: currentPersona,
-                      childModel: presenter.childModel,
-                  }),
-        );
-    };
-
-    const ensureSurfaceStarted = (): void => {
-        if (surface === null || initialPromptPrinted) return;
-        initialPromptPrinted = true;
-        surface.start();
-        const header = buildHeader({
-            workspaceName: presenter.workspaceName,
-            sessionName: presenter.sessionName,
-            modelSelector: presenter.model,
-            effort: presenter.effort,
-            yolo: presenter.yolo,
-        });
-        surface.append(paint(header, "dim"));
-        surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
-        surface.append("");
-        updateSurfaceStatus();
-        surface.renderNow();
-    };
-
-    const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
-        if (surface === null) return;
-        if (frame.op === "note") {
-            const rendered = renderNoteBlock({
-                glyph: frame.glyph,
-                aside: frame.aside,
-                body: frame.noteBody ?? frame.contentLines.join("\n"),
-                columns: surface.columns,
-                mermaidTimeoutMs: options.mermaidTimeoutMs,
-            });
-            surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
-        } else {
-            const rendered = renderOperationBlock({
-                glyph: frame.glyph,
-                op: frame.op,
-                title: frame.title,
-                target: frame.target,
-                scope: frame.scope,
-                destination: frame.destination,
-                pattern: frame.pattern,
-                fields: frame.fields,
-                count: frame.count,
-                aside: frame.aside,
-                status: frame.status,
-                statusCode: frame.statusCode,
-                outcome: frame.outcome,
-                contentLines: frame.contentLines,
-                outputLines: frame.outputLines,
-                coordinate: frame.toolCallId,
-                previewLimit: options.previewLines,
-                columns: surface.columns,
-            });
-            surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
-        }
-    };
-
-    const statusTicker =
-        surface !== null
-            ? setInterval(() => {
-                  if (
-                      presenter.lifecycle === "running" ||
-                      presenter.lifecycle === "parked" ||
-                      presenter.activeLiveEntries.length > 0
-                  ) {
-                      presenter.buildStatusBar();
-                      updateSurfaceStatus();
-                  }
-              }, 1000).unref()
-            : null;
-
-    const GATE_VERBS = new Set(["approve", "accept", "reject", "cancel", "edit", "answer"]);
-
-    const routeAndSendLine = (rawSubmission: string): void => {
-        const trimmed = rawSubmission.trim();
-        if (trimmed.length === 0) return;
-        if (trimmed.startsWith("/")) {
-            const tokens = trimmed.slice(1).split(/\s+/u);
-            const verb = tokens[0]?.toLowerCase() ?? "";
-            const firstArg = tokens[1];
-            const focusedId = focusedGateIds[0];
-            if (
-                GATE_VERBS.has(verb) &&
-                focusedId !== undefined &&
-                (firstArg === undefined || !firstArg.startsWith("@"))
-            ) {
-                const afterVerb = trimmed.slice(1 + verb.length).trimStart();
-                const routed = afterVerb.length > 0 ? `/${verb} @${focusedId} ${afterVerb}` : `/${verb} @${focusedId}`;
-                replStdin.write(
-                    routed.includes("\n") ? `\x1b[200~${routed}\x1b[201~\n` : `${routed}\n`,
-                );
-                return;
-            }
-        }
-        const leadingTrimmed = rawSubmission.trimStart();
-        const slashVerb = trimmed.startsWith("/") ? (trimmed.slice(1).split(/\s+/u)[0] ?? "") : "";
-        const isAdvertisedPromptCmd =
-            slashVerb.includes(":") &&
-            cachedAvailableCommands.some((c) => c.name.toLowerCase() === slashVerb.toLowerCase());
-        if (
-            ((!trimmed.startsWith("/") && trimmed !== "?" && leadingTrimmed !== ":" && !/^:\s+$/u.test(leadingTrimmed)) ||
-                expandLearnCommand(trimmed, { projectRoot: boundProjectRoot }) !== null ||
-                isAdvertisedPromptCmd) &&
-            !trimmed.startsWith("!")
-        ) {
-            retireLiveReasoning();
-            presenter.markTurnStart();
-            presenter.buildStatusBar();
-            updateSurfaceStatus();
-        }
-        replStdin.write(
-            rawSubmission.includes("\n")
-                ? `\x1b[200~${rawSubmission}\x1b[201~\n`
-                : `${rawSubmission}\n`,
-        );
-    };
-
-    let cancelArmed = false;
-    const cancelRun = (): void => {
-        replStdin.write("/stop\n");
-        if (!cancelArmed && surface !== null) {
-            cancelArmed = true;
-            surface.append(paint("  cancelling… (ctrl-c again to quit)", "dim"));
-            surface.renderNow();
-        }
-    };
-
-    let removeInputListener: (() => void) | null = null;
-    if (surface !== null) {
-        surface.setAutocompleteProvider(
-            makeAutocompleteProvider({
-                cwd: options.cwd,
-                getProjectRoot: () => boundProjectRoot,
-                getModels: () => cachedModels,
-                getProviderModels: async (provider) =>
-                    providerModelsFetcher !== null ? await providerModelsFetcher(provider) : [],
-                searchModels: async (query) =>
-                    modelSearchFetcher !== null ? await modelSearchFetcher(query) : [],
-                getEfforts: () => cachedEfforts,
-                getEffortsForModel: async (selector) =>
-                    modelEffortsFetcher !== null ? await modelEffortsFetcher(selector) : null,
-                getPersonas: () => cachedPersonas,
-                getFamilyAliases: (family) =>
-                    family === "personas"
-                        ? cachedPersonas.filter((p) => p !== "none")
-                        : (cachedFamilyAliases.get(family) ?? []),
-                getSessionNames: () => cachedSessions,
-                getWorkspaceNames: () => cachedWorkspaces,
-                getPendingGateIds: () => focusedGateIds,
-                getSkills: () => cachedSkills,
-                getAvailableCommands: () => cachedAvailableCommands,
-                getPromptSuggestions: () =>
-                    presenter.lifecycle === "running" ||
-                    presenter.lifecycle === "queued" ||
-                    presenter.lifecycle === "parked" ||
-                    presenter.lifecycle === "requires_action"
-                        ? []
-                        : presenter.promptSuggestions,
-            }),
-        );
-
-        removeInputListener = surface.addInputListener((text) => {
-            if (surface.dialogOpen) return undefined;
-            if (matchesKey(text, "escape")) {
-                if (surface.leaveReview()) return { consume: true };
-                if (
-                    presenter.lifecycle === "running" ||
-                    presenter.lifecycle === "queued" ||
-                    presenter.lifecycle === "parked" ||
-                    presenter.lifecycle === "requires_action" ||
-                    focusedGateIds.length > 0
-                ) {
-                    cancelRun();
-                    return { consume: true };
-                }
-                if (surface.editor.getText().length > 0) {
-                    surface.setInput("");
-                }
-                return { consume: true };
-            }
-            if (matchesKey(text, "ctrl+c")) {
-                if (cancelArmed) {
-                    cancelArmed = false;
-                    replStdin.write("/quit\n");
-                } else if (
-                    presenter.lifecycle === "running" ||
-                    presenter.lifecycle === "queued" ||
-                    presenter.lifecycle === "parked" ||
-                    presenter.lifecycle === "requires_action" ||
-                    focusedGateIds.length > 0
-                ) {
-                    cancelRun();
-                } else if (surface.editor.getText().length > 0) {
-                    surface.setInput("");
-                } else {
-                    replStdin.write("/quit\n");
-                }
-                return { consume: true };
-            }
-            if (matchesKey(text, "ctrl+d") && !surface.reviewing && surface.editor.getText().length === 0) {
-                replStdin.write("/quit\n");
-                return { consume: true };
-            }
-            const backTab = backTabShortcut(text);
-            if (backTab !== null) {
-                replStdin.write(`${backTab}\n`);
-                return { consume: true };
-            }
-            if (surface.reviewing) return undefined;
-            const shortcut = altShortcut(text);
-            if (shortcut !== null) {
-                if (shortcut === "/editor") {
-                    const draft = surface.editor.getText();
-                    void surface.handOff(() => editInExternalEditor(draft)).then((edited) => {
-                        if (edited !== null) {
-                            surface.setInput(edited.replace(/\r?\n$/u, ""));
-                        }
-                    });
-                } else {
-                    replStdin.write(`${shortcut}\n`);
-                }
-                return { consume: true };
-            }
-            return undefined;
-        });
-
-        surface.editor.onSubmit = (rawText: string) => {
-            const trimmed = rawText.trim();
-            if (trimmed.length === 0) return;
-            surface.recordPrompt(rawText);
-            const expandedLearn = expandLearnCommand(trimmed, { projectRoot: boundProjectRoot });
-            if (expandedLearn !== null) {
-                localSubmittedPrompts.push(expandedLearn);
-            } else if (!trimmed.startsWith("/")) {
-                localSubmittedPrompts.push(rawText);
-            }
-            surface.append("");
-            surface.append(renderSubmittedInput(rawText));
-            surface.append("");
-
-            if (trimmed === "/review" && review !== null && review.waiting > 0) {
-                surface.openReview();
-                return;
-            }
-
-            if (trimmed === "/editor") {
-                void surface.handOff(() => editInExternalEditor("")).then((edited) => {
-                    if (edited !== null) {
-                        surface.setInput(edited.replace(/\r?\n$/u, ""));
-                    }
-                });
-                return;
-            }
-
-            const importMatch = trimmed.match(/^\/import(?:\s+(.+))?$/u);
-            if (importMatch) {
-                const filePath = importMatch[1]?.trim() ?? "";
-                if (!filePath) {
-                    replStdin.write("/import\n");
-                    return;
-                }
-                try {
-                    const content = readFileSync(resolve(options.cwd, filePath), "utf8");
-                    surface.insertInput(content);
-                } catch (err) {
-                    surface.append(
-                        paint(
-                            `error: ${ModelText.plain(err instanceof Error ? err.message : String(err))}`,
-                            "failure",
-                        ),
-                    );
-                }
-                return;
-            }
-
-            routeAndSendLine(rawText);
-        };
-    }
-
-    const clearReasoningFlushTimer = (): void => {
+    const clearTimer = (): void => {
         if (liveReasoningFlushTimer !== null) {
             clearTimeout(liveReasoningFlushTimer);
             liveReasoningFlushTimer = null;
         }
     };
 
-    const flushReasoningToSurface = (includePending: boolean): void => {
+    const flushToSurface = (includePending: boolean): void => {
         if (surface === null) return;
         const trailing = includePending ? liveReasoningPending.trimEnd() : "";
         const lines =
@@ -611,112 +64,18 @@ export const runTermViewport = async (
         surface.setLive(rendered.length > 0 ? rendered : null);
     };
 
-    const retireLiveReasoning = (): void => {
-        clearReasoningFlushTimer();
+    const retire = (): void => {
+        clearTimer();
         liveReasoningLines.length = 0;
         liveReasoningPending = "";
         liveReasoningTurnEnded = false;
         surface?.setLive(null);
     };
 
-    replStdout.setEncoding("utf8");
-    replStdout.on("data", (chunk: string) => {
-        if (surface !== null) {
-            if (!initialWorkspaceConsumed && chunk.startsWith("workspace: ")) {
-                initialWorkspaceConsumed = true;
-                ensureSurfaceStarted();
-                return;
-            }
-            let remaining = chunk;
-            while (suppressedStdoutQueue.length > 0 && remaining.startsWith(suppressedStdoutQueue[0]!)) {
-                remaining = remaining.slice(suppressedStdoutQueue.shift()!.length);
-            }
-            if (remaining.length === 0) return;
-            const trimmed = remaining.replace(/\r?\n$/u, "");
-            if (trimmed === "cancelled (final 499)" && cancelArmed) {
-                return;
-            }
-            if (trimmed === "yolo: on" || trimmed === "yolo: off") {
-                presenter.yolo = trimmed === "yolo: on";
-                presenter.buildStatusBar();
-                updateSurfaceStatus();
-            }
-            if (trimmed.length > 0) {
-                surface.append(trimmed);
-            }
-            return;
-        }
-
-        if (
-            !initialPromptPrinted &&
-            chunk.startsWith("workspace: ") &&
-            presenter.workspaceName &&
-            presenter.sessionName
-        ) {
-            initialPromptPrinted = true;
-            termOut.write(`${chunk}[/~/${presenter.workspaceName}#${presenter.sessionName}] `);
-            return;
-        }
-        if (chunk.startsWith("● ") && presenter.lastStatusLine.length > 0 && !chunk.includes(presenter.lastStatusLine)) {
-            const trimmed = chunk.endsWith("\n") ? chunk.slice(0, -1) : chunk;
-            termOut.write(`${trimmed}\n${presenter.lastStatusLine}\n`);
-            return;
-        }
-        termOut.write(chunk);
-    });
-
-    replStderr.setEncoding("utf8");
-    let stderrBuf = "";
-    replStderr.on("data", (chunk: string) => {
-        stderrBuf += chunk;
-        const lines = stderrBuf.split("\n");
-        stderrBuf = lines.pop() ?? "";
-        for (const line of lines) {
-            if (line.trim().length === 0) continue;
-            try {
-                const parsed = JSON.parse(line) as Record<string, unknown>;
-                if (
-                    typeof parsed.type === "string" &&
-                    parsed.type.startsWith("https://problems.plurnk.xyz/client/")
-                ) {
-                    if (parsed.type === "https://problems.plurnk.xyz/client/prompt-failed") {
-                        cancelArmed = false;
-                        retireLiveReasoning();
-                        presenter.lifecycle = "failed";
-                        presenter.lifecycleGlyph = "❌";
-                        presenter.doing = null;
-                        presenter.buildStatusBar();
-                        if (surface !== null) {
-                            updateSurfaceStatus();
-                        }
-                    }
-                    const detail =
-                        typeof parsed.detail === "string"
-                            ? parsed.detail
-                            : typeof parsed.title === "string"
-                              ? parsed.title
-                              : line;
-                    if (surface !== null) {
-                        surface.append(paint(ModelText.plain(detail), "failure"));
-                    } else {
-                        termErr.write(`${detail}\n`);
-                    }
-                }
-            } catch {
-                if (surface !== null) {
-                    surface.append(paint(ModelText.plain(line), "failure"));
-                } else {
-                    termErr.write(`${line}\n`);
-                }
-            }
-        }
-    });
-
-    replReasoning.setEncoding("utf8");
-    replReasoning.on("data", (chunk: string) => {
+    const handleChunk = (chunk: string, termOut: NodeJS.WritableStream): void => {
         if (surface !== null) {
             if (liveReasoningTurnEnded) {
-                clearReasoningFlushTimer();
+                clearTimer();
                 liveReasoningLines.length = 0;
                 liveReasoningPending = "";
                 liveReasoningTurnEnded = false;
@@ -769,14 +128,14 @@ export const runTermViewport = async (
                 }
             }
 
-            clearReasoningFlushTimer();
+            clearTimer();
             if (advanced) {
-                flushReasoningToSurface(false);
+                flushToSurface(false);
             }
             if (liveReasoningPending.trim().length > 0) {
                 liveReasoningFlushTimer = setTimeout(() => {
                     liveReasoningFlushTimer = null;
-                    flushReasoningToSurface(true);
+                    flushToSurface(true);
                 }, 40).unref();
             }
             return;
@@ -785,578 +144,210 @@ export const runTermViewport = async (
         if (trimmed.length > 0) {
             termOut.write(`${trimmed}\n`);
         }
+    };
+
+    return { handleChunk, retire, clearTimer };
+};
+
+export const runTermViewport = async (
+    options: CliCommonOptions,
+    outerStreams?: Partial<Pick<ClientStreams, "stdin" | "stdout" | "stderr">> & {
+        readonly terminal?: Terminal;
+    },
+): Promise<number> => {
+    const replStdin = new PassThrough();
+    const replStdout = new PassThrough();
+    const replStderr = new PassThrough();
+    const replEvents = new PassThrough();
+    const replReasoning = new PassThrough();
+
+    const termIn = outerStreams?.stdin ?? process.stdin;
+    const termOut = outerStreams?.stdout ?? process.stdout;
+    const termErr = outerStreams?.stderr ?? process.stderr;
+
+    const useSurface =
+        outerStreams?.terminal !== undefined ||
+        (outerStreams === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true);
+    const surface = useSurface ? new TermSurface(outerStreams?.terminal) : null;
+
+    const attend = attention(
+        options.bell ? [bell(termOut as { readonly isTTY?: boolean; write(chunk: string): unknown })] : [],
+    );
+
+    const presenter = new SessionPresenter({
+        workspaceName: options.workspace ?? "default",
+        sessionName: options.sessionId ?? options.termSession ?? "session1",
+        model: options.model ?? "default",
+        yolo: options.yolo,
     });
 
-    const isToolCallStatus = (value: unknown): value is ToolCallStatus =>
-        value === "pending" || value === "in_progress" || value === "completed" || value === "failed";
+    const review =
+        surface !== null
+            ? new Review(surface, {
+                  sendStdin: (cmd) => {
+                      replStdin.write(cmd);
+                  },
+                  editBody: async (initialBody) => {
+                      return await surface.handOff(() => editInExternalEditor(initialBody, options.env));
+                  },
+                  record: (text) => {
+                      surface.append(text);
+                  },
+              })
+            : null;
 
-    const isSessionUpdatePayload = (value: Record<string, unknown>): value is SessionUpdate =>
-        typeof value.sessionUpdate === "string";
+    const reasoning = createLiveReasoningController(surface);
 
-    const localSubmittedPrompts: string[] = [];
-    const consumeLocalSubmittedPrompt = (text: string): boolean => {
-        const trimmed = text.trim();
-        const idx = localSubmittedPrompts.findIndex(
-            (p) =>
-                p === text ||
-                p.trim() === trimmed ||
-                (p.trim().startsWith("$") && /^<skill:\/\/\/[^>]+>$/u.test(trimmed)),
-        );
-        if (idx < 0) return false;
-        localSubmittedPrompts.splice(idx, 1);
-        return true;
+    const state: TermViewportState = {
+        options,
+        replStdin,
+        termOut,
+        termErr,
+        surface,
+        review,
+        attend,
+        presenter,
+        initialPromptPrinted: false,
+        initialWorkspaceConsumed: false,
+        boundProjectRoot: options.projectRoot ?? options.cwd,
+        cachedModels: [],
+        cachedEfforts: ["low", "medium", "high"],
+        cachedPersonas: ["none"],
+        cachedSessions: [],
+        cachedWorkspaces: [],
+        cachedSkills: [],
+        cachedAvailableCommands: [],
+        currentPersona:
+            options.persona !== undefined && options.persona.length > 0 && options.persona !== "none"
+                ? options.persona
+                : null,
+        currentMode: null,
+        providerModelsFetcher: null,
+        modelSearchFetcher: null,
+        modelEffortsFetcher: null,
+        cachedFamilyAliases: new Map<string, string[]>(),
+        currentTurns: 0,
+        cancelArmed: false,
+        focusedGateIds: [],
+        suppressedStdoutQueue: [],
+        localSubmittedPrompts: [],
+        updateSurfaceStatus: (): void => {
+            if (surface === null) return;
+            const isLoopActive =
+                presenter.lifecycle === "running" ||
+                presenter.lifecycle === "queued" ||
+                presenter.lifecycle === "parked" ||
+                presenter.lifecycle === "requires_action";
+            surface.setLoopActive(isLoopActive);
+            const activeLine = renderActiveLiveLine(presenter.activeLiveEntries, surface.columns);
+            surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
+            const loopNum = presenter.loopSeq ?? 1;
+            const turns = presenter.turns > 0 ? presenter.turns : state.currentTurns;
+            const yoloLead = presenter.yolo || state.currentMode === "accept" ? "🔥 " : "";
+            const place =
+                turns > 0
+                    ? `[/~/${presenter.workspaceName}#${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
+                    : `[/~/${presenter.workspaceName}#${presenter.sessionName}]`;
+            const modelLabel = formatModelRoute(presenter.model, presenter.effort, presenter.effortSource);
+            const activity =
+                presenter.lastStatusLine.length > 0
+                    ? presenter.lastStatusLine
+                    : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
+            surface.setStatus(`${yoloLead}${place} ${activity}`);
+            const leadSuggestion = !isLoopActive ? presenter.promptSuggestions[0] : undefined;
+            surface.setPlaceholder(
+                leadSuggestion !== undefined
+                    ? `→ ${leadSuggestion.replace(/\s+/gu, " ").trim()} (Tab)`
+                    : formatComposerHint({
+                          yolo: presenter.yolo,
+                          mode: state.currentMode,
+                          persona: state.currentPersona,
+                          childModel: presenter.childModel,
+                      }),
+            );
+        },
+        ensureSurfaceStarted: (): void => {
+            if (surface === null || state.initialPromptPrinted) return;
+            state.initialPromptPrinted = true;
+            surface.start();
+            const header = buildHeader({
+                workspaceName: presenter.workspaceName,
+                sessionName: presenter.sessionName,
+                modelSelector: presenter.model,
+                effort: presenter.effort,
+                yolo: presenter.yolo,
+            });
+            surface.append(paint(header, "dim"));
+            surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
+            surface.append("");
+            state.updateSurfaceStatus();
+            surface.renderNow();
+        },
+        retireLiveReasoning: (): void => {
+            reasoning.retire();
+        },
+        renderToolCallToSurface: (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
+            if (surface === null) return;
+            if (frame.op === "note") {
+                const rendered = renderNoteBlock({
+                    glyph: frame.glyph,
+                    aside: frame.aside,
+                    body: frame.noteBody ?? frame.contentLines.join("\n"),
+                    columns: surface.columns,
+                    mermaidTimeoutMs: options.mermaidTimeoutMs,
+                });
+                surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
+            } else {
+                const rendered = renderOperationBlock({
+                    glyph: frame.glyph,
+                    op: frame.op,
+                    title: frame.title,
+                    target: frame.target,
+                    scope: frame.scope,
+                    destination: frame.destination,
+                    pattern: frame.pattern,
+                    fields: frame.fields,
+                    count: frame.count,
+                    aside: frame.aside,
+                    status: frame.status,
+                    statusCode: frame.statusCode,
+                    outcome: frame.outcome,
+                    contentLines: frame.contentLines,
+                    outputLines: frame.outputLines,
+                    coordinate: frame.toolCallId,
+                    previewLimit: options.previewLines,
+                    columns: surface.columns,
+                });
+                surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
+            }
+        },
     };
 
-    const extractUpdateBlockText = (b: unknown): string => {
-        if (!b || typeof b !== "object") return "";
-        if (typeof (b as { text?: unknown }).text === "string") {
-            return (b as { text: string }).text;
-        }
-        if ((b as { type?: unknown }).type === "skill" && typeof (b as { name?: unknown }).name === "string") {
-            return `$${(b as { name: string }).name}`;
-        }
-        return "";
-    };
+    const statusTicker =
+        surface !== null
+            ? setInterval(() => {
+                  if (
+                      presenter.lifecycle === "running" ||
+                      presenter.lifecycle === "parked" ||
+                      presenter.activeLiveEntries.length > 0
+                  ) {
+                      presenter.buildStatusBar();
+                      state.updateSurfaceStatus();
+                  }
+              }, 1000).unref()
+            : null;
 
-    const extractUpdateText = (content: unknown): string => {
-        if (!content || typeof content !== "object") return "";
-        if (Array.isArray(content)) {
-            return content.map(extractUpdateBlockText).join("");
-        }
-        return extractUpdateBlockText(content);
-    };
-
-    const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
-        if (surface === null) return;
-        presenter.setHistoryReplay(true);
-        try {
-            for (const rawItem of items) {
-            if (typeof rawItem !== "object" || rawItem === null) continue;
-            const rec = rawItem as Record<string, unknown>;
-            if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
-                const plurnkMeta = (
-                    rec.meta as
-                        | {
-                              plurnk?: {
-                                  answering?: string;
-                                  source?: string;
-                                  actor?: string;
-                                  address?: string;
-                                  target?: string;
-                              };
-                          }
-                        | undefined
-                )?.plurnk;
-                if (
-                    typeof plurnkMeta?.answering === "string" ||
-                    (typeof plurnkMeta?.source === "string" && plurnkMeta.source.startsWith("session://"))
-                ) {
-                    const sender =
-                        typeof plurnkMeta?.source === "string" && plurnkMeta.source.length > 0
-                            ? plurnkMeta.source
-                            : (plurnkMeta?.answering ?? "session");
-                    surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(rec.text)}`);
-                } else {
-                    const userActor = extractMessageActor(plurnkMeta);
-                    if (addToEditorHistory && userActor === null) {
-                        surface.recordPrompt(rec.text);
-                    }
-                    surface.append("");
-                    surface.append(renderSubmittedInput(rec.text, userActor));
-                    surface.append("");
-                }
-            } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
-                const streamAttr = (
-                    rec.meta as { plurnk?: { attrs?: { stream?: unknown } } } | undefined
-                )?.plurnk?.attrs?.stream;
-                const holdOpenRow =
-                    addToEditorHistory &&
-                    (rec.status === "pending" ||
-                        (rec.status === "in_progress" &&
-                            presenter.isOpenStream(
-                                rec.toolCallId,
-                                typeof streamAttr === "string" ? streamAttr : null,
-                            )));
-                const effectiveStatus: ToolCallStatus = holdOpenRow
-                    ? (rec.status as ToolCallStatus)
-                    : rec.status === "in_progress" || rec.status === "pending" || !isToolCallStatus(rec.status)
-                      ? "completed"
-                      : rec.status;
-                if (holdOpenRow) {
-                    surface.reserveToolCall(rec.toolCallId);
-                }
-                const toolCallUpdate: SessionUpdate = {
-                    sessionUpdate: "tool_call_update",
-                    toolCallId: rec.toolCallId,
-                    ...(typeof rec.name === "string" ? { name: rec.name } : {}),
-                    ...(typeof rec.title === "string" ? { title: rec.title } : {}),
-                    status: effectiveStatus,
-                    ...(Array.isArray(rec.locations) ? { locations: rec.locations as ToolCallLocation[] } : {}),
-                    ...(Array.isArray(rec.content) ? { content: rec.content as ToolCallContent[] } : {}),
-                    ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
-                    ...(rec.rawOutput !== undefined ? { rawOutput: rec.rawOutput } : {}),
-                    ...(rec.meta !== undefined && typeof rec.meta === "object" && rec.meta !== null
-                        ? { _meta: rec.meta as Record<string, unknown> }
-                        : {}),
-                };
-                const tcFrames = presenter.apply(toolCallUpdate);
-                for (const f of tcFrames) {
-                    if (f.kind === "tool_call") {
-                        renderToolCallToSurface(f);
-                    }
-                }
-            } else if (
-                rec.kind === "agent_message" &&
-                typeof rec.text === "string" &&
-                rec.text.length > 0
-            ) {
-                const plurnkMeta = (
-                    rec.meta as
-                        | {
-                              plurnk?: {
-                                  op?: string;
-                                  status?: number;
-                                  loopSeq?: number;
-                                  turnSeq?: number;
-                                  actor?: string;
-                                  source?: string;
-                                  address?: string;
-                                  target?: string;
-                                  attrs?: { aside?: string };
-                                  receipt?: {
-                                      repliedTo?: readonly string[];
-                                      repliedToSources?: readonly string[];
-                                  };
-                              };
-                          }
-                        | undefined
-                )?.plurnk;
-                if (typeof plurnkMeta?.loopSeq === "number") {
-                    presenter.loopSeq = plurnkMeta.loopSeq;
-                }
-                if (typeof plurnkMeta?.turnSeq === "number" && plurnkMeta.turnSeq > 0) {
-                    presenter.turns = Math.max(presenter.turns, plurnkMeta.turnSeq);
-                }
-                surface.append(
-                    renderModelReply(rec.text, surface.columns, {
-                        op: plurnkMeta?.op ?? "send",
-                        status: plurnkMeta?.status ?? 200,
-                        aside: plurnkMeta?.attrs?.aside ?? null,
-                        actor: extractMessageActor(plurnkMeta),
-                        mermaidTimeoutMs: options.mermaidTimeoutMs,
-                    }),
-                );
-            }
-        }
-        } finally {
-            presenter.setHistoryReplay(false);
-        }
-    };
-
-    replEvents.setEncoding("utf8");
-    let eventsBuf = "";
-    replEvents.on("data", (chunk: string) => {
-        eventsBuf += chunk;
-        const lines = eventsBuf.split("\n");
-        eventsBuf = lines.pop() ?? "";
-        for (const line of lines) {
-            if (line.trim().length === 0) continue;
-            let event: Record<string, unknown>;
-            try {
-                event = JSON.parse(line) as Record<string, unknown>;
-            } catch {
-                continue;
-            }
-
-            if (event.sessionUpdate === "session_bound") {
-                cancelArmed = false;
-                retireLiveReasoning();
-                const prevWorkspace = presenter.workspaceName;
-                const prevSession = presenter.sessionName;
-                const wasStarted = initialPromptPrinted;
-                if (typeof event.workspace === "string" && event.workspace.length > 0) {
-                    presenter.workspaceName = event.workspace;
-                }
-                if (typeof event.session === "string" && event.session.length > 0) {
-                    presenter.sessionName = event.session;
-                }
-                if (typeof event.cwd === "string") {
-                    boundProjectRoot = event.cwd.length > 0 ? event.cwd : null;
-                }
-                if (Array.isArray(event.sessions)) {
-                    cachedSessions = event.sessions
-                        .map((s) => (s && typeof s === "object" ? String((s as { name?: unknown }).name ?? "") : ""))
-                        .filter(Boolean);
-                }
-                if (Array.isArray(event.workspaces)) {
-                    cachedWorkspaces = event.workspaces
-                        .map((w) => (w && typeof w === "object" ? String((w as { name?: unknown }).name ?? "") : ""))
-                        .filter(Boolean);
-                }
-                if (event._meta && typeof event._meta === "object") {
-                    presenter.ingestMeta(event._meta as Record<string, unknown>);
-                }
-                if (Array.isArray(event.configOptions)) {
-                    applyConfigOptionsToCache(event.configOptions);
-                }
-                if (Array.isArray(event.availableCommands)) {
-                    applyAvailableCommandsToCache(event.availableCommands);
-                }
-                const historyLostFrame = presenter.consumeHistoryLostFrame();
-                if (surface !== null) {
-                    ensureSurfaceStarted();
-                    if (!wasStarted && (presenter.model === "none" || presenter.model === "")) {
-                        const hasReadyModels = cachedModels.length > 0;
-                        surface.append(
-                            paint(
-                                hasReadyModels
-                                    ? "⚠️  No model selected. /models lists ready models and /model <selector> chooses one."
-                                    : "⚠️  No model selected. Supply a provider's API key and choose one with /models and /model <selector>.",
-                                "warning",
-                            ),
-                        );
-                    }
-                    if (historyLostFrame !== null) {
-                        surface.append(paint(ModelText.plain(historyLostFrame.formatted), "failure"));
-                    }
-                    if (!wasStarted || presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession) {
-                        presenter.resetSessionHistory();
-                        surface.resetToolCallSlots();
-                        localSubmittedPrompts.length = 0;
-                    }
-                    if (Array.isArray(event.promptSuggestions)) {
-                        presenter.setPromptSuggestions(
-                            event.promptSuggestions.map((s) =>
-                                s && typeof s === "object" && Array.isArray((s as { prompt?: unknown }).prompt)
-                                    ? extractUpdateText((s as { prompt: unknown[] }).prompt)
-                                    : "",
-                            ),
-                        );
-                    }
-                    if (Array.isArray(event.prompts)) {
-                        surface.recordPromptHistory(
-                            event.prompts.filter((p): p is string => typeof p === "string"),
-                        );
-                    }
-                    if (Array.isArray(event.history) && event.history.length > 0) {
-                        renderHistoryItemsToSurface(event.history, true);
-                    }
-                    if (wasStarted && (presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession)) {
-                        currentTurns = 0;
-                        presenter.turns = 0;
-                        presenter.lastLoopStatus = null;
-                        presenter.lastStatusLine = "";
-                    }
-                    currentTurns = presenter.turns;
-                    presenter.buildStatusBar();
-                    surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
-                    updateSurfaceStatus();
-                    surface.renderNow();
-                } else if (historyLostFrame !== null) {
-                    termOut.write(`${historyLostFrame.formatted}\n`);
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "loop_replay") {
-                retireLiveReasoning();
-                if (typeof event.loopSeq === "number") {
-                    presenter.loopSeq = event.loopSeq;
-                    presenter.turns = 0;
-                    currentTurns = 0;
-                }
-                if (surface !== null) {
-                    ensureSurfaceStarted();
-                    presenter.resetSessionHistory();
-                    surface.resetToolCallSlots();
-                    const seqLabel = typeof event.loopSeq === "number" ? String(event.loopSeq) : "?";
-                    surface.append(paint(`── loop ${seqLabel} ──`, "dim"));
-                    if (Array.isArray(event.history) && event.history.length > 0) {
-                        renderHistoryItemsToSurface(event.history, false);
-                    }
-                    if (presenter.turns === 0 && typeof event.loopSeq === "number") {
-                        presenter.turns = 1;
-                    }
-                    currentTurns = presenter.turns;
-                    updateSurfaceStatus();
-                    surface.renderNow();
-                } else if (typeof event.text === "string" && event.text.length > 0) {
-                    termOut.write(event.text);
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "composer_updated") {
-                if (surface !== null && typeof event.text === "string") {
-                    surface.setInput(event.text);
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "connection_lost") {
-                retireLiveReasoning();
-                presenter.markDisconnected();
-                if (surface !== null) {
-                    updateSurfaceStatus();
-                    surface.renderNow();
-                } else if (presenter.lastStatusLine.length > 0) {
-                    termOut.write(`${presenter.lastStatusLine}\n`);
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "permission_request") {
-                retireLiveReasoning();
-                if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
-                    focusedGateIds.push(event.id);
-                }
-                if (review !== null && isPermissionGateEvent(event)) {
-                    review.addPermissionGate(event);
-                    attend("review");
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "elicitation_request") {
-                retireLiveReasoning();
-                if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
-                    focusedGateIds.push(event.id);
-                }
-                if (review !== null && isElicitationGateEvent(event)) {
-                    review.addElicitationGate(event);
-                    attend("question");
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "gate_resolved") {
-                if (typeof event.id === "string") {
-                    const idx = focusedGateIds.indexOf(event.id);
-                    if (idx >= 0) focusedGateIds.splice(idx, 1);
-                    review?.remove(event.id);
-                }
-                continue;
-            }
-
-            if (!isSessionUpdatePayload(event)) continue;
-            if (
-                surface !== null &&
-                (event.sessionUpdate === "user_message_chunk" || event.sessionUpdate === "user_message")
-            ) {
-                const plurnkMeta = (
-                    event._meta as
-                        | {
-                              plurnk?: {
-                                  published?: boolean;
-                                  answering?: string;
-                                  source?: string;
-                                  actor?: string;
-                                  address?: string;
-                                  target?: string;
-                                  op?: string;
-                              };
-                          }
-                        | undefined
-                )?.plurnk;
-                if (plurnkMeta?.published !== false) {
-                    const userText = extractUpdateText(event.content);
-                    if (userText.length > 0) {
-                        if (
-                            typeof plurnkMeta?.answering === "string" ||
-                            (typeof plurnkMeta?.source === "string" &&
-                                plurnkMeta.source.startsWith("session://"))
-                        ) {
-                            if (plurnkMeta?.op === "send") {
-                                const sender =
-                                    typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
-                                        ? plurnkMeta.source
-                                        : (plurnkMeta?.answering ?? "session");
-                                surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(userText)}`);
-                            }
-                        } else {
-                            const userActor = extractMessageActor(plurnkMeta);
-                            if (userActor === null) {
-                                surface.recordPrompt(userText);
-                            }
-                            if (
-                                (plurnkMeta === undefined || plurnkMeta.op === "send") &&
-                                (userActor !== null || !consumeLocalSubmittedPrompt(userText))
-                            ) {
-                                surface.append("");
-                                surface.append(renderSubmittedInput(userText, userActor));
-                                surface.append("");
-                            }
-                        }
-                    }
-                }
-            }
-            if (
-                surface !== null &&
-                event.sessionUpdate === "tool_call_update" &&
-                typeof event.toolCallId === "string" &&
-                (event.status === "pending" || event.status === "in_progress")
-            ) {
-                surface.reserveToolCall(event.toolCallId);
-            }
-            const frames = presenter.apply(event);
-            if (event.sessionUpdate === "config_option_update" && Array.isArray(event.configOptions)) {
-                applyConfigOptionsToCache(event.configOptions);
-            }
-            if (event.sessionUpdate === "available_commands_update" && Array.isArray(event.availableCommands)) {
-                applyAvailableCommandsToCache(event.availableCommands);
-            }
-            if (
-                event.sessionUpdate === "usage_update" ||
-                event.sessionUpdate === "config_option_update" ||
-                event.sessionUpdate === "terminal_update"
-            ) {
-                presenter.buildStatusBar();
-                if (surface !== null) {
-                    updateSurfaceStatus();
-                }
-            }
-            for (const frame of frames) {
-                switch (frame.kind) {
-                    case "reasoning_tail":
-                        break;
-                    case "subagent":
-                    case "prompt_suggestions":
-                        if (surface !== null) {
-                            updateSurfaceStatus();
-                        }
-                        break;
-                    case "reasoning_retired":
-                        retireLiveReasoning();
-                        break;
-                    case "status_update":
-                        currentTurns = presenter.turns;
-                        if (frame.newTurn) {
-                            retireLiveReasoning();
-                            surface?.archiveTurn();
-                        } else if (frame.status.lifecycle !== "running" || presenter.doing?.phase === "working") {
-                            retireLiveReasoning();
-                            if (frame.status.lifecycle === "parked") {
-                                surface?.archiveTurn();
-                            }
-                        }
-                        if (surface !== null) {
-                            updateSurfaceStatus();
-                        } else if (frame.status.lifecycle === "parked") {
-                            termOut.write(`${frame.status.formattedStatusLine}\n`);
-                        }
-                        break;
-                    case "reply_chunk":
-                        retireLiveReasoning();
-                        currentTurns = presenter.turns;
-                        if (surface !== null && frame.text.length > 0) {
-                            suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
-                            surface.addResponse(
-                                renderModelReply(frame.text, surface.columns, {
-                                    op: frame.op,
-                                    status: frame.status,
-                                    aside: frame.aside,
-                                    actor: frame.actor,
-                                    mermaidTimeoutMs: options.mermaidTimeoutMs,
-                                }),
-                                frame.messageId,
-                            );
-                            if (frame.op === "wait") {
-                                updateSurfaceStatus();
-                            }
-                        }
-                        break;
-                    case "tool_call":
-                        retireLiveReasoning();
-                        currentTurns = presenter.turns;
-                        if (surface !== null) {
-                            renderToolCallToSurface(frame);
-                            updateSurfaceStatus();
-                        } else {
-                            if (frame.title) {
-                                termOut.write(`${frame.title}\n`);
-                            }
-                            for (const cLine of frame.contentLines) {
-                                termOut.write(`${cLine}\n`);
-                            }
-                        }
-                        break;
-                    case "terminal_output":
-                        // Stream telemetry never writes directly to the Term waterfall ({§cli-rendering}).
-                        if (surface === null) {
-                            termOut.write(`${frame.rawData}\n`);
-                        }
-                        break;
-                    case "session_message":
-                        if (surface !== null) {
-                            surface.append(`🐜 ${ModelText.plain(frame.senderSessionId)}: ${ModelText.plain(frame.text)}`);
-                        } else {
-                            termOut.write(`🐜 ${frame.senderSessionId}: ${frame.text}\n`);
-                        }
-                        break;
-                    case "notice":
-                        if (surface !== null) {
-                            const accent = frame.severity === "info" ? "dim" : frame.severity === "warning" ? "warning" : "failure";
-                            surface.append(paint(ModelText.plain(frame.formatted), accent));
-                            updateSurfaceStatus();
-                        } else {
-                            termOut.write(`${frame.formatted}\n`);
-                        }
-                        break;
-                    case "status_bar":
-                        cancelArmed = false;
-                        retireLiveReasoning();
-                        currentTurns = frame.turns;
-                        if (surface !== null) {
-                            const metricsOpts = {
-                                turns: frame.turns,
-                                elapsedMs: frame.elapsedMs,
-                                inputTokens: frame.loopInputTokens ?? frame.status.inputTokens,
-                                outputTokens: frame.loopOutputTokens ?? frame.status.outputTokens,
-                                curationWeight: frame.status.curationWeight,
-                                curationBudget: frame.status.curationBudget,
-                                contextTokens: frame.status.contextTokens,
-                                contextCapacity: frame.status.contextCapacity,
-                                costUsd:
-                                    frame.loopCostUsd !== undefined ? frame.loopCostUsd : frame.status.costUsd,
-                            };
-                            const attachedToHamster = surface.archiveTurn(
-                                frame.statusCode === 200 && !frame.hitMaxTurns
-                                    ? formatLoopMetrics(metricsOpts)
-                                    : null,
-                            );
-                            if (frame.terminalDetail) {
-                                surface.append(paint(`⛔ ${ModelText.plain(frame.terminalDetail)}`, "failure"));
-                            }
-                            if (!attachedToHamster) {
-                                surface.append(
-                                    renderLoopSummary({
-                                        status: frame.statusCode,
-                                        hitMaxTurns: frame.hitMaxTurns,
-                                        ...metricsOpts,
-                                    }),
-                                );
-                            }
-                            updateSurfaceStatus();
-                            attend(concluded(frame.statusCode, frame.hitMaxTurns));
-                        } else {
-                            if (frame.terminalDetail) {
-                                termOut.write(`${frame.terminalDetail}\n`);
-                            }
-                            const loopNum = presenter.loopSeq ?? 1;
-                            termOut.write(
-                                `${frame.status.formattedStatusLine}\n[/~/${presenter.workspaceName}#${presenter.sessionName}(${String(loopNum)}/${String(frame.turns)})] `,
-                            );
-                        }
-                        break;
-                }
-            }
-        }
-    });
+    const removeInputListener = attachViewportSurfaceInput(state);
+    attachViewportOutputListeners(
+        state,
+        { replStdout, replStderr, replEvents, replReasoning },
+        reasoning,
+    );
 
     const userRl = surface === null ? readline.createInterface({ input: termIn, terminal: false }) : null;
     if (userRl !== null) {
         userRl.on("line", (line: string) => {
-            routeAndSendLine(line);
+            routeAndSendLine(state, line);
         });
         userRl.on("close", () => {
             replStdin.end();
@@ -1371,17 +362,17 @@ export const runTermViewport = async (
             events: replEvents,
             reasoning: replReasoning,
             onProviderModelsFetcher: (fetcher) => {
-                providerModelsFetcher = fetcher;
+                state.providerModelsFetcher = fetcher;
             },
             onModelSearchFetcher: (fetcher) => {
-                modelSearchFetcher = fetcher;
+                state.modelSearchFetcher = fetcher;
             },
             onModelEffortsFetcher: (fetcher) => {
-                modelEffortsFetcher = fetcher;
+                state.modelEffortsFetcher = fetcher;
             },
         });
     } finally {
-        clearReasoningFlushTimer();
+        reasoning.clearTimer();
         if (statusTicker !== null) {
             clearInterval(statusTicker);
         }

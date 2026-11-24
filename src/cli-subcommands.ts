@@ -23,6 +23,7 @@ import {
     runCliLogout,
     runCliUpdate,
 } from "./cli-daemon-auth.ts";
+import { COLLECTION_PAGE_SIZE } from "./collection-commands.ts";
 import {
     executeFamilyCommand,
     formatExecResultLine,
@@ -341,7 +342,7 @@ export const runCliModels = async (
             ...(query.provider !== undefined ? { provider: query.provider } : {}),
             ...(query.all !== undefined ? { all: query.all } : {}),
             ...(query.offset !== undefined ? { offset: query.offset } : {}),
-            ...(query.limit !== undefined ? { limit: query.limit } : {}),
+            limit: query.limit ?? COLLECTION_PAGE_SIZE,
         });
         if (options.json) {
             process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

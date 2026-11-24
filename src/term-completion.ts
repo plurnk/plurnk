@@ -4,6 +4,13 @@ import { readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { PLURNK_OPS, PROPOSAL_POLICIES } from "@plurnk/plurnk-contracts";
+import {
+    FAMILY_DISCOVER_FLAGS_BY_FAMILY,
+    FAMILY_LIST_FLAGS,
+    LIST_ORIGINS,
+    LIST_STATES,
+    MODELS_LIST_FLAGS,
+} from "./collection-commands.ts";
 import { INTERACTIVE_COMMANDS } from "./commands.ts";
 import { SCHEDULE_ADD_FLAGS } from "./schedule-command.ts";
 
@@ -307,12 +314,52 @@ export const completeInput = async (
     if (familyMatch !== null) {
         const family = familyMatch[1]!;
         const typed = familyMatch[2]!.toLowerCase();
-        const subs = FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? [];
+        const subs = typed.startsWith("-")
+            ? [...(FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? []), ...FAMILY_LIST_FLAGS]
+            : (FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? []);
         const summaryBySub = new Map(subs.map((s) => [s.value, s.description]));
         return namespace(
-            subs.map((s) => s.value),
+            [...summaryBySub.keys()],
             typed,
             (value) => summaryBySub.get(value) ?? "subcommand",
+            options,
+        );
+    }
+
+    const familyStateMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--state(?:\s+|=)([-\w]*)$/u.exec(line);
+    if (familyStateMatch !== null) {
+        const typed = familyStateMatch[2]!.toLowerCase();
+        return namespace(LIST_STATES, typed, () => "definition state", options);
+    }
+
+    const familyOriginMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--origin(?:\s+|=)([-\w]*)$/u.exec(line);
+    if (familyOriginMatch !== null) {
+        const typed = familyOriginMatch[2]!.toLowerCase();
+        return namespace(LIST_ORIGINS, typed, () => "definition origin", options);
+    }
+
+    const familyListFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list(?:\s+[\s\S]*)?|(?!--scope\b)--(?:query|state|origin|offset|limit)\b[\s\S]*)\s+(--[-\w]*)$/u.exec(line);
+    if (familyListFlagMatch !== null) {
+        const typed = familyListFlagMatch[2]!.toLowerCase();
+        const descByFlag = new Map(FAMILY_LIST_FLAGS.map((f) => [f.value, f.description]));
+        return namespace(
+            FAMILY_LIST_FLAGS.map((f) => f.value),
+            typed,
+            (value) => descByFlag.get(value) ?? "list option",
+            options,
+        );
+    }
+
+    const familyDiscoverFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?discover(?:\s+[\s\S]*)?\s+(--[-\w]*)$/u.exec(line);
+    if (familyDiscoverFlagMatch !== null) {
+        const family = familyDiscoverFlagMatch[1]!;
+        const typed = familyDiscoverFlagMatch[2]!.toLowerCase();
+        const flags = FAMILY_DISCOVER_FLAGS_BY_FAMILY[family] ?? [];
+        const descByFlag = new Map(flags.map((f) => [f.value, f.description]));
+        return namespace(
+            flags.map((f) => f.value),
+            typed,
+            (value) => descByFlag.get(value) ?? "discover option",
             options,
         );
     }
@@ -367,6 +414,18 @@ export const completeInput = async (
         const frag = workspaceMatch[1]!;
         const names = ctx.getWorkspaceNames?.() ?? [];
         return namespace(names, frag, () => "workspace", options);
+    }
+
+    const modelsFlagMatch = /^\/models(?:\s+[\s\S]*)?\s+(--[-\w]*)$/u.exec(line);
+    if (modelsFlagMatch !== null) {
+        const typed = modelsFlagMatch[1]!.toLowerCase();
+        const descByFlag = new Map(MODELS_LIST_FLAGS.map((f) => [f.value, f.description]));
+        return namespace(
+            MODELS_LIST_FLAGS.map((f) => f.value),
+            typed,
+            (value) => descByFlag.get(value) ?? "models option",
+            options,
+        );
     }
 
     const modelMatch = /^\/(model|models|child)\s+(\S*)$/u.exec(line);

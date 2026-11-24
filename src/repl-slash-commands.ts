@@ -16,6 +16,7 @@ import {
     formatConfigOption,
     formatServiceUpdateResult,
 } from "./cli-subcommands.ts";
+import { parseModelsArgs } from "./collection-commands.ts";
 import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
 import {
     executeFamilyCommand,
@@ -301,10 +302,19 @@ export const dispatchSlashCommand = async (
         }
 
         if (cmd === "models") {
-            const result = await client.action<Record<string, unknown>>(
-                "models.list",
-                args.length > 0 ? { search: args.join(" ") } : {},
-            );
+            const rawTail = line.replace(/^\/\S+(?:\s+)?/u, "");
+            let modelsParams: ReturnType<typeof parseModelsArgs>;
+            try {
+                const tokenized = rawTail.length > 0 ? tokenizeSlashArgs(rawTail) : [];
+                modelsParams = parseModelsArgs(tokenized);
+            } catch (err) {
+                if (err instanceof ScheduleCommandUsageError) {
+                    writeErrorJsonl(streams.stderr, err.problem);
+                    return "continue";
+                }
+                throw err;
+            }
+            const result = await client.action<Record<string, unknown>>("models.list", modelsParams);
             streams.stdout.write(formatModelsRows(result));
             return "continue";
         }

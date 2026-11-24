@@ -6,6 +6,11 @@ import type {
     ScheduledToolCall,
 } from "./acp-client.ts";
 import {
+    isImplicitListFlag,
+    parseFamilyDiscoverArgs,
+    parseFamilyListArgs,
+} from "./collection-commands.ts";
+import {
     extractScheduleProblem,
     formatScheduleInspect,
     formatScheduleRows,
@@ -37,9 +42,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const SCHEDULE_USAGE = `usage: plurnk schedule [list|show|inspect|discover|add|replace|run|done|reopen|enable|disable|remove] [options]
 
 subcommands:
-  list                                     List workspace schedules and macros (default).
+  list [query] [--query <q>] [--state <s>] [--origin <o>] [--offset <n>] [--limit <n>]
+                                           List workspace schedules and macros (default).
   show <alias> | inspect <alias>           Inspect one schedule or macro definition in full.
-  discover [<rule>]                        Show workspace clock or preview occurrences of <rule>.
+  discover [<rule>] [--cursor <c>] [--limit <n>]
+                                           Show workspace clock or preview occurrences of <rule>.
   add <alias> <session> <rule> <prompt...> Add a prompt schedule (cron, RRULE, +duration, ISO, manual, or once).
   add <alias> [--manual|--once|--rule <r>] --target <session> [--persona <p>] [--catchup|--no-catchup] --prompt <text>
   add <alias> [--manual|--once|--rule <r>] --step <server>.<tool> ['<json>'] [--aside <label>] [--step ...]
@@ -222,11 +229,13 @@ const requireFlagValue = (flag: string, value: string | undefined): string => {
 
 export const parseScheduleCommand = (args: readonly string[]): ParsedScheduleCommand => {
     const filtered = args.filter((t) => t.length > 0);
-    const sub = (filtered[0] ?? "list").toLowerCase();
-    const rest = filtered.slice(1);
+    const head = filtered[0];
+    const implicitList = isImplicitListFlag(head);
+    const sub = implicitList ? "list" : (head ?? "list").toLowerCase();
+    const rest = implicitList ? filtered : filtered.slice(1);
 
     if (sub === "list") {
-        return { kind: "action", sub: "list", actionName: "workspace.schedule.list", params: {} };
+        return { kind: "action", sub: "list", actionName: "workspace.schedule.list", params: parseFamilyListArgs(rest) };
     }
 
     if (sub === "show" || sub === "inspect") {
@@ -241,25 +250,11 @@ export const parseScheduleCommand = (args: readonly string[]): ParsedScheduleCom
     }
 
     if (sub === "discover") {
-        let ruleFlag: string | undefined;
-        const posArgs: string[] = [];
-        for (let i = 0; i < rest.length; i += 1) {
-            const tok = rest[i]!;
-            if (tok === "--rule") {
-                ruleFlag = requireFlagValue("--rule", rest[i + 1]);
-                i += 1;
-            } else if (tok.startsWith("--rule=")) {
-                ruleFlag = tok.slice("--rule=".length);
-            } else {
-                posArgs.push(tok);
-            }
-        }
-        const rule = ruleFlag ?? (posArgs.length > 0 ? posArgs.join(" ") : undefined);
         return {
             kind: "action",
             sub: "discover",
             actionName: "workspace.schedule.discover",
-            params: rule !== undefined && rule.length > 0 ? { rule } : {},
+            params: parseFamilyDiscoverArgs("schedule", rest),
         };
     }
 

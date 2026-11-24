@@ -58,8 +58,25 @@ export interface PlurnkActionEntry<
     readonly result: R;
 }
 
+export interface PlurnkFamilyListQuery extends Record<string, unknown> {
+    readonly query?: string;
+    readonly state?: "active" | "dormant" | "disabled" | "unavailable" | "authorization-required";
+    readonly origin?: "service" | "workspace" | "session";
+    readonly offset?: number;
+    readonly limit?: number;
+}
+
 export interface PlurnkFamilyListResult extends Record<string, unknown> {
     readonly definitions?: ReadonlyArray<Record<string, unknown>>;
+    readonly offset?: number;
+    readonly total?: number;
+    readonly nextOffset?: number;
+}
+
+export interface PlurnkFamilyDiscoverResult extends Record<string, unknown> {
+    readonly candidates?: ReadonlyArray<Record<string, unknown>>;
+    readonly total?: number;
+    readonly nextCursor?: string;
 }
 
 export interface ScheduledToolCall {
@@ -221,10 +238,10 @@ export interface PlurnkActionMap {
             } & Record<string, unknown>>;
         } & Record<string, unknown>
     >;
-    readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.skills.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.skills.discover": PlurnkActionEntry<
-        { readonly source?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly source?: string; readonly query?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.skills.add": PlurnkActionEntry<
         { readonly alias: string; readonly source?: string; readonly ref?: string } & Record<string, unknown>,
@@ -246,10 +263,10 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.personas.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.personas.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.personas.discover": PlurnkActionEntry<
-        { readonly query?: string; readonly source?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.personas.add": PlurnkActionEntry<
         {
@@ -285,10 +302,10 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.members.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.members.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.members.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly query?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.members.add": PlurnkActionEntry<
         { readonly files: readonly string[] } & Record<string, unknown>,
@@ -306,10 +323,10 @@ export interface PlurnkActionMap {
         { readonly file: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.env.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.env.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.env.add": PlurnkActionEntry<
         { readonly alias: string; readonly value: string } & Record<string, unknown>,
@@ -331,10 +348,10 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "session.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "session.env.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "session.env.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "session.env.add": PlurnkActionEntry<
         { readonly alias: string; readonly value: string } & Record<string, unknown>,
@@ -356,10 +373,10 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.mcp.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.mcp.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.mcp.discover": PlurnkActionEntry<
-        { readonly query?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly query?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.mcp.add": PlurnkActionEntry<
         (
@@ -399,10 +416,10 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "workspace.schedule.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.schedule.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "workspace.schedule.discover": PlurnkActionEntry<
-        { readonly rule?: string } & Record<string, unknown>,
-        Record<string, unknown>
+        { readonly rule?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
     >;
     readonly "workspace.schedule.add": PlurnkActionEntry<
         ScheduleActionInput & Record<string, unknown>,

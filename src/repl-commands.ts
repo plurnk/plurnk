@@ -11,6 +11,13 @@ import { AvailableCommand, type ContentBlock } from "@agentclientprotocol/sdk/ex
 import * as Contracts from "@plurnk/plurnk-contracts";
 import type { AcpClient } from "./acp-client.ts";
 import type { AcpSession, AcpTranscriptItem } from "./acp-session.ts";
+import {
+    formatDiscoverPageFooter,
+    formatListPageFooter,
+    isImplicitListFlag,
+    parseFamilyDiscoverArgs,
+    parseFamilyListArgs,
+} from "./collection-commands.ts";
 import { receiveAuthorization } from "./oauth.ts";
 import {
     extractScheduleProblem,
@@ -248,8 +255,15 @@ export const extractPromptHistory = (targetSession: AcpSession, maxEntries?: num
     return prompts;
 };
 
-export const formatFamilyRows = (family: string, result: Record<string, unknown>): string =>
-    family === "schedule" ? formatScheduleRows(result) : Contracts.formatFamilyRows(family, result);
+export const formatFamilyRows = (family: string, result: Record<string, unknown>): string => {
+    if (family === "schedule") return formatScheduleRows(result);
+    const base = Contracts.formatFamilyRows(family, result);
+    const footer = formatListPageFooter(result);
+    if (footer !== null && !base.includes("Showing ")) {
+        return `${base.endsWith("\n") ? base : `${base}\n`}${footer}\n`;
+    }
+    return base;
+};
 
 export const formatExecResultLine = (r: {
     readonly status?: number;
@@ -318,10 +332,12 @@ export const formatModelsRows = (result: Record<string, unknown>): string => {
         ];
     });
     let out = `${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`;
+    const offset = typeof result.offset === "number" ? result.offset : 0;
+    const total = typeof result.total === "number" ? result.total : items.length;
     if (typeof result.nextOffset === "number") {
-        const offset = typeof result.offset === "number" ? result.offset : 0;
-        const total = typeof result.total === "number" ? result.total : items.length;
         out += `(showing ${String(offset + 1)}-${String(offset + items.length)} of ${String(total)}; next --offset ${String(result.nextOffset)})\n`;
+    } else if (offset > 0 || items.length < total) {
+        out += `(showing ${String(offset + 1)}-${String(offset + items.length)} of ${String(total)})\n`;
     }
     return out;
 };
@@ -474,17 +490,74 @@ export const executeFamilyCommand = async (
     }
 
     const filteredPreserveEmpty: string[] = [];
+    let explicitScope: "session" | "workspace" | null = null;
     for (let i = 0; i < args.length; i += 1) {
         const tok = args[i] ?? "";
         if (tok === "--scope" && args[i + 1] !== undefined) {
+            explicitScope = args[i + 1] === "workspace" ? "workspace" : "session";
             i += 1;
-        } else if (!tok.startsWith("--scope=")) {
+        } else if (tok.startsWith("--scope=")) {
+            explicitScope = tok.slice("--scope=".length) === "workspace" ? "workspace" : "session";
+        } else {
             filteredPreserveEmpty.push(tok);
         }
     }
-    const rawSub = filteredPreserveEmpty[0] ?? "list";
-    const rawRest = filteredPreserveEmpty.slice(1);
-    const { scopePrefix, sub, actionName, params } = Contracts.parseFamilyCommand(family, args);
+    const headTok = filteredPreserveEmpty[0];
+    const implicitList = isImplicitListFlag(headTok);
+    const rawSub = implicitList ? "list" : (headTok ?? "list");
+    const rawRest = implicitList ? filteredPreserveEmpty : filteredPreserveEmpty.slice(1);
+    const resolvedScopePrefix = explicitScope ?? (family === "env" ? "session" : "workspace");
+    let scopePrefix: "session" | "workspace";
+    let sub: string;
+    let actionName: string;
+    let params: Record<string, unknown>;
+    if (rawSub === "list") {
+        scopePrefix = resolvedScopePrefix;
+        sub = "list";
+        actionName = `${scopePrefix}.${family}.list`;
+        try {
+            params = parseFamilyListArgs(rawRest);
+        } catch (err) {
+            if (err instanceof ScheduleCommandUsageError) {
+                io.onError(err.problem);
+                return;
+            }
+            throw err;
+        }
+    } else if (rawSub === "discover") {
+        scopePrefix = resolvedScopePrefix;
+        sub = "discover";
+        actionName = `${scopePrefix}.${family}.discover`;
+        try {
+            params = parseFamilyDiscoverArgs(family, rawRest);
+        } catch (err) {
+            if (err instanceof ScheduleCommandUsageError) {
+                io.onError(err.problem);
+                return;
+            }
+            throw err;
+        }
+    } else {
+        try {
+            const parsedCmd = Contracts.parseFamilyCommand(family, args);
+            scopePrefix = parsedCmd.scopePrefix === "session" ? "session" : "workspace";
+            sub = parsedCmd.sub;
+            actionName = parsedCmd.actionName;
+            params = parsedCmd.params;
+        } catch (err) {
+            if (err instanceof ScheduleCommandUsageError) {
+                io.onError(err.problem);
+                return;
+            }
+            io.onError({
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Invalid command arguments",
+                status: 400,
+                detail: err instanceof Error ? err.message : String(err),
+            });
+            return;
+        }
+    }
 
     const writeResult = (result: Record<string, unknown>): void => {
         if (io.json) {
@@ -500,7 +573,14 @@ export const executeFamilyCommand = async (
             Contracts.isRecord(result.completion) ||
             result.removed === true;
         if (hasStructuredFamilyPayload) {
-            io.stdout.write(`${Contracts.formatFamilyResult(family, actionName, params, result)}\n`);
+            let formatted = Contracts.formatFamilyResult(family, actionName, params, result);
+            if (Array.isArray(result.candidates)) {
+                const footer = formatDiscoverPageFooter(result);
+                if (footer !== null && !formatted.includes("Showing ")) {
+                    formatted = `${formatted}\n${footer}`;
+                }
+            }
+            io.stdout.write(`${formatted}\n`);
             return;
         }
         io.stdout.write(`${JSON.stringify(result)}\n`);

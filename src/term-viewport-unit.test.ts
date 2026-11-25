@@ -131,6 +131,7 @@ test("{§cli-repl-mode} {§cli-model-selection} {§cli-inline-review}: term-view
             cachedFamilyAliases: new Map(),
             currentTurns: 0,
             cancelArmed: false,
+            activeLocalOAuth: false,
             focusedGateIds: ["11223344"],
             suppressedStdoutQueue: [],
             localSubmittedPrompts: [],
@@ -262,6 +263,7 @@ test("{§cli-rendering} {§cli-sessions-topology} {§cli-repl-mode}: term-viewpo
         cachedFamilyAliases: new Map(),
         currentTurns: 0,
         cancelArmed: false,
+        activeLocalOAuth: false,
         focusedGateIds: [],
         suppressedStdoutQueue: [],
         localSubmittedPrompts: [],
@@ -479,5 +481,217 @@ test("{§cli-rendering} {§cli-sessions-topology} {§cli-repl-mode}: term-viewpo
     } finally {
         await new Promise<void>((r) => httpServer.close(() => r()));
         rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test("{§cli-session-status} {§cli-repl-mode}: routeAndSendLine preserves active doing state when queuing prompts and routes Escape/Ctrl-C to /stop during local_oauth", async () => {
+    const activeCases: ReadonlyArray<{
+        readonly label: string;
+        readonly lifecycle: SessionPresenter["lifecycle"];
+        readonly focusedGateIds: string[];
+        readonly activeLocalOAuth: boolean;
+    }> = [
+        { label: "running loop", lifecycle: "running", focusedGateIds: [], activeLocalOAuth: false },
+        { label: "queued loop", lifecycle: "queued", focusedGateIds: [], activeLocalOAuth: false },
+        { label: "parked loop", lifecycle: "parked", focusedGateIds: [], activeLocalOAuth: false },
+        { label: "requires_action loop", lifecycle: "requires_action", focusedGateIds: [], activeLocalOAuth: false },
+        { label: "focused gate", lifecycle: "idle", focusedGateIds: ["gate-1"], activeLocalOAuth: false },
+        { label: "active local oauth", lifecycle: "idle", focusedGateIds: [], activeLocalOAuth: true },
+    ];
+
+    for (const tc of activeCases) {
+        const presenter = new SessionPresenter({ workspaceName: "ws1", sessionName: "s1", model: "fast" });
+        presenter.lifecycle = tc.lifecycle;
+        const originalDoing = { phase: "working" as const, since: 12345, op: "plurnk.mcp", target: "cloudflare" };
+        presenter.doing = originalDoing;
+        const replStdin = new PassThrough();
+        const written: string[] = [];
+        replStdin.on("data", (c) => written.push(String(c)));
+
+        const state: TermViewportState = {
+            options: { cwd: "/tmp", env: {}, previewLines: 3, mermaidTimeoutMs: 1000 } as unknown as CliCommonOptions,
+            replStdin,
+            termOut: new PassThrough(),
+            termErr: new PassThrough(),
+            surface: null,
+            review: null,
+            attend: () => {},
+            presenter,
+            initialPromptPrinted: true,
+            initialWorkspaceConsumed: true,
+            boundProjectRoot: "/tmp",
+            cachedModels: [],
+            cachedEfforts: [],
+            cachedPersonas: [],
+            cachedSessions: [],
+            cachedWorkspaces: [],
+            cachedSkills: [],
+            cachedAvailableCommands: [],
+            currentPersona: null,
+            currentMode: null,
+            providerModelsFetcher: null,
+            modelSearchFetcher: null,
+            modelEffortsFetcher: null,
+            cachedFamilyAliases: new Map(),
+            currentTurns: 0,
+            cancelArmed: false,
+            activeLocalOAuth: tc.activeLocalOAuth,
+            focusedGateIds: [...tc.focusedGateIds],
+            suppressedStdoutQueue: [],
+            localSubmittedPrompts: [],
+            updateSurfaceStatus: () => {},
+            ensureSurfaceStarted: () => {},
+            retireLiveReasoning: () => {},
+            renderToolCallToSurface: () => {},
+        };
+
+        routeAndSendLine(state, "queued follow-up prompt");
+        assert.deepEqual(
+            presenter.doing,
+            originalDoing,
+            `${tc.label}: queuing a prompt must not overwrite active doing phase with awaiting model`,
+        );
+        assert.equal(written.join(""), "queued follow-up prompt\n");
+    }
+
+    // Idle session with no active gate or local OAuth DOES enter awaiting model on prompt submit.
+    {
+        const presenter = new SessionPresenter({ workspaceName: "ws1", sessionName: "s1", model: "fast" });
+        presenter.lifecycle = "idle";
+        presenter.doing = null;
+        const replStdin = new PassThrough();
+        const state: TermViewportState = {
+            options: { cwd: "/tmp", env: {}, previewLines: 3, mermaidTimeoutMs: 1000 } as unknown as CliCommonOptions,
+            replStdin,
+            termOut: new PassThrough(),
+            termErr: new PassThrough(),
+            surface: null,
+            review: null,
+            attend: () => {},
+            presenter,
+            initialPromptPrinted: true,
+            initialWorkspaceConsumed: true,
+            boundProjectRoot: "/tmp",
+            cachedModels: [],
+            cachedEfforts: [],
+            cachedPersonas: [],
+            cachedSessions: [],
+            cachedWorkspaces: [],
+            cachedSkills: [],
+            cachedAvailableCommands: [],
+            currentPersona: null,
+            currentMode: null,
+            providerModelsFetcher: null,
+            modelSearchFetcher: null,
+            modelEffortsFetcher: null,
+            cachedFamilyAliases: new Map(),
+            currentTurns: 0,
+            cancelArmed: false,
+            activeLocalOAuth: false,
+            focusedGateIds: [],
+            suppressedStdoutQueue: [],
+            localSubmittedPrompts: [],
+            updateSurfaceStatus: () => {},
+            ensureSurfaceStarted: () => {},
+            retireLiveReasoning: () => {},
+            renderToolCallToSurface: () => {},
+        };
+
+        routeAndSendLine(state, "fresh prompt");
+        assert.equal(presenter.lifecycle, "running");
+        assert.equal((presenter.doing as { readonly phase?: string } | null)?.phase, "awaiting");
+    }
+
+    // local_oauth event toggles state.activeLocalOAuth so Escape / Ctrl-C route to /stop rather than /quit.
+    {
+        let onInput: ((data: string) => void) | null = null;
+        const term: Terminal = {
+            columns: 80,
+            rows: 24,
+            kittyProtocolActive: false,
+            start(cb) {
+                onInput = cb;
+            },
+            stop() {},
+            async drainInput() {},
+            write() {},
+            moveBy() {},
+            hideCursor() {},
+            showCursor() {},
+            clearLine() {},
+            clearFromCursor() {},
+            clearScreen() {},
+            setTitle() {},
+            setProgress() {},
+            setProgramStatus() {},
+        };
+        const surface = new TermSurface(term);
+        surface.start();
+        const replStdin = new PassThrough();
+        const sent: string[] = [];
+        replStdin.on("data", (c) => sent.push(String(c)));
+        const replEvents = new PassThrough();
+        const presenter = new SessionPresenter({ workspaceName: "ws1", sessionName: "s1", model: "fast" });
+        const state: TermViewportState = {
+            options: { cwd: "/tmp", env: {}, previewLines: 3, mermaidTimeoutMs: 1000 } as unknown as CliCommonOptions,
+            replStdin,
+            termOut: new PassThrough(),
+            termErr: new PassThrough(),
+            surface,
+            review: null,
+            attend: () => {},
+            presenter,
+            initialPromptPrinted: true,
+            initialWorkspaceConsumed: true,
+            boundProjectRoot: "/tmp",
+            cachedModels: [],
+            cachedEfforts: [],
+            cachedPersonas: [],
+            cachedSessions: [],
+            cachedWorkspaces: [],
+            cachedSkills: [],
+            cachedAvailableCommands: [],
+            currentPersona: null,
+            currentMode: null,
+            providerModelsFetcher: null,
+            modelSearchFetcher: null,
+            modelEffortsFetcher: null,
+            cachedFamilyAliases: new Map(),
+            currentTurns: 0,
+            cancelArmed: false,
+            activeLocalOAuth: false,
+            focusedGateIds: [],
+            suppressedStdoutQueue: [],
+            localSubmittedPrompts: [],
+            updateSurfaceStatus: () => {},
+            ensureSurfaceStarted: () => {},
+            retireLiveReasoning: () => {},
+            renderToolCallToSurface: () => {},
+        };
+        attachViewportOutputListeners(
+            state,
+            {
+                replStdout: new PassThrough(),
+                replStderr: new PassThrough(),
+                replEvents,
+                replReasoning: new PassThrough(),
+            },
+            { handleChunk: () => {} },
+        );
+        const detach = attachViewportSurfaceInput(state);
+        try {
+            replEvents.write(`${JSON.stringify({ sessionUpdate: "local_oauth", active: true })}\n`);
+            await new Promise((r) => setTimeout(r, 20));
+            assert.equal(state.activeLocalOAuth, true);
+            onInput!("\x1b"); // Escape
+            assert.equal(sent.join(""), "/stop\n");
+            replEvents.write(`${JSON.stringify({ sessionUpdate: "local_oauth", active: false })}\n`);
+            await new Promise((r) => setTimeout(r, 20));
+            assert.equal(state.activeLocalOAuth, false);
+            assert.equal(state.cancelArmed, false);
+        } finally {
+            detach?.();
+            surface.stop();
+        }
     }
 });

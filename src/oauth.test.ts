@@ -1038,3 +1038,75 @@ test("{§cli-configuration-source} executeFamilyCommand supports personas, mcp s
         },
     ]);
 });
+
+test("{§cli-configuration-source} {§cli-problems-and-notices} /mcp oauth timeout names alias and PLURNK_CLIENT_OAUTH_TIMEOUT_MS and formatActionErrorDetail surfaces diagnostic and recovery", async () => {
+    const { formatActionErrorDetail } = await import("./repl-commands.ts");
+
+    assert.equal(
+        formatActionErrorDetail(
+            Object.assign(new Error("OAuth authorization for MCP server 'cloudflare' could not be completed."), {
+                data: {
+                    type: "https://problems.plurnk.xyz/mcp/management/oauth-callback-invalid",
+                    title: "OAuth callback invalid",
+                    status: 400,
+                    detail: "OAuth authorization for MCP server 'cloudflare' could not be completed.",
+                    diagnostic: "Issuer mismatch in authorization response (RFC 9207)",
+                    recovery: "Re-run /mcp oauth cloudflare.",
+                },
+            }),
+        ),
+        "OAuth authorization for MCP server 'cloudflare' could not be completed. — Issuer mismatch in authorization response (RFC 9207) (Re-run /mcp oauth cloudflare.)",
+    );
+    assert.equal(formatActionErrorDetail(new Error("plain error")), "plain error");
+
+    let boundRedirect = "";
+    const fakeClient = {
+        action: async (kind: string, params: Record<string, unknown>) => {
+            if (kind === "workspace.mcp.list") {
+                return {
+                    definitions: [
+                        {
+                            alias: "cloudflare",
+                            state: "authorization-required",
+                            definition: { type: "streamable-http", url: "https://mcp.cloudflare.com/mcp" },
+                        },
+                    ],
+                };
+            }
+            if (kind === "workspace.mcp.oauth.begin") {
+                boundRedirect = String(params.redirectUrl);
+                return {
+                    status: 202,
+                    alias: "cloudflare",
+                    authorization: { url: authorizationUrl(boundRedirect) },
+                };
+            }
+            throw new Error(`Unexpected action ${kind}`);
+        },
+    } as unknown as AcpClient;
+
+    const out: string[] = [];
+    const stdout = new Writable({
+        write(chunk, _enc, cb) {
+            out.push(String(chunk));
+            cb();
+        },
+    });
+    await assert.rejects(
+        () =>
+            executeFamilyCommand(fakeClient, "mcp", ["oauth", "cloudflare"], { workspace: "alpha" }, "/tmp", {
+                stdout,
+                oauthTimeoutMs: 40,
+                openBrowser: async () => {},
+                onError: () => {},
+            }),
+        (err: unknown) => {
+            assert.ok(err instanceof Error);
+            assert.match(err.message, /cloudflare/u);
+            assert.match(err.message, /40 ms/u);
+            assert.match(err.message, /PLURNK_CLIENT_OAUTH_TIMEOUT_MS/u);
+            assert.match(err.message, /\/mcp oauth cloudflare/u);
+            return true;
+        },
+    );
+});

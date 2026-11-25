@@ -228,6 +228,7 @@ export const runTermViewport = async (
         cachedFamilyAliases: new Map<string, string[]>(),
         currentTurns: 0,
         cancelArmed: false,
+        activeLocalOAuth: false,
         focusedGateIds: [],
         suppressedStdoutQueue: [],
         localSubmittedPrompts: [],

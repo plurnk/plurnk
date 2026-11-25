@@ -65,6 +65,7 @@ export const runReplSession = async (
     const state: ReplRuntimeState = {
         options,
         streams,
+        ...(customStreams?.openBrowser !== undefined ? { openBrowser: customStreams.openBrowser } : {}),
         currentWorkspace: options.workspace ?? "default",
         currentSessionName: options.sessionId ?? options.termSession ?? "session1",
         currentProjectRoot: options.projectRoot ?? options.cwd,
@@ -76,6 +77,7 @@ export const runReplSession = async (
         stagedComposerText: "",
         activeSession: null,
         activeLocalMcpOAuth: 0,
+        activeLocalOAuthControllers: new Set<AbortController>(),
         pendingGates: new Map<string, PendingGate>(),
     };
 

@@ -71,6 +71,7 @@ export interface TermViewportState {
     readonly cachedFamilyAliases: Map<string, string[]>;
     currentTurns: number;
     cancelArmed: boolean;
+    activeLocalOAuth: boolean;
     readonly focusedGateIds: string[];
     readonly suppressedStdoutQueue: string[];
     readonly localSubmittedPrompts: string[];
@@ -261,7 +262,8 @@ export const routeAndSendLine = (state: TermViewportState, rawSubmission: string
         ((!trimmed.startsWith("/") && trimmed !== "?" && leadingTrimmed !== ":" && !/^:\s+$/u.test(leadingTrimmed)) ||
             expandLearnCommand(trimmed, { projectRoot: state.boundProjectRoot }) !== null ||
             isAdvertisedPromptCmd) &&
-        !trimmed.startsWith("!")
+        !trimmed.startsWith("!") &&
+        !isLoopOrGateActive(state)
     ) {
         state.retireLiveReasoning();
         state.presenter.markTurnStart();
@@ -280,7 +282,8 @@ const isLoopOrGateActive = (state: TermViewportState): boolean =>
     state.presenter.lifecycle === "queued" ||
     state.presenter.lifecycle === "parked" ||
     state.presenter.lifecycle === "requires_action" ||
-    state.focusedGateIds.length > 0;
+    state.focusedGateIds.length > 0 ||
+    state.activeLocalOAuth;
 
 export const cancelViewportRun = (state: TermViewportState): void => {
     state.replStdin.write("/stop\n");

@@ -26,11 +26,13 @@ export interface ReplSessionHooks {
     readonly onProviderModelsFetcher?: (fetcher: (provider: string) => Promise<readonly string[]>) => void;
     readonly onModelSearchFetcher?: (fetcher: (query: string) => Promise<readonly string[]>) => void;
     readonly onModelEffortsFetcher?: (fetcher: (selector: string) => Promise<readonly string[] | null>) => void;
+    readonly openBrowser?: (url: string) => Promise<void>;
 }
 
 export interface ReplRuntimeState {
     readonly options: CliCommonOptions;
     readonly streams: ClientStreams;
+    readonly openBrowser?: (url: string) => Promise<void>;
     currentWorkspace: string;
     currentSessionName: string;
     currentProjectRoot: string;
@@ -42,6 +44,7 @@ export interface ReplRuntimeState {
     stagedComposerText: string;
     activeSession: AcpSession | null;
     activeLocalMcpOAuth: number;
+    readonly activeLocalOAuthControllers: Set<AbortController>;
     readonly pendingGates: Map<string, PendingGate>;
 }
 

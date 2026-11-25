@@ -439,7 +439,7 @@ test("{§cli-configuration-source} {§cli-interactive-command-discovery} execute
         clearForceReviewNextRun: () => undefined,
         getStagedComposerText: () => "",
         setStagedComposerText: () => undefined,
-        adjustLocalMcpOAuth: () => undefined,
+        beginLocalOAuth: () => ({ signal: new AbortController().signal, finish: () => undefined }),
         bindSession: async () => {
             throw new Error("unused");
         },

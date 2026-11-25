@@ -1,5 +1,18 @@
 # @plurnk/plurnk
 
+## 9.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Upgrade
+
+Upgrade this client, `@plurnk/plurnk-service` (`9.0.0`), and `@plurnk/plurnk-web` (`4.0.0`) together.
+
+- **Auth & Zero-Config Startup:** Retire `plurnk onboard`, `plurnk web` handoff, and local secret files in favor of passwordless loopback `:1066` startup and external OIDC PKCE authentication (`#277`, `#278`).
+- **Wire & Protocol Freeze:** Align all client commands, `PlurnkActionMap` types, notification streams, and slash commands with the v9.0 camelCase wire freeze (`child` / `childModel`, `actor`, `PLURNK_CLIENT_TIMEOUT_MS`, `review | accept | reject` approval mode, `exec:///` streams, canonical `/~/<workspace>#<session>` addresses, default `session1` / `workspace1` naming, and erased `attrs.distilled` kill-note handling) (`#270`, `#271`, `#272`, `#275`, `#276`, `#277`, `#279`, `#282`).
+- **Unified Collection Browsing & Model Autocomplete:** Unify `list` / `discover` search, filtering, and `offset`/`limit` pagination across `members`, `skills`, `personas`, `mcp`, `env`, `schedule`, and `models` (defaulting `/models` to 10 rows), add live substring model catalog autocomplete and `turn_queued` indicators, align `/schedule` with structured `once`/cron macros and per-step receipts, and negotiate linked ACP bodies (`#274`, `#280`, `#281`, `#283`).
+- **Architecture & Dependencies:** Decompose the Term presenter, ACP client, viewport, and REPL monoliths (`#282`), bump `@agentclientprotocol/sdk` (`^2.12.0`), `@earendil-works/pi-tui` (`1.6.0`), and `@types/node` (`^26.6.7`), and widen `@plurnk/plurnk-contracts` (`^9.0.0 || ^10.0.0`), optional `@plurnk/plurnk-service` (`^8.0.0 || ^9.0.0`), and `@plurnk/plurnk-spec-check` (`^0.2.0 || ^0.3.0`) ranges for `9.0.0` (`#282`).
+
 ## 8.0.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

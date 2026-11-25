@@ -19,8 +19,10 @@ import {
 import { parseModelsArgs } from "./collection-commands.ts";
 import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
 import {
+    createOAuthTimeoutSignal,
     executeFamilyCommand,
     extractChronologicalHistory,
+    formatActionErrorDetail,
     formatExecResultLine,
     formatLogEntries,
     formatModelsRows,
@@ -48,6 +50,7 @@ export interface ReplSlashCommandContext {
     readonly client: AcpClient;
     readonly options: CliCommonOptions;
     readonly streams: ClientStreams;
+    readonly openBrowser?: (url: string) => Promise<void>;
     readonly hasCustomEventsStream: boolean;
     readonly pendingGates: Map<string, PendingGate>;
     getSession(): AcpSession;
@@ -62,7 +65,10 @@ export interface ReplSlashCommandContext {
     clearForceReviewNextRun(): void;
     getStagedComposerText(): string;
     setStagedComposerText(next: string): void;
-    adjustLocalMcpOAuth(delta: number): void;
+    beginLocalOAuth(kind: "mcp" | "login"): {
+        readonly signal: AbortSignal;
+        readonly finish: () => void;
+    };
     bindSession(
         workspaceName: string | undefined,
         sessionName: string,
@@ -91,16 +97,18 @@ export const dispatchSlashCommand = async (
 
     const handleFamilyCommand = async (family: string, familyArgs: readonly string[]): Promise<void> => {
         const isLocalMcpOAuth = family === "mcp" && familyArgs[0] === "oauth" && familyArgs.length === 2;
-        if (isLocalMcpOAuth) ctx.adjustLocalMcpOAuth(1);
+        const oauth = isLocalMcpOAuth ? ctx.beginLocalOAuth("mcp") : null;
         try {
             await executeFamilyCommand(client, family, familyArgs, bindingContext(), options.cwd, {
                 surface: "repl",
                 stdout: streams.stdout,
                 oauthTimeoutMs: options.oauthTimeoutMs,
+                ...(oauth === null ? {} : { signal: oauth.signal }),
+                ...(ctx.openBrowser === undefined ? {} : { openBrowser: ctx.openBrowser }),
                 onError: (problem) => writeErrorJsonl(streams.stderr, problem),
             });
         } finally {
-            if (isLocalMcpOAuth) ctx.adjustLocalMcpOAuth(-1);
+            oauth?.finish();
         }
     };
 
@@ -629,11 +637,22 @@ export const dispatchSlashCommand = async (
         }
 
         if (cmd === "login") {
-            const grant = await options.credential.login(options.url, {
-                signal: AbortSignal.timeout(options.oauthTimeoutMs),
-                write: (message) => streams.stdout.write(message),
-            });
-            streams.stdout.write(`authorized: ${grant.issuer} (${options.credential.grantsPath()})\n`);
+            const oauth = ctx.beginLocalOAuth("login");
+            const timeout = createOAuthTimeoutSignal(
+                options.oauthTimeoutMs,
+                `OAuth login for ${options.url} timed out after ${String(options.oauthTimeoutMs)} ms (PLURNK_CLIENT_OAUTH_TIMEOUT_MS). Re-run /login to try again.`,
+                oauth.signal,
+            );
+            try {
+                const grant = await options.credential.login(options.url, {
+                    signal: timeout.signal,
+                    write: (message) => streams.stdout.write(message),
+                });
+                streams.stdout.write(`authorized: ${grant.issuer} (${options.credential.grantsPath()})\n`);
+            } finally {
+                timeout.dispose();
+                oauth.finish();
+            }
             return "continue";
         }
 
@@ -667,7 +686,7 @@ export const dispatchSlashCommand = async (
             type: "https://problems.plurnk.xyz/client/command-failed",
             title: "Command failed",
             status: 500,
-            detail: err instanceof Error ? err.message : String(err),
+            detail: formatActionErrorDetail(err),
         });
     }
     return "continue";

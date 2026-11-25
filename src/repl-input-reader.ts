@@ -10,6 +10,7 @@ import { resolveLearnCommand } from "./commands.ts";
 import {
     buildPromptBlocks,
     extractOpenPaths,
+    formatActionErrorDetail,
     formatExecResultLine,
     writeErrorJsonl,
     writeEventJsonl,
@@ -237,6 +238,7 @@ export const dispatchReplSubmission = async (
             client,
             options,
             streams,
+            ...(state.openBrowser === undefined ? {} : { openBrowser: state.openBrowser }),
             hasCustomEventsStream: ctx.hasCustomEventsStream,
             pendingGates,
             getSession: ctx.getSession,
@@ -271,8 +273,32 @@ export const dispatchReplSubmission = async (
             setStagedComposerText: (next) => {
                 state.stagedComposerText = next;
             },
-            adjustLocalMcpOAuth: (delta) => {
-                state.activeLocalMcpOAuth += delta;
+            beginLocalOAuth: (kind) => {
+                const controller = new AbortController();
+                state.activeLocalOAuthControllers.add(controller);
+                if (kind === "mcp") {
+                    state.activeLocalMcpOAuth += 1;
+                }
+                writeEventJsonl(streams.events, {
+                    sessionUpdate: "local_oauth",
+                    active: true,
+                });
+                let done = false;
+                return {
+                    signal: controller.signal,
+                    finish: () => {
+                        if (done) return;
+                        done = true;
+                        state.activeLocalOAuthControllers.delete(controller);
+                        if (kind === "mcp") {
+                            state.activeLocalMcpOAuth = Math.max(0, state.activeLocalMcpOAuth - 1);
+                        }
+                        writeEventJsonl(streams.events, {
+                            sessionUpdate: "local_oauth",
+                            active: state.activeLocalOAuthControllers.size > 0,
+                        });
+                    },
+                };
             },
             bindSession: ctx.bindSession,
             adoptForkedSession: ctx.adoptForkedSession,
@@ -316,7 +342,7 @@ export const dispatchReplSubmission = async (
                 type: "https://problems.plurnk.xyz/client/exec-failed",
                 title: "Execution failed",
                 status: 500,
-                detail: err instanceof Error ? err.message : String(err),
+                detail: formatActionErrorDetail(err),
             });
         }
         return "continue";
@@ -337,7 +363,7 @@ export const dispatchReplSubmission = async (
                 type: "https://problems.plurnk.xyz/client/exec-failed",
                 title: "Execution failed",
                 status: 500,
-                detail: err instanceof Error ? err.message : String(err),
+                detail: formatActionErrorDetail(err),
             });
         }
         return "continue";
@@ -396,9 +422,19 @@ export const runReplInputLoop = async (ctx: ReplDispatchContext): Promise<number
         let settled = false;
         let queue = Promise.resolve();
 
+        const abortLocalOAuth = (reason = "OAuth sign-in cancelled."): boolean => {
+            if (state.activeLocalOAuthControllers.size === 0) return false;
+            const err = new Error(reason);
+            for (const controller of [...state.activeLocalOAuthControllers]) {
+                controller.abort(err);
+            }
+            return true;
+        };
+
         const finish = (code: number): void => {
             if (settled) return;
             settled = true;
+            abortLocalOAuth("OAuth sign-in cancelled.");
             process.removeListener("SIGINT", onSigInt);
             ctx.flushReasoningNewline();
             rl.close();
@@ -410,6 +446,7 @@ export const runReplInputLoop = async (ctx: ReplDispatchContext): Promise<number
         };
 
         const onSigInt = (): void => {
+            const cancelledOAuth = abortLocalOAuth("OAuth sign-in cancelled.");
             if (state.currentLifecycle === "running" || state.currentLifecycle === "parked" || pendingGates.size > 0) {
                 for (const gate of [...pendingGates.values()]) {
                     if (gate.kind === "permission") {
@@ -420,6 +457,9 @@ export const runReplInputLoop = async (ctx: ReplDispatchContext): Promise<number
                 }
                 void client.cancel(ctx.getSession().sessionId).catch(() => {});
                 streams.stdout.write("cancelled (final 499)\n");
+                return;
+            }
+            if (cancelledOAuth) {
                 return;
             }
             if (state.stagedComposerText.length > 0) {
@@ -437,13 +477,54 @@ export const runReplInputLoop = async (ctx: ReplDispatchContext): Promise<number
         process.on("SIGINT", onSigInt);
 
         const enqueueSubmission = (submission: string): void => {
-            queue = queue.then(async () => {
-                if (settled) return;
-                const action = await dispatchReplSubmission(submission, ctx);
-                if (action === "quit") {
+            const trimmed = submission.trim();
+            if (trimmed === "/quit" || trimmed === "/exit") {
+                if (state.activeLocalOAuthControllers.size > 0) {
                     finish(0);
+                    return;
                 }
-            });
+            }
+            if (trimmed === "/stop" && state.activeLocalOAuthControllers.size > 0) {
+                abortLocalOAuth("OAuth sign-in cancelled.");
+                if (
+                    state.currentLifecycle === "running" ||
+                    state.currentLifecycle === "parked" ||
+                    pendingGates.size > 0
+                ) {
+                    for (const gate of [...pendingGates.values()]) {
+                        if (gate.kind === "permission") {
+                            gate.resolveGate({ outcome: { outcome: "cancelled" } });
+                        } else {
+                            gate.resolveGate({ action: "cancel" });
+                        }
+                    }
+                    void client
+                        .cancel(ctx.getSession().sessionId)
+                        .then(() => {
+                            streams.stdout.write("cancelled (final 499)\n");
+                        })
+                        .catch(() => {
+                            streams.stdout.write("cancelled (final 499)\n");
+                        });
+                }
+                return;
+            }
+            queue = queue
+                .then(async () => {
+                    if (settled) return;
+                    const action = await dispatchReplSubmission(submission, ctx);
+                    if (action === "quit") {
+                        finish(0);
+                    }
+                })
+                .catch((err) => {
+                    writeErrorJsonl(streams.stderr, {
+                        type: "https://problems.plurnk.xyz/client/command-failed",
+                        title: "Command failed",
+                        status: 500,
+                        detail: formatActionErrorDetail(err),
+                    });
+                });
         };
 
         const accumulator = createReplLineAccumulator(enqueueSubmission);

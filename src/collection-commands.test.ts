@@ -181,7 +181,7 @@ test("{§cli-configuration-source} {§cli-subcommands} executeFamilyCommand and 
         clearForceReviewNextRun: () => {},
         getStagedComposerText: () => "",
         setStagedComposerText: () => {},
-        adjustLocalMcpOAuth: () => {},
+        beginLocalOAuth: () => ({ signal: new AbortController().signal, finish: () => {} }),
         bindSession: async () => ({}) as never,
         adoptForkedSession: async () => ({}) as never,
         emitSessionBound: () => {},

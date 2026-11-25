@@ -334,6 +334,14 @@ export const attachViewportOutputListeners = (
 const handleViewportEvent = (state: TermViewportState, event: Record<string, unknown>): void => {
     const { surface, presenter, review, attend, options, termOut } = state;
 
+    if (event.sessionUpdate === "local_oauth") {
+        state.activeLocalOAuth = event.active === true;
+        if (!state.activeLocalOAuth) {
+            state.cancelArmed = false;
+        }
+        return;
+    }
+
     if (event.sessionUpdate === "session_bound") {
         state.cancelArmed = false;
         state.retireLiveReasoning();

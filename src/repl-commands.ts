@@ -358,6 +358,67 @@ export const formatWorkspacesRows = (result: Record<string, unknown>): string =>
     return `${renderTable(["name", "project_root", "created"], rows)}\n`;
 };
 
+export const formatActionErrorDetail = (err: unknown): string => {
+    const rec =
+        err !== null && typeof err === "object"
+            ? (err as {
+                  readonly message?: unknown;
+                  readonly problem?: unknown;
+                  readonly data?: unknown;
+              })
+            : undefined;
+    const dataRec =
+        rec?.data !== null && typeof rec?.data === "object"
+            ? (rec.data as Record<string, unknown>)
+            : undefined;
+    const nestedProblem =
+        rec?.problem !== null && typeof rec?.problem === "object"
+            ? (rec.problem as Record<string, unknown>)
+            : dataRec?.problem !== null && typeof dataRec?.problem === "object"
+              ? (dataRec.problem as Record<string, unknown>)
+              : dataRec;
+    const baseDetail =
+        typeof rec?.message === "string" && rec.message.length > 0
+            ? rec.message
+            : typeof nestedProblem?.detail === "string" && nestedProblem.detail.length > 0
+              ? nestedProblem.detail
+              : String(err);
+    const diagnostic =
+        typeof nestedProblem?.diagnostic === "string" && nestedProblem.diagnostic.trim().length > 0
+            ? nestedProblem.diagnostic.trim()
+            : undefined;
+    const recovery =
+        typeof nestedProblem?.recovery === "string" && nestedProblem.recovery.trim().length > 0
+            ? nestedProblem.recovery.trim()
+            : undefined;
+    let out = baseDetail;
+    if (diagnostic !== undefined && !out.includes(diagnostic)) {
+        out = `${out} — ${diagnostic}`;
+    }
+    if (recovery !== undefined && !out.includes(recovery)) {
+        out = `${out} (${recovery})`;
+    }
+    return out;
+};
+
+export const createOAuthTimeoutSignal = (
+    timeoutMs: number,
+    message: string,
+    outerSignal?: AbortSignal,
+): { readonly signal: AbortSignal; readonly dispose: () => void } => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+        controller.abort(new Error(message));
+    }, timeoutMs);
+    timer.unref?.();
+    return {
+        signal: outerSignal === undefined ? controller.signal : AbortSignal.any([outerSignal, controller.signal]),
+        dispose: () => {
+            clearTimeout(timer);
+        },
+    };
+};
+
 export const formatLogEntries = (entries: readonly unknown[]): string => {
     let out = "";
     for (const entry of entries) {
@@ -636,28 +697,35 @@ export const executeFamilyCommand = async (
                     authDef?.type === "oauth" && typeof authDef.redirectUrl === "string"
                         ? authDef.redirectUrl
                         : undefined;
-                const deadline = AbortSignal.timeout(timeoutMs);
-                const signal = io.signal === undefined ? deadline : AbortSignal.any([io.signal, deadline]);
-                const noticeStream = io.json ? (io.stderr ?? process.stderr) : io.stdout;
-                result = await receiveAuthorization(
-                    {
-                        ...(redirectUrl === undefined ? {} : { redirectUrl }),
-                        begin: async (boundRedirectUrl) =>
-                            await client.action(
-                                "workspace.mcp.oauth.begin",
-                                { alias, redirectUrl: boundRedirectUrl },
-                                binding,
-                            ),
-                    },
-                    complete,
-                    {
-                        signal,
-                        write: (text) => {
-                            noticeStream.write(text);
-                        },
-                        ...(io.openBrowser !== undefined ? { openBrowser: io.openBrowser } : {}),
-                    },
+                const timeout = createOAuthTimeoutSignal(
+                    timeoutMs,
+                    `OAuth sign-in for MCP server '${alias}' timed out after ${String(timeoutMs)} ms (PLURNK_CLIENT_OAUTH_TIMEOUT_MS). Re-run /mcp oauth ${alias} to try again.`,
+                    io.signal,
                 );
+                const noticeStream = io.json ? (io.stderr ?? process.stderr) : io.stdout;
+                try {
+                    result = await receiveAuthorization(
+                        {
+                            ...(redirectUrl === undefined ? {} : { redirectUrl }),
+                            begin: async (boundRedirectUrl) =>
+                                await client.action(
+                                    "workspace.mcp.oauth.begin",
+                                    { alias, redirectUrl: boundRedirectUrl },
+                                    binding,
+                                ),
+                        },
+                        complete,
+                        {
+                            signal: timeout.signal,
+                            write: (text) => {
+                                noticeStream.write(text);
+                            },
+                            ...(io.openBrowser !== undefined ? { openBrowser: io.openBrowser } : {}),
+                        },
+                    );
+                } finally {
+                    timeout.dispose();
+                }
             }
         }
         if (io.json) {

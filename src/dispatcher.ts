@@ -36,6 +36,7 @@ import {
     runInteractiveSession,
 } from "./cli-runner.ts";
 import { RENDER_HELP, runRender } from "./render-filter.ts";
+import { formatActionErrorDetail } from "./repl-commands.ts";
 
 export {
     assembleCliCommonOptions,
@@ -301,7 +302,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         if (jsonOutput) {
             process.stdout.write(`${JSON.stringify({ schemaVersion: 6, problem })}\n`);
         } else {
-            process.stderr.write(`plurnk: ${message}\n`);
+            process.stderr.write(`plurnk: ${formatActionErrorDetail(error)}\n`);
         }
         process.exitCode = typeof cliErr?.exitCode === "number" ? cliErr.exitCode : 1;
     }

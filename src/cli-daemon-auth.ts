@@ -9,6 +9,7 @@ import {
     resolveServiceCommand,
     type CliCommonOptions,
 } from "./cli-connection.ts";
+import { createOAuthTimeoutSignal } from "./repl-commands.ts";
 
 export const formatServiceUpdateResult = (res: Record<string, unknown>): string => {
     const cat = (res.catalog ?? {}) as Record<string, unknown>;
@@ -50,10 +51,19 @@ export const runCliUpdate = async (options: CliCommonOptions): Promise<number> =
 };
 
 export const runCliLogin = async (options: CliCommonOptions): Promise<number> => {
-    const grant = await options.credential.login(options.url, {
-        signal: AbortSignal.timeout(options.oauthTimeoutMs),
-        write: (message) => (options.json ? process.stderr : process.stdout).write(message),
-    });
+    const timeout = createOAuthTimeoutSignal(
+        options.oauthTimeoutMs,
+        `OAuth login for ${options.url} timed out after ${String(options.oauthTimeoutMs)} ms (PLURNK_CLIENT_OAUTH_TIMEOUT_MS). Re-run plurnk login to try again.`,
+    );
+    let grant;
+    try {
+        grant = await options.credential.login(options.url, {
+            signal: timeout.signal,
+            write: (message) => (options.json ? process.stderr : process.stdout).write(message),
+        });
+    } finally {
+        timeout.dispose();
+    }
     if (options.json) {
         process.stdout.write(
             `${JSON.stringify(

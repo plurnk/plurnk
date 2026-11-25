@@ -353,6 +353,7 @@ test("{§cli-inline-review} {§cli-repl-mode}: dispatchGateSlashCommand and REPL
         stagedComposerText: "",
         activeSession: session,
         activeLocalMcpOAuth: 1,
+        activeLocalOAuthControllers: new Set(),
         pendingGates,
     };
     const permHandler = createReplPermissionHandler(runtimeState);
@@ -801,6 +802,160 @@ test("{§cli-repl-mode} {§cli-sessions-topology} {§cli-subcommands}: runReplSe
         assert.ok(promptsReceived.some((p) => p.text === "careful question"));
         assert.ok(promptsReceived.some((p) => p.text === "literal text"));
     } finally {
+        await new Promise<void>((r) => httpServer.close(() => r()));
+        rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test("{§cli-repl-mode} {§cli-configuration-source} {§cli-problems-and-notices}: /stop cancels an in-flight /mcp oauth wait without blocking the REPL queue and oauth.complete errors surface diagnostic details", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-repl-oauth-"));
+    const oauthBegun = Promise.withResolvers<string>();
+    let beginCount = 0;
+
+    const agentApp = createAcpAgent({ name: "repl-oauth-test-agent" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {}, resume: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#session1",
+            configOptions: [],
+            _meta: { plurnk: { workspace: { id: 1, name: "alpha", projectRoot: tmpDir }, sessionName: "session1" } },
+        }))
+        .onRequest(methods.agent.session.resume, async () => ({
+            configOptions: [],
+            _meta: { plurnk: { workspace: { id: 1, name: "alpha", projectRoot: tmpDir }, sessionName: "session1" } },
+        }))
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string; params?: Record<string, unknown> },
+            async ({ params }) => {
+                if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
+                    return { workspaceId: 1, workspaceName: "alpha", projectRoot: tmpDir };
+                }
+                if (params.kind === "workspace.mcp.list") {
+                    return {
+                        definitions: [
+                            {
+                                alias: "cloudflare",
+                                state: "authorization-required",
+                                definition: { type: "streamable-http", url: "https://mcp.cloudflare.com/mcp" },
+                            },
+                        ],
+                    };
+                }
+                if (params.kind === "workspace.mcp.oauth.begin") {
+                    beginCount += 1;
+                    const redirectUrl = String(params.params?.redirectUrl ?? "");
+                    const authUrl = `https://identity.example/authorize?state=s-${String(beginCount)}&redirect_uri=${encodeURIComponent(redirectUrl)}`;
+                    if (beginCount === 1) oauthBegun.resolve(redirectUrl);
+                    return {
+                        status: 202,
+                        alias: "cloudflare",
+                        authorization: { url: authUrl },
+                    };
+                }
+                if (params.kind === "workspace.mcp.oauth.complete") {
+                    const { RequestError } = await import("@agentclientprotocol/sdk/experimental/v2/unstable");
+                    throw new RequestError(
+                        -32000,
+                        "OAuth authorization for MCP server 'cloudflare' could not be completed. (oauth-callback-invalid)",
+                        {
+                            type: "https://problems.plurnk.xyz/mcp/management/oauth-callback-invalid",
+                            title: "OAuth callback invalid",
+                            status: 400,
+                            detail: "OAuth authorization for MCP server 'cloudflare' could not be completed.",
+                            diagnostic: "Issuer mismatch in authorization response (RFC 9207)",
+                            recovery: "Re-run /mcp oauth cloudflare.",
+                        },
+                    );
+                }
+                return {};
+            },
+        );
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => handler(req, res));
+    await new Promise<void>((r) => httpServer.listen(0, "127.0.0.1", r));
+    const port = (httpServer.address() as AddressInfo).port;
+    const url = `http://127.0.0.1:${String(port)}/acp`;
+
+    try {
+        const stdin = new PassThrough();
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const events = new PassThrough();
+        let outBuf = "";
+        let errBuf = "";
+        let evtBuf = "";
+        stdout.on("data", (c) => (outBuf += String(c)));
+        stderr.on("data", (c) => (errBuf += String(c)));
+        events.on("data", (c) => (evtBuf += String(c)));
+
+        const replPromise = runReplSession(
+            {
+                url,
+                explicitAcpUrl: true,
+                host: "127.0.0.1",
+                port,
+                credential: new Credential({ HOME: tmpDir, XDG_STATE_HOME: tmpDir }),
+                env: { HOME: tmpDir, XDG_STATE_HOME: tmpDir },
+                cwd: tmpDir,
+                workspace: "alpha",
+                sessionId: "session1",
+                termSession: "session1",
+                autostart: false,
+                daemonTimeoutMs: 2000,
+                oauthTimeoutMs: 60_000,
+                cancelGraceMs: 200,
+                yolo: true,
+                auto: false,
+                bell: false,
+                json: false,
+                repl: true,
+                previewLines: 3,
+                historyEntries: 5,
+                mermaidTimeoutMs: 1000,
+                color: "never",
+            },
+            {
+                stdin,
+                stdout,
+                stderr,
+                events,
+                reasoning: new PassThrough(),
+                openBrowser: async () => {},
+            },
+        );
+
+        // 1. Start /mcp oauth cloudflare with a 60s timeout and immediately cancel it via /stop.
+        stdin.write("/mcp oauth cloudflare\n");
+        await oauthBegun.promise;
+        stdin.write("/stop\n");
+        // Wait for cancellation error to land without waiting anywhere near 60s.
+        const cancelDeadline = Date.now() + 3_000;
+        while (!errBuf.includes("OAuth sign-in cancelled.") && Date.now() < cancelDeadline) {
+            await new Promise((r) => setTimeout(r, 20));
+        }
+        assert.match(errBuf, /OAuth sign-in cancelled\./u);
+        assert.match(evtBuf, /"sessionUpdate":"local_oauth","active":true/u);
+        assert.match(evtBuf, /"sessionUpdate":"local_oauth","active":false/u);
+
+        // 2. REPL queue remains healthy: direct callback completion surfaces Problem diagnostic + recovery.
+        stdin.write("/mcp oauth cloudflare http://127.0.0.1:41234/callback?code=c&state=s\n");
+        stdin.write("/help\n");
+        stdin.write("/quit\n");
+
+        const exitCode = await replPromise;
+        assert.equal(exitCode, 0);
+        assert.match(errBuf, /Issuer mismatch in authorization response \(RFC 9207\)/u);
+        assert.match(errBuf, /Re-run \/mcp oauth cloudflare\./u);
+        assert.match(outBuf, /\/help/u);
+    } finally {
+        await acpServer.close();
+        httpServer.closeAllConnections();
         await new Promise<void>((r) => httpServer.close(() => r()));
         rmSync(tmpDir, { recursive: true, force: true });
     }

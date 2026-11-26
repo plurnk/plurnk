@@ -23,6 +23,36 @@
       "evidence": ["src/cli.test.ts — service and model catalog update"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
+    "service.config.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — daemon configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.config.set": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — daemon configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.config.unset": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — daemon configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "workspace.config.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — workspace configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "workspace.config.set": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — workspace configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "workspace.config.unset": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — workspace configuration plane"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
     "workspace.list": {
       "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace listing"],
@@ -375,6 +405,230 @@
       "posture": "generic",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["projection", "success", "failure"]
+    },
+    "service.skills.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.skills.discover": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.skills.add": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.skills.replace": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.skills.enable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.skills.disable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.skills.remove": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.personas.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.personas.discover": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.personas.add": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.personas.replace": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.personas.enable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.personas.disable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.personas.remove": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier personas management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.members.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.members.discover": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.members.add": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.members.enable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.members.disable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.members.remove": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.env.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.env.discover": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.env.add": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.env.replace": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.env.enable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.env.disable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.env.remove": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.list": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.mcp.discover": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.mcp.add": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.replace": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.enable": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.disable": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.remove": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.oauth.begin": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP OAuth authorization begin"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.mcp.oauth.complete": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP OAuth authorization complete"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.schedule.list": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.schedule.discover": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.schedule.add": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.schedule.replace": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.schedule.enable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.schedule.disable": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.schedule.remove": {
+      "posture": "vm-workspace-bridge",
+      "evidence": ["src/acp-client.test.ts — service-tier scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
     }
   },
   "notifications": {

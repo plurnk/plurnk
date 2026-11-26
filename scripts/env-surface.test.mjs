@@ -20,7 +20,9 @@ const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     // Joins SHARED when the contracts release that declares it on the shared panel is the one installed here.
     ["PLURNK_ACP_URL", "@plurnk/plurnk-contracts — the daemon's ACP URL on the shared panel"],
-    ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
+    ["PLURNK_SERVICE_FILES_ITEMS", "@plurnk/plurnk-service — workspace config key sent by --files-items"],
+    ["PLURNK_SERVICE_GIT_ALLOWED", "@plurnk/plurnk-service — workspace config key sent by --no-git"],
+    ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-service — workspace config key sent by --max-commands and named in usage"],
     ["PLURNK_PERSONA", "ambient persona selector shorthand alongside PLURNK_CLIENT_PERSONA (#228)"],
 ]);
 

@@ -178,7 +178,11 @@ test("{§cli-invocation} {§cli-color-policy}: cli-options helpers validate swit
             tmpDir,
         );
         assert.equal(assembled.systemPrompt, "Be concise.");
-        assert.deepEqual(assembled.workspaceSettings, { filesItems: 10, maxCommands: 5, git: false });
+        assert.deepEqual(assembled.workspaceConfig, {
+            PLURNK_SERVICE_FILES_ITEMS: "10",
+            PLURNK_SERVICE_MAX_COMMANDS: "5",
+            PLURNK_SERVICE_GIT_ALLOWED: "0",
+        });
         assert.equal(assembled.maxTurns, 12);
         assert.equal(assembled.timeoutMs, 5000);
         assert.equal(assembled.debugNoMeta, true);

@@ -61,7 +61,7 @@ export interface PlurnkActionEntry<
 export interface PlurnkFamilyListQuery extends Record<string, unknown> {
     readonly query?: string;
     readonly state?: "active" | "dormant" | "disabled" | "unavailable" | "authorization-required";
-    readonly origin?: "service" | "workspace" | "session";
+    readonly origin?: "host" | "service" | "workspace" | "session";
     readonly offset?: number;
     readonly limit?: number;
 }
@@ -145,6 +145,18 @@ export interface PlurnkActionMap {
         Record<string, never>,
         { readonly catalog: Record<string, unknown>; readonly service: Record<string, unknown> } & Record<string, unknown>
     >;
+    readonly "service.config.list": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.config.set": PlurnkActionEntry<
+        { readonly key: string; readonly value: string },
+        Record<string, unknown>
+    >;
+    readonly "service.config.unset": PlurnkActionEntry<{ readonly key: string }, Record<string, unknown>>;
+    readonly "workspace.config.list": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "workspace.config.set": PlurnkActionEntry<
+        { readonly key: string; readonly value: string },
+        Record<string, unknown>
+    >;
+    readonly "workspace.config.unset": PlurnkActionEntry<{ readonly key: string }, Record<string, unknown>>;
     readonly "workspace.list": PlurnkActionEntry<
         { readonly archived?: boolean; readonly includeArchived?: boolean },
         { readonly workspaces: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
@@ -153,7 +165,8 @@ export interface PlurnkActionMap {
         {
             readonly name?: string;
             readonly projectRoot?: string | null;
-            readonly settings?: string | Record<string, unknown>;
+            readonly config?: Readonly<Record<string, string>>;
+            readonly client?: string;
         },
         Record<string, unknown>
     >;
@@ -459,6 +472,73 @@ export interface PlurnkActionMap {
     >;
     readonly "workspace.mcp.complete": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
     readonly "workspace.mcp.skills": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.skills.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.skills.discover": PlurnkActionEntry<
+        { readonly source: string; readonly query?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.skills.add": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.skills.replace": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.skills.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.skills.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.skills.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.personas.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.personas.discover": PlurnkActionEntry<
+        { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.personas.add": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.personas.replace": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.personas.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.personas.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.personas.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.members.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.members.discover": PlurnkActionEntry<
+        { readonly query: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.members.add": PlurnkActionEntry<{ readonly files: readonly string[] } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.members.enable": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.members.disable": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.members.remove": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.env.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.env.discover": PlurnkActionEntry<
+        { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.env.add": PlurnkActionEntry<{ readonly alias: string; readonly value: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.env.replace": PlurnkActionEntry<{ readonly alias: string; readonly value: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.env.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.env.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.env.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.mcp.discover": PlurnkActionEntry<
+        { readonly query?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.mcp.add": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.replace": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.mcp.oauth.begin": PlurnkActionEntry<
+        { readonly alias: string; readonly redirectUrl?: string } & Record<string, unknown>,
+        { readonly authorizationUrl?: string } & Record<string, unknown>
+    >;
+    readonly "service.mcp.oauth.complete": PlurnkActionEntry<
+        { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "service.schedule.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
+    readonly "service.schedule.discover": PlurnkActionEntry<
+        { readonly rule?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
+        PlurnkFamilyDiscoverResult
+    >;
+    readonly "service.schedule.add": PlurnkActionEntry<ScheduleActionInput & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.schedule.replace": PlurnkActionEntry<ScheduleActionInput & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.schedule.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.schedule.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
+    readonly "service.schedule.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
 }
 
 export type PlurnkActionKind = keyof PlurnkActionMap;
@@ -468,6 +548,12 @@ export const ACP_ACTION_KINDS = [
     "discover",
     "models.list",
     "service.update",
+    "service.config.list",
+    "service.config.set",
+    "service.config.unset",
+    "workspace.config.list",
+    "workspace.config.set",
+    "workspace.config.unset",
     "workspace.list",
     "workspace.create",
     "workspace.attach",
@@ -535,6 +621,49 @@ export const ACP_ACTION_KINDS = [
     "workspace.mcp.oauth.complete",
     "workspace.mcp.complete",
     "workspace.mcp.skills",
+    "service.skills.list",
+    "service.skills.discover",
+    "service.skills.add",
+    "service.skills.replace",
+    "service.skills.enable",
+    "service.skills.disable",
+    "service.skills.remove",
+    "service.personas.list",
+    "service.personas.discover",
+    "service.personas.add",
+    "service.personas.replace",
+    "service.personas.enable",
+    "service.personas.disable",
+    "service.personas.remove",
+    "service.members.list",
+    "service.members.discover",
+    "service.members.add",
+    "service.members.enable",
+    "service.members.disable",
+    "service.members.remove",
+    "service.env.list",
+    "service.env.discover",
+    "service.env.add",
+    "service.env.replace",
+    "service.env.enable",
+    "service.env.disable",
+    "service.env.remove",
+    "service.mcp.list",
+    "service.mcp.discover",
+    "service.mcp.add",
+    "service.mcp.replace",
+    "service.mcp.enable",
+    "service.mcp.disable",
+    "service.mcp.remove",
+    "service.mcp.oauth.begin",
+    "service.mcp.oauth.complete",
+    "service.schedule.list",
+    "service.schedule.discover",
+    "service.schedule.add",
+    "service.schedule.replace",
+    "service.schedule.enable",
+    "service.schedule.disable",
+    "service.schedule.remove",
 ] as const satisfies readonly PlurnkActionKind[];
 
 type _AssertExhaustivePlurnkActionKinds = Exclude<

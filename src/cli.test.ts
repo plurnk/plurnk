@@ -1069,7 +1069,7 @@ test("{§cli-invocation} {§cli-configuration-source} {§cli-color-policy} {§cl
     assert.equal(runBin(["--color=never", "hello"]).status, 1);
 });
 
-test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {§cli-output-channels} {§cli-problems-and-notices}: --no-git sends settings.git=false, unattended runCliPrompt omits elicitation capability, interactive TTY uses custom stderr, and --share propagates workspace.share errors", async () => {
+test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {§cli-output-channels} {§cli-problems-and-notices}: --no-git sends config.PLURNK_SERVICE_GIT_ALLOWED='0', unattended runCliPrompt omits elicitation capability, interactive TTY uses custom stderr, and --share propagates workspace.share errors", async () => {
     const observedInitCapabilities: Array<Record<string, unknown>> = [];
     const observedNewSessionMetas: Array<Record<string, unknown>> = [];
     const observedShareActions: Array<Record<string, unknown>> = [];
@@ -1179,7 +1179,7 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
     });
 
     try {
-        // 1. --no-git via main() sends settings.git = false (never settings.noGit)
+        // 1. --no-git via main() sends config.PLURNK_SERVICE_GIT_ALLOWED = "0"
         const prevExit = process.exitCode;
         process.exitCode = 0;
         const origWrite = process.stdout.write.bind(process.stdout);
@@ -1204,9 +1204,8 @@ test("{§cli-invocation} {§cli-workspaces-and-sessions} {§cli-inline-review} {
             process.exitCode = prevExit;
         }
         assert.match(capturedStdout, /"response":"Done"/u);
-        const sentPlurnkMeta = (observedNewSessionMetas[0]?.plurnk ?? {}) as { settings?: Record<string, unknown> };
-        assert.equal(sentPlurnkMeta.settings?.noGit, undefined);
-        assert.deepEqual(sentPlurnkMeta.settings, { git: false });
+        const sentPlurnkMeta = (observedNewSessionMetas[0]?.plurnk ?? {}) as { config?: Record<string, string> };
+        assert.deepEqual(sentPlurnkMeta.config, { PLURNK_SERVICE_GIT_ALLOWED: "0" });
         // --json run must NOT advertise elicitation capability
         assert.equal(observedInitCapabilities[0]?.elicitation, undefined);
 

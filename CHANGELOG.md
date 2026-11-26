@@ -1,5 +1,14 @@
 # @plurnk/plurnk
 
+## 9.0.1
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Patch Changes
+
+- Guard Term `markTurnStart()` on queued prompts so active loop/OAuth status indicators are never overwritten, make `/mcp oauth` and `/login` immediately cancellable via `/stop`, `Escape`, `/quit`, and `SIGINT` outside the serialized REPL queue, name `<alias>` and `PLURNK_CLIENT_OAUTH_TIMEOUT_MS` on OAuth timeouts, and surface structured Problem `diagnostic` and `recovery` details in Term, REPL, and CLI (`#284`).
+- Update `@earendil-works/pi-tui` (`1.6.1`) and `@types/node` (`^26.6.10`).
+
 ## 9.0.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

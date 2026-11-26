@@ -326,19 +326,19 @@ export const completeInput = async (
         );
     }
 
-    const familyStateMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--state(?:\s+|=)([-\w]*)$/u.exec(line);
+    const familyStateMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:service|session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--state(?:\s+|=)([-\w]*)$/u.exec(line);
     if (familyStateMatch !== null) {
         const typed = familyStateMatch[2]!.toLowerCase();
         return namespace(LIST_STATES, typed, () => "definition state", options);
     }
 
-    const familyOriginMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--origin(?:\s+|=)([-\w]*)$/u.exec(line);
+    const familyOriginMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:service|session|workspace)\s+)?(?:list\s+)?(?:[\s\S]*\s+)?--origin(?:\s+|=)([-\w]*)$/u.exec(line);
     if (familyOriginMatch !== null) {
         const typed = familyOriginMatch[2]!.toLowerCase();
         return namespace(LIST_ORIGINS, typed, () => "definition origin", options);
     }
 
-    const familyListFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(?:list(?:\s+[\s\S]*)?|(?!--scope\b)--(?:query|state|origin|offset|limit)\b[\s\S]*)\s+(--[-\w]*)$/u.exec(line);
+    const familyListFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:service|session|workspace)\s+)?(?:list(?:\s+[\s\S]*)?|(?!--scope\b)--(?:query|state|origin|offset|limit)\b[\s\S]*)\s+(--[-\w]*)$/u.exec(line);
     if (familyListFlagMatch !== null) {
         const typed = familyListFlagMatch[2]!.toLowerCase();
         const descByFlag = new Map(FAMILY_LIST_FLAGS.map((f) => [f.value, f.description]));
@@ -350,7 +350,7 @@ export const completeInput = async (
         );
     }
 
-    const familyDiscoverFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?discover(?:\s+[\s\S]*)?\s+(--[-\w]*)$/u.exec(line);
+    const familyDiscoverFlagMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:service|session|workspace)\s+)?discover(?:\s+[\s\S]*)?\s+(--[-\w]*)$/u.exec(line);
     if (familyDiscoverFlagMatch !== null) {
         const family = familyDiscoverFlagMatch[1]!;
         const typed = familyDiscoverFlagMatch[2]!.toLowerCase();

@@ -35,12 +35,12 @@ export const LIST_STATES = Object.freeze([
     "authorization-required",
 ] as const);
 
-export const LIST_ORIGINS = Object.freeze(["service", "workspace", "session"] as const);
+export const LIST_ORIGINS = Object.freeze(["host", "service", "workspace", "session"] as const);
 
 export const FAMILY_LIST_FLAGS: readonly { readonly value: string; readonly description: string }[] = Object.freeze([
     { value: "--query", description: "Filter by alias, source, or details" },
     { value: "--state", description: "Filter by state (active|dormant|disabled|unavailable|authorization-required)" },
-    { value: "--origin", description: "Filter by origin (service|workspace|session)" },
+    { value: "--origin", description: "Filter by origin (host|service|workspace|session)" },
     { value: "--offset", description: "Start index for pagination (default 0)" },
     { value: "--limit", description: "Maximum definitions to return (1-100)" },
 ]);

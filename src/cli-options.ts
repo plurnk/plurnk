@@ -452,15 +452,15 @@ export const assembleCliCommonOptions = (
               ? parsedValues["no-git"]
               : parseSwitchValue("PLURNK_CLIENT_NO_GIT", env.PLURNK_CLIENT_NO_GIT);
 
-    const workspaceSettings: Record<string, unknown> = {};
+    const workspaceConfig: Record<string, string> = {};
     if (filesItemsRaw !== undefined && filesItemsRaw.trim().length > 0) {
-        workspaceSettings.filesItems = Number.parseInt(filesItemsRaw, 10);
+        workspaceConfig.PLURNK_SERVICE_FILES_ITEMS = String(Number.parseInt(filesItemsRaw, 10));
     }
     if (maxCommandsRaw !== undefined && maxCommandsRaw.trim().length > 0) {
-        workspaceSettings.maxCommands = Number.parseInt(maxCommandsRaw, 10);
+        workspaceConfig.PLURNK_SERVICE_MAX_COMMANDS = String(Number.parseInt(maxCommandsRaw, 10));
     }
     if (noGit) {
-        workspaceSettings.git = false;
+        workspaceConfig.PLURNK_SERVICE_GIT_ALLOWED = "0";
     }
 
     const inheritSpec = typeof parsedValues["env-inherit"] === "string"
@@ -594,7 +594,7 @@ export const assembleCliCommonOptions = (
         ...(persona !== undefined && persona.length > 0 ? { persona } : {}),
         ...(systemPrompt !== undefined && systemPrompt.length > 0 ? { systemPrompt } : {}),
         ...(projectRoot !== undefined ? { projectRoot } : {}),
-        ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
+        ...(Object.keys(workspaceConfig).length > 0 ? { workspaceConfig } : {}),
         ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
         ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
         ...(timeoutMs !== undefined && Number.isFinite(timeoutMs) ? { timeoutMs } : {}),

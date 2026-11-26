@@ -29,7 +29,7 @@ export interface CliCommonOptions {
     readonly persona?: string;
     readonly systemPrompt?: string;
     readonly projectRoot?: string;
-    readonly workspaceSettings?: Record<string, unknown>;
+    readonly workspaceConfig?: Readonly<Record<string, string>>;
     readonly sessionEnv?: Record<string, string>;
     readonly maxTurns?: number;
     readonly timeoutMs?: number;
@@ -549,7 +549,7 @@ export const openCliSession = async (
                   ? { session: allocatedSession, name: allocatedSession }
                   : {}),
             ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-            ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
+            ...(options.workspaceConfig !== undefined ? { config: options.workspaceConfig } : {}),
         });
         let plurnkMeta = buildPlurnkMeta();
 

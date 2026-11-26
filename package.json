@@ -60,7 +60,7 @@
     },
     "devDependencies": {
         "@plurnk/plurnk-spec-check": "^0.3.0",
-        "@types/node": "^26.6.10",
+        "@types/node": "^26.6.11",
         "@xterm/headless": "^6.0.0",
         "node-pty": "^1.1.0",
         "typescript": "^7.0.2"

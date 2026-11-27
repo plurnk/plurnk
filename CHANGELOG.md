@@ -1,5 +1,17 @@
 # @plurnk/plurnk
 
+## 10.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).
+
+### Upgrade
+
+Upgrade this client, `@plurnk/plurnk-service` (`10.0.0`), and `@plurnk/plurnk-web` (`5.0.0`) together.
+
+- **Service-Tier Cascade & Configuration Plane:** Adopt `service.<family>.*` and `service.config.{list,set,unset}` / `workspace.config.{list,set,unset}` ACP actions, the `host | service | workspace | session` Functionality origin model, canonical `workspace.create({ config })` (retiring `workspace.create({ settings })`), per-family scope discovery (`policy.familyScopes`), and `models.providers` onboarding (`#285`, `#286`).
+- **Per-Server MCP Secrets:** Add `service.mcp.secrets.{set,unset}` and `workspace.mcp.secrets.{set,unset}` CLI and interactive `/mcp secrets` commands, completion, formatting, POSIX manual coverage, and conformance witnesses (`#287`, `#288`).
+- **Dependencies:** Bump `@earendil-works/pi-tui` (`1.7.0`, `#289`) and `@types/node` (`^26.6.11`), and widen `@plurnk/plurnk-contracts` (`^10.0.0 || ^11.0.0`) and optional `@plurnk/plurnk-service` (`^9.0.0 || ^10.0.0`) dependency ranges for `10.0.0` (`#290`).
+
 ## 9.0.1
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk/issues).

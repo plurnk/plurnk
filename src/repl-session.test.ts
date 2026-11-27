@@ -205,7 +205,19 @@ test("{§cli-output-channels} {§cli-configuration-source}: extractOpenPaths, bu
             tmpDir,
             { stdout: outStream, onError: (p) => errors.push(p) },
         );
-        assert.ok(stdoutChunks.join("").length > 0);
+        assert.match(stdoutChunks.join(""), /weatherTracker\s+secrets:/u);
+        stdoutChunks.length = 0;
+
+        await executeFamilyCommand(
+            mockClient,
+            "mcp",
+            ["secrets", "set", "weatherTracker"],
+            {},
+            tmpDir,
+            { stdout: outStream, onError: (p) => errors.push(p) },
+        );
+        assert.equal(errors.at(-1)?.status, 400);
+        assert.match(String(errors.at(-1)?.detail), /usage: \/mcp \[--scope workspace\|service\] secrets set/u);
     } finally {
         rmSync(tmpDir, { recursive: true, force: true });
     }

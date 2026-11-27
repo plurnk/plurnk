@@ -614,13 +614,36 @@ export const executeFamilyCommand = async (
         if (secVerb === "set") {
             const alias = secArgs[0] ?? "";
             const secrets: Record<string, string> = {};
+            let invalidPair = false;
             for (const pair of secArgs.slice(1)) {
                 const eq = pair.indexOf("=");
-                if (eq > 0) secrets[pair.slice(0, eq)] = pair.slice(eq + 1);
+                if (eq <= 0) {
+                    invalidPair = true;
+                    break;
+                }
+                secrets[pair.slice(0, eq)] = pair.slice(eq + 1);
+            }
+            if (alias.length === 0 || invalidPair || Object.keys(secrets).length === 0) {
+                io.onError({
+                    type: "https://problems.plurnk.xyz/client/usage",
+                    title: "Invalid mcp secrets arguments",
+                    status: 400,
+                    detail: "usage: /mcp [--scope workspace|service] secrets set <alias> <KEY=VALUE...>",
+                });
+                return;
             }
             params = { alias, secrets };
         } else if (secVerb === "unset") {
             const alias = secArgs[0] ?? "";
+            if (alias.length === 0) {
+                io.onError({
+                    type: "https://problems.plurnk.xyz/client/usage",
+                    title: "Invalid mcp secrets arguments",
+                    status: 400,
+                    detail: "usage: /mcp [--scope workspace|service] secrets unset <alias> [KEY...]",
+                });
+                return;
+            }
             const keys = secArgs.slice(1).filter((k) => k.length > 0);
             params = keys.length > 0 ? { alias, keys } : { alias };
         } else {
@@ -664,6 +687,46 @@ export const executeFamilyCommand = async (
     const writeResult = (result: Record<string, unknown>): void => {
         if (io.json) {
             io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+        }
+        if (actionName.includes(".mcp.secrets.")) {
+            if (actionName.endsWith(".list") && Contracts.isRecord(result.byServer) && typeof params.alias !== "string") {
+                const rows = Object.entries(result.byServer).flatMap(([srv, val]) => {
+                    if (Array.isArray(val)) {
+                        const ks = val.filter((k): k is string => typeof k === "string");
+                        return ks.length > 0 ? [`${srv}  ${ks.join(", ")}`] : [];
+                    }
+                    if (Contracts.isRecord(val)) {
+                        const ks = Array.isArray(val.keys) ? val.keys.filter((k): k is string => typeof k === "string") : [];
+                        const inh = Array.isArray(val.inheritedKeys) ? val.inheritedKeys.filter((k): k is string => typeof k === "string") : [];
+                        const parts = [
+                            ...(ks.length > 0 ? [ks.join(", ")] : []),
+                            ...(inh.length > 0 ? [`inherited: ${inh.join(", ")}`] : []),
+                        ];
+                        return parts.length > 0 ? [`${srv}  ${parts.join(" · ")}`] : [];
+                    }
+                    return [];
+                });
+                io.stdout.write(`${rows.length > 0 ? rows.join("\n") : "mcp secrets: none"}\n`);
+                return;
+            }
+            const alias =
+                typeof result.alias === "string"
+                    ? result.alias
+                    : typeof params.alias === "string"
+                      ? params.alias
+                      : "";
+            const keys = Array.isArray(result.keys)
+                ? result.keys.filter((k): k is string => typeof k === "string")
+                : [];
+            const inheritedKeys = Array.isArray(result.inheritedKeys)
+                ? result.inheritedKeys.filter((k): k is string => typeof k === "string")
+                : [];
+            const segments = [
+                keys.length > 0 ? `secrets: ${keys.join(", ")}` : "secrets: none",
+                ...(inheritedKeys.length > 0 ? [`inherited: ${inheritedKeys.join(", ")}`] : []),
+            ];
+            io.stdout.write(`${alias}  ${segments.join(" · ")}\n`);
             return;
         }
         const hasStructuredFamilyPayload =

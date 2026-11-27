@@ -550,15 +550,21 @@ export const executeFamilyCommand = async (
         return;
     }
 
+    const SERVICE_FAMILIES = new Set(["mcp", "skills", "personas", "env"]);
+    const parseExplicitScope = (raw: string): "service" | "session" | "workspace" => {
+        if (raw === "service" && SERVICE_FAMILIES.has(family)) return "service";
+        if (raw === "workspace") return "workspace";
+        return family === "env" ? "session" : "workspace";
+    };
     const filteredPreserveEmpty: string[] = [];
-    let explicitScope: "session" | "workspace" | null = null;
+    let explicitScope: "service" | "session" | "workspace" | null = null;
     for (let i = 0; i < args.length; i += 1) {
         const tok = args[i] ?? "";
         if (tok === "--scope" && args[i + 1] !== undefined) {
-            explicitScope = args[i + 1] === "workspace" ? "workspace" : "session";
+            explicitScope = parseExplicitScope(args[i + 1] ?? "");
             i += 1;
         } else if (tok.startsWith("--scope=")) {
-            explicitScope = tok.slice("--scope=".length) === "workspace" ? "workspace" : "session";
+            explicitScope = parseExplicitScope(tok.slice("--scope=".length));
         } else {
             filteredPreserveEmpty.push(tok);
         }
@@ -568,7 +574,7 @@ export const executeFamilyCommand = async (
     const rawSub = implicitList ? "list" : (headTok ?? "list");
     const rawRest = implicitList ? filteredPreserveEmpty : filteredPreserveEmpty.slice(1);
     const resolvedScopePrefix = explicitScope ?? (family === "env" ? "session" : "workspace");
-    let scopePrefix: "session" | "workspace";
+    let scopePrefix: "service" | "session" | "workspace";
     let sub: string;
     let actionName: string;
     let params: Record<string, unknown>;
@@ -598,12 +604,47 @@ export const executeFamilyCommand = async (
             }
             throw err;
         }
+    } else if (rawSub === "secrets" && family === "mcp") {
+        const secretScope = resolvedScopePrefix === "service" ? "service" : "workspace";
+        scopePrefix = secretScope;
+        const secVerb = rawRest[0] === "set" || rawRest[0] === "unset" || rawRest[0] === "list" ? rawRest[0] : "list";
+        const secArgs = rawRest[0] === "set" || rawRest[0] === "unset" || rawRest[0] === "list" ? rawRest.slice(1) : rawRest;
+        sub = `secrets.${secVerb}`;
+        actionName = `${secretScope}.mcp.secrets.${secVerb}`;
+        if (secVerb === "set") {
+            const alias = secArgs[0] ?? "";
+            const secrets: Record<string, string> = {};
+            for (const pair of secArgs.slice(1)) {
+                const eq = pair.indexOf("=");
+                if (eq > 0) secrets[pair.slice(0, eq)] = pair.slice(eq + 1);
+            }
+            params = { alias, secrets };
+        } else if (secVerb === "unset") {
+            const alias = secArgs[0] ?? "";
+            const keys = secArgs.slice(1).filter((k) => k.length > 0);
+            params = keys.length > 0 ? { alias, keys } : { alias };
+        } else {
+            const alias = secArgs[0];
+            params = alias !== undefined && alias.length > 0 ? { alias } : {};
+        }
     } else {
         try {
-            const parsedCmd = Contracts.parseFamilyCommand(family, args);
-            scopePrefix = parsedCmd.scopePrefix === "session" ? "session" : "workspace";
+            const parsedCmd = Contracts.parseFamilyCommand(
+                family,
+                explicitScope === "service" ? filteredPreserveEmpty : args,
+            );
+            const rawPrefix: string = parsedCmd.scopePrefix;
+            scopePrefix =
+                explicitScope === "service" || rawPrefix === "service"
+                    ? "service"
+                    : rawPrefix === "session"
+                      ? "session"
+                      : "workspace";
             sub = parsedCmd.sub;
-            actionName = parsedCmd.actionName;
+            actionName =
+                scopePrefix === "service" && !parsedCmd.actionName.startsWith("service.")
+                    ? parsedCmd.actionName.replace(/^(?:workspace|session)\./u, "service.")
+                    : parsedCmd.actionName;
             params = parsedCmd.params;
         } catch (err) {
             if (err instanceof ScheduleCommandUsageError) {
@@ -659,8 +700,10 @@ export const executeFamilyCommand = async (
             });
             return;
         }
+        const oauthScope = scopePrefix === "service" ? "service" : "workspace";
+        const oauthBinding = oauthScope === "service" ? undefined : binding;
         const complete = async (cbUrl: string): Promise<Record<string, unknown>> =>
-            await client.action("workspace.mcp.oauth.complete", { alias, callbackUrl: cbUrl }, binding);
+            await client.action(`${oauthScope}.mcp.oauth.complete`, { alias, callbackUrl: cbUrl }, oauthBinding);
         let result: Record<string, unknown>;
         if (callbackUrl !== undefined) {
             result = await complete(callbackUrl);
@@ -671,14 +714,14 @@ export const executeFamilyCommand = async (
                     `Invalid PLURNK_CLIENT_OAUTH_TIMEOUT_MS '${String(timeoutMs)}': must be a positive integer.`,
                 );
             }
-            const listed = await client.action("workspace.mcp.list", {}, binding);
+            const listed = await client.action(`${oauthScope}.mcp.list`, {}, oauthBinding);
             const definitions = Array.isArray(listed.definitions) ? listed.definitions : [];
             const entry = definitions.find(
                 (item): item is Record<string, unknown> =>
                     item !== null && typeof item === "object" && (item as { alias?: unknown }).alias === alias,
             );
             if (entry === undefined || entry.state === "disabled") {
-                throw new Error(`MCP server '${alias}' is not enabled in this workspace.`);
+                throw new Error(`MCP server '${alias}' is not enabled in this ${oauthScope}.`);
             }
             if (entry.state === "active") {
                 result = { status: 200, alias, definition: entry };
@@ -709,9 +752,9 @@ export const executeFamilyCommand = async (
                             ...(redirectUrl === undefined ? {} : { redirectUrl }),
                             begin: async (boundRedirectUrl) =>
                                 await client.action(
-                                    "workspace.mcp.oauth.begin",
+                                    `${oauthScope}.mcp.oauth.begin`,
                                     { alias, redirectUrl: boundRedirectUrl },
-                                    binding,
+                                    oauthBinding,
                                 ),
                         },
                         complete,
@@ -763,7 +806,7 @@ export const executeFamilyCommand = async (
                 await client.action(
                     `${scopePrefix}.env.replace`,
                     { alias, value: String(val ?? "") },
-                    binding,
+                    scopePrefix === "service" ? undefined : binding,
                 );
                 landed += 1;
             } catch (err) {
@@ -775,12 +818,21 @@ export const executeFamilyCommand = async (
                 });
             }
         }
-        const scopeDesc = scopePrefix === "workspace" ? "workspace defaults" : "this session only";
+        const scopeDesc =
+            scopePrefix === "service"
+                ? "service defaults"
+                : scopePrefix === "workspace"
+                  ? "workspace defaults"
+                  : "this session only";
         io.stdout.write(`imported ${String(landed)} of ${String(entries.length)} into ${scopeDesc}\n`);
         return;
     }
 
-    const result = await client.action<Record<string, unknown>>(actionName, params, binding);
+    const result = await client.action<Record<string, unknown>>(
+        actionName,
+        params,
+        scopePrefix === "service" ? undefined : binding,
+    );
     if (sub === "list") {
         io.stdout.write(io.json ? `${JSON.stringify(result, null, 2)}\n` : formatFamilyRows(family, result));
         return;

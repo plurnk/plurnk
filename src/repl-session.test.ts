@@ -188,6 +188,24 @@ test("{§cli-output-channels} {§cli-configuration-source}: extractOpenPaths, bu
             onError: (p) => errors.push(p),
         });
         assert.match(stdoutChunks.join(""), /imported 1 of 2 into this session only/u);
+        stdoutChunks.length = 0;
+
+        await executeFamilyCommand(mockClient, "env", ["--scope", "service", "import", "sample.env"], {}, tmpDir, {
+            stdout: outStream,
+            onError: (p) => errors.push(p),
+        });
+        assert.match(stdoutChunks.join(""), /imported 2 of 2 into service defaults/u);
+        stdoutChunks.length = 0;
+
+        await executeFamilyCommand(
+            mockClient,
+            "mcp",
+            ["--scope", "service", "secrets", "set", "weatherTracker", "WEATHER_KEY=sk-nyc"],
+            {},
+            tmpDir,
+            { stdout: outStream, onError: (p) => errors.push(p) },
+        );
+        assert.ok(stdoutChunks.join("").length > 0);
     } finally {
         rmSync(tmpDir, { recursive: true, force: true });
     }

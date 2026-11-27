@@ -474,6 +474,22 @@ export interface PlurnkActionMap {
         { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
+    readonly "workspace.mcp.secrets.list": PlurnkActionEntry<
+        { readonly alias?: string } & Record<string, unknown>,
+        {
+            readonly keys?: readonly string[];
+            readonly inheritedKeys?: readonly string[];
+            readonly byServer: Readonly<Record<string, { readonly keys: readonly string[]; readonly inheritedKeys: readonly string[] }>>;
+        } & Record<string, unknown>
+    >;
+    readonly "workspace.mcp.secrets.set": PlurnkActionEntry<
+        { readonly alias: string; readonly secrets: Readonly<Record<string, string>> } & Record<string, unknown>,
+        { readonly alias: string; readonly keys: readonly string[] } & Record<string, unknown>
+    >;
+    readonly "workspace.mcp.secrets.unset": PlurnkActionEntry<
+        { readonly alias: string; readonly keys?: readonly string[] } & Record<string, unknown>,
+        { readonly alias: string; readonly keys: readonly string[] } & Record<string, unknown>
+    >;
     readonly "workspace.mcp.complete": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
     readonly "workspace.mcp.skills": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
     readonly "service.skills.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
@@ -523,6 +539,21 @@ export interface PlurnkActionMap {
     readonly "service.mcp.oauth.complete": PlurnkActionEntry<
         { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
         Record<string, unknown>
+    >;
+    readonly "service.mcp.secrets.list": PlurnkActionEntry<
+        { readonly alias?: string } & Record<string, unknown>,
+        {
+            readonly keys?: readonly string[];
+            readonly byServer: Readonly<Record<string, readonly string[]>>;
+        } & Record<string, unknown>
+    >;
+    readonly "service.mcp.secrets.set": PlurnkActionEntry<
+        { readonly alias: string; readonly secrets: Readonly<Record<string, string>> } & Record<string, unknown>,
+        { readonly alias: string; readonly keys: readonly string[] } & Record<string, unknown>
+    >;
+    readonly "service.mcp.secrets.unset": PlurnkActionEntry<
+        { readonly alias: string; readonly keys?: readonly string[] } & Record<string, unknown>,
+        { readonly alias: string; readonly keys: readonly string[] } & Record<string, unknown>
     >;
 }
 
@@ -605,6 +636,9 @@ export const ACP_ACTION_KINDS = [
     "workspace.schedule.status",
     "workspace.mcp.oauth.begin",
     "workspace.mcp.oauth.complete",
+    "workspace.mcp.secrets.list",
+    "workspace.mcp.secrets.set",
+    "workspace.mcp.secrets.unset",
     "workspace.mcp.complete",
     "workspace.mcp.skills",
     "service.skills.list",
@@ -637,6 +671,9 @@ export const ACP_ACTION_KINDS = [
     "service.mcp.remove",
     "service.mcp.oauth.begin",
     "service.mcp.oauth.complete",
+    "service.mcp.secrets.list",
+    "service.mcp.secrets.set",
+    "service.mcp.secrets.unset",
 ] as const satisfies readonly PlurnkActionKind[];
 
 type _AssertExhaustivePlurnkActionKinds = Exclude<

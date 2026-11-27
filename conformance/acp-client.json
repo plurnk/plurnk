@@ -402,6 +402,24 @@
       "evidence": ["src/cli.test.ts — MCP authorization"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
+    "workspace.mcp.secrets.list": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — workspace MCP encrypted secrets inspection"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "workspace.mcp.secrets.set": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — workspace MCP encrypted secrets management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "workspace.mcp.secrets.unset": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — workspace MCP encrypted secrets management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
     "workspace.mcp.complete": {
       "posture": "generic",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
@@ -569,6 +587,24 @@
       "posture": "bridge-until-acp-rfd",
       "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/acp-client.test.ts — service-tier MCP OAuth authorization complete"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.secrets.list": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP encrypted secrets inspection"],
+      "dimensions": ["admission", "projection", "success", "failure"]
+    },
+    "service.mcp.secrets.set": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP encrypted secrets management"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
+    "service.mcp.secrets.unset": {
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
+      "evidence": ["src/acp-client.test.ts — service-tier MCP encrypted secrets management"],
       "dimensions": ["admission", "projection", "success", "failure", "durability"]
     }
   },

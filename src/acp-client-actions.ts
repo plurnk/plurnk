@@ -141,6 +141,10 @@ export interface PlurnkActionMap {
             readonly items: ReadonlyArray<Record<string, unknown>>;
         } & Record<string, unknown>
     >;
+    readonly "models.providers": PlurnkActionEntry<
+        Record<string, never>,
+        { readonly providers: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+    >;
     readonly "service.update": PlurnkActionEntry<
         Record<string, never>,
         { readonly catalog: Record<string, unknown>; readonly service: Record<string, unknown> } & Record<string, unknown>
@@ -492,15 +496,6 @@ export interface PlurnkActionMap {
     readonly "service.personas.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
     readonly "service.personas.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
     readonly "service.personas.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.members.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
-    readonly "service.members.discover": PlurnkActionEntry<
-        { readonly query: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
-        PlurnkFamilyDiscoverResult
-    >;
-    readonly "service.members.add": PlurnkActionEntry<{ readonly files: readonly string[] } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.members.enable": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.members.disable": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.members.remove": PlurnkActionEntry<{ readonly file: string } & Record<string, unknown>, Record<string, unknown>>;
     readonly "service.env.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
     readonly "service.env.discover": PlurnkActionEntry<
         { readonly query?: string; readonly source?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
@@ -529,16 +524,6 @@ export interface PlurnkActionMap {
         { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
-    readonly "service.schedule.list": PlurnkActionEntry<PlurnkFamilyListQuery, PlurnkFamilyListResult>;
-    readonly "service.schedule.discover": PlurnkActionEntry<
-        { readonly rule?: string; readonly cursor?: string; readonly limit?: number } & Record<string, unknown>,
-        PlurnkFamilyDiscoverResult
-    >;
-    readonly "service.schedule.add": PlurnkActionEntry<ScheduleActionInput & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.schedule.replace": PlurnkActionEntry<ScheduleActionInput & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.schedule.enable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.schedule.disable": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
-    readonly "service.schedule.remove": PlurnkActionEntry<{ readonly alias: string } & Record<string, unknown>, Record<string, unknown>>;
 }
 
 export type PlurnkActionKind = keyof PlurnkActionMap;
@@ -547,6 +532,7 @@ export const ACP_ACTION_KINDS = [
     "ping",
     "discover",
     "models.list",
+    "models.providers",
     "service.update",
     "service.config.list",
     "service.config.set",
@@ -635,12 +621,6 @@ export const ACP_ACTION_KINDS = [
     "service.personas.enable",
     "service.personas.disable",
     "service.personas.remove",
-    "service.members.list",
-    "service.members.discover",
-    "service.members.add",
-    "service.members.enable",
-    "service.members.disable",
-    "service.members.remove",
     "service.env.list",
     "service.env.discover",
     "service.env.add",
@@ -657,13 +637,6 @@ export const ACP_ACTION_KINDS = [
     "service.mcp.remove",
     "service.mcp.oauth.begin",
     "service.mcp.oauth.complete",
-    "service.schedule.list",
-    "service.schedule.discover",
-    "service.schedule.add",
-    "service.schedule.replace",
-    "service.schedule.enable",
-    "service.schedule.disable",
-    "service.schedule.remove",
 ] as const satisfies readonly PlurnkActionKind[];
 
 type _AssertExhaustivePlurnkActionKinds = Exclude<

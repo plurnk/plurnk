@@ -116,7 +116,25 @@ test("{§cli-interactive-command-discovery} {§cli-model-selection} {§cli-subco
     const completedEnvScope = await completeInput("/env --scope ", baseCtx);
     assert.deepEqual(
         completedEnvScope.suggestions.map((s) => s.value),
-        ["session", "workspace"],
+        ["session", "workspace", "service"],
+    );
+
+    const completedMcpScope = await completeInput("/mcp --scope ", baseCtx);
+    assert.deepEqual(
+        completedMcpScope.suggestions.map((s) => s.value),
+        ["workspace", "service"],
+    );
+
+    const completedMcpSecretsSub = await completeInput("/mcp secrets ", baseCtx);
+    assert.deepEqual(
+        completedMcpSecretsSub.suggestions.map((s) => s.value),
+        ["list", "set", "unset"],
+    );
+
+    const completedMcpSecretsAlias = await completeInput("/mcp --scope service secrets set g", baseCtx);
+    assert.deepEqual(
+        completedMcpSecretsAlias.suggestions.map((s) => s.value),
+        ["github", "gitea"],
     );
 
     assert.match(renderCommandReference("darwin"), /⌘\+Enter/u);

@@ -229,12 +229,12 @@ subcommands:
   login                   sign in to the daemon through the browser and keep the grant
                           under $XDG_STATE_HOME/plurnk; a kept grant renews itself
   logout                  revoke the kept grant at the daemon and forget it
-  mcp ...                   List or manage this workspace's MCP servers.
-  skills ...                List or manage this workspace's Agent Skills.
+  mcp ...                   List or manage workspace or service MCP servers.
+  skills ...                List or manage workspace or service Agent Skills.
   members ...               List or manage this workspace's file members.
-  env ...                   Manage session overrides or shared workspace environment defaults.
+  env ...                   Manage session, workspace, or service environment defaults.
   schedule ...              List or manage this workspace's schedules and macros.
-  personas ...              List or manage this workspace's persona roles.
+  personas ...              List or manage workspace or service persona roles.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
   script <file.plk>       run a .plk file: feed its MCP expressions to op.exec,

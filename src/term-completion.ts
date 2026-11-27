@@ -299,24 +299,70 @@ export const completeInput = async (
         return namespace(scopes, typed, (v) => (v === "plurnk" ? "user-wide Plurnk skills" : "project .agents/skills"), options);
     }
 
-    const envScopeMatch = /^\/env\s+--scope(?:\s+|=)(\w*)$/u.exec(line);
-    if (envScopeMatch !== null) {
-        const typed = envScopeMatch[1]!.toLowerCase();
+    const familyScopeMatch = /^\/(mcp|skills|personas|env)\s+--scope(?:\s+|=)(\w*)$/u.exec(line);
+    if (familyScopeMatch !== null) {
+        const family = familyScopeMatch[1]!;
+        const typed = familyScopeMatch[2]!.toLowerCase();
+        const scopes = family === "env" ? ["session", "workspace", "service"] : ["workspace", "service"];
         return namespace(
-            ["session", "workspace"],
+            scopes,
             typed,
-            (v) => (v === "workspace" ? "workspace environment defaults" : "session environment overrides"),
+            (v) =>
+                v === "service"
+                    ? "daemon-wide service defaults"
+                    : v === "workspace"
+                      ? "workspace defaults"
+                      : "session overrides",
             options,
         );
     }
 
-    const familyMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?([-\w]*)$/u.exec(line);
+    const mcpSecretsSubMatch = /^\/mcp\s+(?:--scope(?:=|\s+)(?:workspace|service)\s+)?secrets\s+([-\w]*)$/u.exec(line);
+    if (mcpSecretsSubMatch !== null) {
+        const typed = mcpSecretsSubMatch[1]!.toLowerCase();
+        const secSubs = [
+            { value: "list", description: "List configured MCP secret key names" },
+            { value: "set", description: "Set encrypted KEY=VALUE secret(s) on an MCP server" },
+            { value: "unset", description: "Remove encrypted secret key(s) from an MCP server" },
+        ];
+        const descBySub = new Map(secSubs.map((s) => [s.value, s.description]));
+        return namespace(
+            secSubs.map((s) => s.value),
+            typed,
+            (v) => descBySub.get(v) ?? "secrets subcommand",
+            options,
+        );
+    }
+
+    const mcpSecretsAliasMatch = /^\/mcp\s+(?:--scope(?:=|\s+)(?:workspace|service)\s+)?secrets\s+(?:list|set|unset)\s+(\S*)$/u.exec(line);
+    if (mcpSecretsAliasMatch !== null) {
+        const frag = mcpSecretsAliasMatch[1]!;
+        const aliases = ctx.getFamilyAliases?.("mcp") ?? [];
+        return namespace(aliases, frag, () => "mcp definition", options);
+    }
+
+    const familyMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace|service)\s+)?([-\w]*)$/u.exec(line);
     if (familyMatch !== null) {
         const family = familyMatch[1]!;
         const typed = familyMatch[2]!.toLowerCase();
+        const baseSubs = FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? [];
+        const extraSubs =
+            family === "mcp"
+                ? [
+                      ...(baseSubs.some((s) => s.value === "secrets")
+                          ? []
+                          : [{ value: "secrets", description: "Manage encrypted MCP server keys" }]),
+                      ...(baseSubs.some((s) => s.value === "--scope")
+                          ? []
+                          : [{ value: "--scope", description: "Select workspace or service scope" }]),
+                  ]
+                : (family === "skills" || family === "personas") && !baseSubs.some((s) => s.value === "--scope")
+                  ? [{ value: "--scope", description: "Select workspace or service scope" }]
+                  : [];
+        const withExtra = [...baseSubs, ...extraSubs];
         const subs = typed.startsWith("-")
-            ? [...(FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? []), ...FAMILY_LIST_FLAGS]
-            : (FAMILY_SUBCOMMANDS_BY_FAMILY[family] ?? []);
+            ? [...withExtra, ...FAMILY_LIST_FLAGS]
+            : withExtra;
         const summaryBySub = new Map(subs.map((s) => [s.value, s.description]));
         return namespace(
             [...summaryBySub.keys()],
@@ -364,7 +410,7 @@ export const completeInput = async (
         );
     }
 
-    const familyAliasMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace)\s+)?(show|inspect|replace|enable|disable|remove|unset|oauth|skills|run|done|reopen)\s+(\S*)$/u.exec(line);
+    const familyAliasMatch = /^\/(mcp|skills|personas|members|env|schedule)\s+(?:--scope(?:=|\s+)(?:session|workspace|service)\s+)?(show|inspect|replace|enable|disable|remove|unset|oauth|skills|run|done|reopen)\s+(\S*)$/u.exec(line);
     if (familyAliasMatch !== null) {
         const family = familyAliasMatch[1]!;
         const sub = familyAliasMatch[2]!;

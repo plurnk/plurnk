@@ -550,7 +550,7 @@ export const runCliFamily = async (
             process.stdout.write(SCHEDULE_USAGE);
             return 0;
         }
-        const extra = family === "mcp" ? "|oauth|skills|complete" : family === "env" ? "|set|unset|import" : "";
+        const extra = family === "mcp" ? "|oauth|secrets|skills|complete" : family === "env" ? "|set|unset|import" : "";
         process.stdout.write(
             `usage: plurnk ${family} [list|discover|add|replace|enable|disable|remove${extra}] [options]\n`,
         );

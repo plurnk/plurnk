@@ -608,24 +608,6 @@
       "dimensions": ["admission", "projection", "success", "failure", "durability"]
     }
   },
-  "notifications": {
-    "session/update": {
-      "posture": "native",
-      "evidence": [
-        "src/cli.test.ts — standard ACP v2 session/update projection",
-        "test/intg/cli.test.ts — end-to-end ACP v2 session lifecycle",
-        "scripts/test-composition.mjs — packed client and installed candidate service"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation",
-        "composition"
-      ]
-    }
-  },
   "acpV2": {
     "protocolVersion": 2,
     "agentMethods": {

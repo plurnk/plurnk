@@ -67,20 +67,20 @@
     },
     "allowScripts": {
         "@google/genai@2.32.0": false,
-        "exifreader@4.55.1": false,
+        "exifreader@4.56.0": false,
         "node-pty@1.1.0": true,
         "protobufjs@7.6.6": false
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "^2.12.0",
         "@earendil-works/pi-tui": "1.7.0",
-        "@plurnk/plurnk-contracts": "^10.0.0 || ^11.0.0",
+        "@plurnk/plurnk-contracts": "^11.0.0",
         "beautiful-mermaid": "^1.1.3",
         "open": "^11.0.4",
         "string-width": "^9.0.0"
     },
     "optionalDependencies": {
-        "@plurnk/plurnk-service": "^9.0.0 || ^10.0.0"
+        "@plurnk/plurnk-service": "^10.0.0"
     },
     "man": "./dist/posix/man/plurnk.1"
 }
